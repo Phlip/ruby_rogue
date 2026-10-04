@@ -1,6 +1,6 @@
 # Run with: ruby rogue.rb
 # Or in a browser: ruby rogue.rb --web [port], e.g. --web 8080, then open http://localhost:8080/ (default port 4567)
-# Add --god to either for god mode, where the player takes no damage
+# Add --god to either for god mode, where the player takes no damage; --help lists all of these
 
 require 'socket'
 require 'uri'
@@ -17,17 +17,17 @@ class Dungeon
   # kind is a creature with blood sugar, which runs down once it wakes and which a sandwich fills again
 
   THINGAGES = [
-    { glyph: "@", name: "Ego",     na: 1, cr: 1, hp: 15, ac: 15, str: 15, dex: 15, con: 11, int: 15, wis: 15, cha: 14,  hit: 1..6 },
+    { glyph: "@", name: "Ego", na: 1, cr: 1, hp: 15, ac: 15, str: 15, dex: 15, con: 11, int: 15, wis: 15, cha: 14,  hit: 1..8 },
     { glyph: "🗡", # light sword
-      name: "weapon", na: 1, cr: 1, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 10, con: 18, int: 18, wis: 10, cha: 10,  pacifist: 0.5 },
+      name: "weapon", na: 1, cr: 1, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 10, con: 18, int: 18, wis: 10, cha: 10,  pacifist: 0.66 },
     { glyph: "༺", # shield causes no damage and target wants to go where it nudges
-      name: "weapon", na: 1, cr: 1, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 10, con: 18, int: 18, wis: 10, cha: 10,  pacifist: 0.5 },
+      name: "weapon", na: 1, cr: 1, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 10, con: 18, int: 18, wis: 10, cha: 10,  pacifist: 0.75 },
     { glyph: "𓆩", # light shield causes d6 damage + str or dex or int benefits, one damage event per round is halved
-      name: "light shield", na: 10, cr: 3, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 10, con: 18, int: 18, wis: 10, cha: 10,  pacifist: 0.5 },
+      name: "light shield", na: 10, cr: 3, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 10, con: 18, int: 18, wis: 10, cha: 10,  pacifist: 0.66 },
     { glyph: "༒",  #  double-damage to anyone who is currently aggressive to Ego
-      name: "weapon", na: 10, cr: 1, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 10, con: 18, int: 18, wis: 10, cha: 10,  pacifist: 0.5 },
+      name: "weapon", na: 10, cr: 1, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 10, con: 18, int: 18, wis: 10, cha: 10,  pacifist: 0.65 },
     { glyph: "༻", # shield causes damage yet doubles your protection
-      name: "shield", na: 10, cr: 1, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 10, con: 18, int: 18, wis: 10, cha: 10,  pacifist: 0.5 },
+      name: "shield", na: 10, cr: 1, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 18, con: 18, int: 10, wis:  1, cha: 10,  pacifist: 0.5 },
     { glyph: "R", name: "rat",      na:  8, cr: 1, hp:  3, hit: 1..2, ac: 10, str:  7, dex: 15, con: 11, int:  2, wis: 10, cha:  4, aggressive: true, eats: true },
     { glyph: "C", name: "coyote",   na:  5, cr: 3, hp:  3, hit: 1..2, ac: 10, str: 17, dex: 15, con: 11, int: 16, wis: 15, cha: 14, aggressive: false, eats: true },
     { glyph: "G", name: "goblin",   na:  8, cr: 2, hp:  6, hit: 1..4, ac: 10, str:  8, dex: 17, con: 10, int: 13, wis: 15, cha: 10, greedy: 0.5, eats: true },
@@ -68,6 +68,12 @@ class Dungeon
   #  ability to request another life spawned on the current level
   #  test that going down a level boosts your life level and those
   #   of every follower
+
+  #  potion of out of focusness - Rs become Qs, Qs become Plants, potted plants become quails, Ts become Cs, Cs become
+  #  dead bodies stay there until Milda cleans them up
+
+  #  potion of cursed reckless speed thrown at energized enemy enrages them against your nemesis for you
+  #  potion of cursed reckless taken by Ego fails all wisdom use checks for energy conservation against Constitution
 
   #  a goblin, coyote, or rat assistant makes possible a large following.
   #  otherwise they just slow you down
@@ -167,7 +173,8 @@ class Dungeon
     @starving = 0
     @wielded = FISTS
     @knapsack = { gold: 0, sandwiches: 0, potions: 0, speed_potions: 0, gas_potions: 0, scrolls: 0, mapping_scrolls: 0,
-                  peace_rings: 0, strength_rings: 0, protection_rings: 0, eggs: [], weapons: [] }
+                  peace_rings: 0, strength_rings: 0, protection_rings: 0, candles: 0, laced_potions: 0,
+                  laced_speed_potions: 0, laced_gas_potions: 0, eggs: [], weapons: [] }
     @ring = nil
     @hasted = 0
     @gaseous = 0
@@ -287,8 +294,16 @@ class Dungeon
     protection_rings: { row: "ring of protection", name: "ring of protection", glyph: "=" },
   }.freeze
 
+  # Candles pack like the other items. Pouring a potion into one makes a laced candle, kept in the LACED slot for
+  # that potion; thrown up to THROW_RANGE or kicked up to KICK_RANGE, it bursts where it stops and gives its
+  # potion's power to everyone in a BURST by BURST square area: four 5-foot squares a side, 20 by 20 feet
+  CANDLES = { candles: { row: "candle", name: "candle", glyph: "i" } }.freeze
+  LACED = POTIONS.keys.to_h { |slot| [:"laced_#{slot}", slot] }.freeze
+  BURST = 4
+  KICK_RANGE = 3
+
   # Thingages that walking into packs instead of attacks, with the knapsack slot each goes in and its full name
-  ITEMS = POTIONS.merge(SCROLLS).merge(RINGS).freeze
+  ITEMS = POTIONS.merge(SCROLLS).merge(RINGS).merge(CANDLES).freeze
   PACKABLE = ITEMS.to_h { |slot, i| [i[:row], slot] }.freeze
   ITEM_NAMES = ITEMS.transform_values { |i| i[:name] }.freeze
 
@@ -329,6 +344,12 @@ class Dungeon
       n = @knapsack[slot]
       packed << [n == 1 ? "#{r[:glyph]} #{r[:name]}" : "#{n} #{r[:glyph]} #{r[:name].sub("ring", "rings")}", slot] if n.positive?
     end
+    n = @knapsack[:candles]
+    packed << [n == 1 ? "i candle" : "#{n} i candles", :candles] if n.positive?
+    LACED.each do |slot, potion|
+      n = @knapsack[slot]
+      packed << ["#{n == 1 ? "i candle" : "#{n} i candles"} laced with #{POTIONS[potion][:name]}", slot] if n.positive?
+    end
     @knapsack[:weapons].group_by { |w| w[:name] }.each do |name, kind|
       many = pair?(name) ? "#{kind.size} pairs of #{label(kind.first)}" : "#{kind.size} #{label(kind.first)}s"
       packed << [kind.size == 1 ? label(kind.first) : many, name]
@@ -354,19 +375,52 @@ class Dungeon
     @knapsack[slot].zero? and return say(slot == :potions ? "You have no potion to drink." : "You have no #{potion[:name]} to drink.")
 
     @knapsack[slot] -= 1
+    say "You quaff the #{potion[:name]}. #{take_effect(slot)}"
+    end_turn
+  end
+
+  # Gives the player a potion's power, drunk or splashed over them, and says what it does
+  def take_effect(slot)
     case slot
     when :potions
       @seen = Array.new(VIEWPORT_HEIGHT) { Array.new(VIEWPORT_WIDTH, true) }
-      say "You quaff the potion of sight. The whole level is revealed!"
+      "The whole level is revealed!"
     when :speed_potions
       @hasted = SPEED_ROUNDS
       @quick = false
-      say "You quaff the potion of speed. Everything else slows to half your pace!"
+      "Everything else slows to half your pace!"
     when :gas_potions
       @gaseous = GAS_ROUNDS
-      say "You quaff the potion of gaseous form and turn to mist. Nothing can touch you, and you can touch nothing."
+      "You turn to mist. Nothing can touch you, and you can touch nothing."
     end
+  end
+
+  # Pours a potion into a candle from the knapsack, making a laced candle to throw or kick; pouring takes a turn
+  def pour(slot)
+    over? and return
+    @throwable = nil
+    (potion = POTIONS[slot]) or return
+    @knapsack[slot].zero? and return say("You have no #{potion[:name]} to pour.")
+    @knapsack[:candles].zero? and return say("You have no candle to pour it into.")
+
+    @knapsack[slot] -= 1
+    @knapsack[:candles] -= 1
+    @knapsack[:"laced_#{slot}"] += 1
+    say "You pour the #{potion[:name]} into a candle."
     end_turn
+  end
+
+  # Readies a laced candle to throw or kick (how is :throw or :kick); the next arrow sends it that way, and rest
+  # cancels it
+  def fling(slot, how)
+    over? and return
+    @throwable = nil
+    (potion = LACED[slot]) && %i[throw kick].include?(how) or return
+    @knapsack[slot].zero? and return say("You have no candle laced with #{POTIONS[potion][:name]}.")
+
+    @offering = slot
+    @flinging = how
+    say "#{how.to_s.capitalize} the candle laced with #{POTIONS[potion][:name]} which way?"
   end
 
   # Readies a potion to throw; the next arrow throws it that way instead of moving, and rest cancels it
@@ -514,7 +568,11 @@ class Dungeon
   def move(dx, dy)
     over? and return
     @throwable = nil
-    (item = @offering) and return(POTIONS.key?(item) ? throw_potion(item, dx, dy) : give(item, dx, dy))
+    if (item = @offering)
+      return fling_candle(item, dx, dy) if LACED.key?(item)
+
+      return POTIONS.key?(item) ? throw_potion(item, dx, dy) : give(item, dx, dy)
+    end
 
     nx = @px + dx
     ny = @py + dy
@@ -901,6 +959,51 @@ class Dungeon
     end
     say "You throw the #{name} and it shatters on the floor."
     end_turn
+  end
+
+  # Sends a laced candle that way, thrown up to THROW_RANGE or kicked up to KICK_RANGE: it stops at the first
+  # touchable character in its path, or against a wall, and bursts there. Flinging takes a turn
+  def fling_candle(slot, dx, dy)
+    how = @flinging
+    @offering = @flinging = nil
+    @knapsack[slot] -= 1
+    x, y = @px, @py
+    (how == :kick ? KICK_RANGE : THROW_RANGE).times do
+      break if wall?(x + dx, y + dy)
+
+      x += dx
+      y += dy
+      break if (target = monster_at(x, y)) && !mist?(target)
+    end
+    burst(x, y, LACED[slot], how == :kick ? "kick" : "throw")
+    end_turn
+  end
+
+  # The squares a candle bursting at x, y splashes: BURST a side, as near centered on it as an even width allows
+  def burst_area(x, y)
+    half = BURST / 2
+    (x - half...x - half + BURST).to_a.product((y - half...y - half + BURST).to_a)
+  end
+
+  # What a burst candle's potion does to the characters it splashes, said once for them all
+  BURST_EFFECTS = {
+    potions:       "Their eyes blaze: they can see you from anywhere now.",
+    speed_potions: "They speed up to two actions for your one!",
+    gas_potions:   "They turn to mist!",
+  }.freeze
+
+  # A laced candle bursts at x, y, and its potion's power washes over every character in the burst area, the
+  # player included
+  def burst(x, y, potion, verb)
+    area = burst_area(x, y)
+    caught = @monsters.select { |m| area.include?([m.x, m.y]) }
+    splashed = area.include?([@px, @py])
+    names = caught.map { |m| "the #{m.name}" } + (splashed ? ["you"] : [])
+    say "You #{verb} the candle laced with #{POTIONS[potion][:name]}, and it bursts over " \
+        "#{names.empty? ? "empty floor" : and_list(names)}."
+    caught.each { |m| empower(m, potion) }
+    say BURST_EFFECTS[potion] if caught.any?
+    say take_effect(potion) if splashed
   end
 
   # Gives a thingage a thrown potion's power and says what it does
@@ -1365,6 +1468,15 @@ class WebGame
         Dungeon::RINGS.key?(item) or return [404, {}, "Not found"]
         @game.wear(item)
       when "/candle" then @game.candle
+      when "/pour"
+        item = params["item"].to_s.to_sym
+        Dungeon::POTIONS.key?(item) or return [404, {}, "Not found"]
+        @game.pour(item)
+      when "/fling"
+        item = params["item"].to_s.to_sym
+        how = params["how"].to_s.to_sym
+        Dungeon::LACED.key?(item) && %i[throw kick].include?(how) or return [404, {}, "Not found"]
+        @game.fling(item, how)
       when "/wield" then @game.wield(params["name"])
       when "/throw" then @game.hurl
       when "/new"  then @game = Dungeon.new(god: @god)
@@ -1414,8 +1526,17 @@ class WebGame
     end
 
     # One button per knapsack entry: gold and sandwiches ready a gift, eggs are held up to the light, a potion
-    # quaffs (with a throw button beside it), a scroll reads, a ring is worn, and a weapon kind wields one of them
+    # quaffs (with throw and pour-into-a-candle buttons beside it), a laced candle is thrown (with a kick button
+    # beside it), a scroll reads, a ring is worn, and a weapon kind wields one of them. Plain candles just wait
     packed = @game.contents.map do |text, slot|
+      next %(<span>#{h text}</span>) if slot == :candles
+
+      if Dungeon::LACED.key?(slot)
+        thrower = %(<form method="post" action="/fling?item=#{slot}&amp;how=throw"><button style="width: auto">#{h text}</button></form>)
+        kicker = %(<form method="post" action="/fling?item=#{slot}&amp;how=kick"><button style="width: auto">kick</button></form>)
+        next %(<div style="display: flex; gap: 4px;">#{thrower}#{kicker}</div>)
+      end
+
       action = if Dungeon::POTIONS.key?(slot) then "/quaff?item=#{slot}"
                elsif Dungeon::SCROLLS.key?(slot) then "/read?item=#{slot}"
                elsif Dungeon::RINGS.key?(slot) then "/wear?item=#{slot}"
@@ -1427,7 +1548,8 @@ class WebGame
       next entry unless Dungeon::POTIONS.key?(slot)
 
       thrower = %(<form method="post" action="/aim?item=#{slot}"><button style="width: auto">throw</button></form>)
-      %(<div style="display: flex; gap: 4px;">#{entry}#{thrower}</div>)
+      pourer = %(<form method="post" action="/pour?item=#{slot}"><button style="width: auto">pour into candle</button></form>)
+      %(<div style="display: flex; gap: 4px;">#{entry}#{thrower}#{pourer}</div>)
     end
 
     <<~HTML
@@ -1482,11 +1604,26 @@ class WebGame
   end
 end
 
+# What --help prints
+USAGE = <<~TEXT
+  Quail on the Run, a roguelike
+
+  Usage: ruby rogue.rb [--web [port]] [--god]
+         ruby rogue.rb --help
+
+    (no flags)    play in a desktop window, drawn by Scarpe
+    --web [port]  play in a browser instead, at http://localhost:port/ (port 1-65535, default 4567)
+    --god         god mode: the player takes no damage
+    -h, --help    show this help and exit
+TEXT
+
 # Guarded so the tests can require this file for Dungeon without opening a window or a port.
 # Scarpe 0.5.0 has no Scarpe.app; requiring scarpe provides Shoes.app instead.
 GOD = ARGV.include?("--god")
 
-if $PROGRAM_NAME == __FILE__ && ARGV.include?("--web")
+if $PROGRAM_NAME == __FILE__ && (ARGV & %w[--help -h]).any?
+  puts USAGE
+elsif $PROGRAM_NAME == __FILE__ && ARGV.include?("--web")
   # The port is whatever follows --web, defaulting to 4567; another flag such as --god there means no port given
   arg = ARGV[ARGV.index("--web") + 1]
   arg = nil if arg&.start_with?("--")
@@ -1525,6 +1662,20 @@ Scarpe.app(title: "Scarpe Rogue") do # , width: 560, height: 640) do
     # kind wields one of them
     @packed.clear do
       @game.contents.each do |text, slot|
+        next para(text) if slot == :candles # plain candles just wait for a potion
+
+        if Dungeon::LACED.key?(slot)
+          button(text) do
+            @game.fling(slot, :throw)
+            redraw.call
+          end
+          button("kick") do
+            @game.fling(slot, :kick)
+            redraw.call
+          end
+          next
+        end
+
         button(text) do
           if Dungeon::POTIONS.key?(slot) then @game.quaff(slot)
           elsif Dungeon::SCROLLS.key?(slot) then @game.read(slot)
@@ -1538,6 +1689,10 @@ Scarpe.app(title: "Scarpe Rogue") do # , width: 560, height: 640) do
         if Dungeon::POTIONS.key?(slot)
           button("throw") do
             @game.aim(slot)
+            redraw.call
+          end
+          button("pour into candle") do
+            @game.pour(slot)
             redraw.call
           end
         end

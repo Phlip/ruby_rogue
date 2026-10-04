@@ -7,34 +7,47 @@ require 'uri'
 
 # The game knows nothing about Scarpe; the app below only draws it and pushes buttons
 class Dungeon
-  WIDTH  = 48 * 2
-  HEIGHT = 18 * 2
-  SIGHT  = 6
 
   # cr (challenge rating) is the first depth a kind turns up on, and na (number appearing) caps how many of it
   # one level holds. na: 1 makes a kind unique and out-of-band: random spawning skips it, so it only turns up
   # where the game places it on purpose. out_of_band does the same for a kind with an na above 1.
   # A fractional pacifist is the chance each one spawns pacifist; greedy is the chance a coin will buy it.
   # Only an aggressive kind chases and strikes from the start; every other kind starts neutral, minding its
-  # own business until the player hits it. An eats kind is a creature with blood sugar, which runs down once it
-  # wakes and which a sandwich fills again
+  # own business until the player hits it. A door is a pacifist that turns aggressive on the second hit. An eats
+  # kind is a creature with blood sugar, which runs down once it wakes and which a sandwich fills again
+
   THINGAGES = [
     { glyph: "@", name: "Ego",     na: 1, cr: 1, hp: 15, ac: 15, str: 15, dex: 15, con: 11, int: 15, wis: 15, cha: 14,  hit: 1..6 },
-    { glyph: "🗡️", # "༺𓆩༒︎𓆪༻",
+    { glyph: "🗡", # light sword
+      name: "weapon", na: 1, cr: 1, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 10, con: 18, int: 18, wis: 10, cha: 10,  pacifist: 0.5 },
+    { glyph: "༺", # shield causes no damage and target wants to go where it nudges
+      name: "weapon", na: 1, cr: 1, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 10, con: 18, int: 18, wis: 10, cha: 10,  pacifist: 0.5 },
+    { glyph: "𓆩", # light shield causes d6 damage + str or dex or int benefits, one damage event per round is halved
+      name: "light shield", na: 10, cr: 3, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 10, con: 18, int: 18, wis: 10, cha: 10,  pacifist: 0.5 },
+    { glyph: "༒",  #  double-damage to anyone who is currently aggressive to Ego
       name: "weapon", na: 10, cr: 1, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 10, con: 18, int: 18, wis: 10, cha: 10,  pacifist: 0.5 },
-    { glyph: "r", name: "rat",      na: 10, cr: 1, hp:  3, hit: 1..2, ac: 10, str:  7, dex: 15, con: 11, int:  2, wis: 10, cha:  4, aggressive: true, eats: true },
-    { glyph: "g", name: "goblin",   na: 10, cr: 2, hp:  6, hit: 1..4, ac: 10, str:  8, dex: 17, con: 10, int: 13, wis: 15, cha: 10, greedy: 0.5, eats: true },
-    { glyph: "o", name: "orc",      na:  5, cr: 4, hp: 10, hit: 2..6, ac: 15, str: 14, dex: 12, con: 17, int: 15, wis: 10, cha: 10, eats: true },
+    { glyph: "༻", # shield causes damage yet doubles your protection
+      name: "shield", na: 10, cr: 1, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 10, con: 18, int: 18, wis: 10, cha: 10,  pacifist: 0.5 },
+    { glyph: "R", name: "rat",      na:  8, cr: 1, hp:  3, hit: 1..2, ac: 10, str:  7, dex: 15, con: 11, int:  2, wis: 10, cha:  4, aggressive: true, eats: true },
+    { glyph: "C", name: "coyote",   na:  5, cr: 3, hp:  3, hit: 1..2, ac: 10, str: 17, dex: 15, con: 11, int: 16, wis: 15, cha: 14, aggressive: false, eats: true },
+    { glyph: "G", name: "goblin",   na:  8, cr: 2, hp:  6, hit: 1..4, ac: 10, str:  8, dex: 17, con: 10, int: 13, wis: 15, cha: 10, greedy: 0.5, eats: true },
+    { glyph: "O", name: "orc",      na:  5, cr: 4, hp: 10, hit: 2..6, ac: 15, str: 14, dex: 12, con: 17, int: 15, wis: 10, cha: 10, eats: true },
     { glyph: "T", name: "troll",    na:  2, cr: 5, hp: 18, hit: 3..8, ac: 15, str: 16, dex: 10, con: 18, int: 10, wis: 10, cha: 10, eats: true },
     { glyph: "#", name: "wall",     na: 17, cr: 1, hp:  3, hit: 0..0, ac: 10, str: 18, dex:  0, con: 18, int:  0, wis:  0, cha:  0, pacifist: true },
-    { glyph: "#", name: "door",     na:  4, cr: 1, hp: 30, hit: 0..0, ac: 10, str: 18, dex:  0, con: 18, int:  0, wis:  0, cha:  0, pacifist: true,
-      out_of_band: true },
-    { glyph: "$", name: "gold",     na: 20, cr: 2, hp:  3, hit: 0..0, ac: 18, str: 18, dex:  0, con: 18, int:  0, wis:  0, cha:  0, pacifist: true },
-    { glyph: "=", name: "sandwich", na: 10, cr: 2, hp:  3, hit: 0..0, ac:  1, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true },
+    { glyph: "#", name: "door",     na:  4, cr: 1, hp: 30, hit: 1..4, ac: 10, str: 18, dex:  0, con: 18, int:  0, wis:  0, cha:  0, pacifist: true, out_of_band: true },
+    { glyph: "$", name: "gold",     na: 15, cr: 2, hp:  3, hit: 0..0, ac: 18, str: 18, dex:  0, con: 18, int:  0, wis:  0, cha:  0, pacifist: true },
+    { glyph: "=", name: "ring of peace",     na:  3, cr: 5, hp: 20, hit: 0..0, ac: 18, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true },
+    { glyph: "=", name: "ring of strength",     na:  3, cr: 5, hp: 20, hit: 0..0, ac: 18, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true },
+    { glyph: "=", name: "ring of protection",   na:  3, cr: 5, hp: 20, hit: 0..0, ac: 18, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true },
+    { glyph: "i", name: "candle",   na: 10, cr: 3, hp:  3, hit: 0..0, ac:  2, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true },
     { glyph: "¡", name: "potion",   na: 10, cr: 3, hp:  3, hit: 0..0, ac:  2, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true },
-    { glyph: "!", name: "speed potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true },
-    { glyph: "~", name: "gas potion",   na: 3, cr: 4, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true },
-    { glyph: "?", name: "scroll",   na:  3, cr: 2, hp:  3, hit: 0..0, ac:  2, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true },
+    { glyph: "?", name: "scroll of mapping", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true },
+    { glyph: "!", name: "slow potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true },
+    { glyph: "!", name: "healing potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true },
+    { glyph: "!", name: "empty potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true },
+    { glyph: "~", name: "sandwich",   na: 20, cr: 4, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true },
+    { glyph: "?", name: "scroll of 3 potions", na:  1, cr: 6, hp:  3, hit: 0..0, ac:  2, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true },
+    { glyph: "A", name: "Axebeak",    na:  1, cr: 5, hp: 28, hit: 4..9, ac: 15, str: 18, dex: 17, con: 16, int: 15, wis: 14, cha: 13, pacifist: false, eats: true },
     { glyph: "Q", name: "Quail",    na:  1, cr: 5, hp: 28, hit: 4..9, ac: 15, str: 18, dex: 17, con: 16, int: 15, wis: 14, cha: 13, pacifist: true, eats: true }
   ]
 
@@ -49,7 +62,33 @@ class Dungeon
   # hp  hit points str dex con int wis cha
   # test that the name shows up
   # hit with current weapon
+  # make the teleportation traps less frequent and make them sessile thingables
+  #  add sessile motile as a primary attribute
 
+  #  ability to request another life spawned on the current level
+  #  test that going down a level boosts your life level and those
+  #   of every follower
+
+  #  a goblin, coyote, or rat assistant makes possible a large following.
+  #  otherwise they just slow you down
+
+  # orcs cannot be bribed not to hunt axebeaks - they pass the bribes along to axe beak hunting crews
+  #  coyotes and axe beaks are each other's nemesis and cannot be bribed
+  # not to hunt each other
+  # as the cage room rises it stops on each level of the
+  #
+  #these characters plant trees. they may infinitely pack into the trap room
+  #𓁟 — U+1305F, Gardiner C3 — Thoth, the ibis-headed god associated with writing, knowledge, and scribes.
+#𓏞 — U+133DE, Gardiner Y3 — scribe's palette, a very recognizable writing/scribe sign.
+#𓏛 — U+133DB, Gardiner Y1 — papyrus roll/book, used in writing-related contexts.
+#𓏠 — U+133E0, Gardiner Y4 — another writing implement/palette-related sign.
+#𓀀 — this guy reads the tablet and plants the tree
+
+  #let the user select ability to remember a level and return to it as
+  #  a next level robo-predator controlled by a remote human on FPV
+
+  #  axe beaks feed on quail eggs and are very fast on roads
+  #
   #  add a mischievous Raccoon who tries to own the Quail
   #
   #  ability to arise on the same level
@@ -75,6 +114,9 @@ class Dungeon
   # Blood sugar starts full and drops by one each round, the player's from the start and a creature's from the
   # round it wakes and first acts. At zero they're hungry, drawn in HUNGRY_COLOR, and lose a hit point every
   # STARVE_ROUNDS rounds until a sandwich fills them up again
+  VIEWPORT_WIDTH  = (48 * 1.3).to_i
+  VIEWPORT_HEIGHT = (18 * 1.3).to_i
+  SIGHT  = 6
   MAX_BLOOD_SUGAR = 100
   STARVE_ROUNDS = 150
   HUNGRY_COLOR = "#e8a33d"
@@ -113,7 +155,7 @@ class Dungeon
   # The hero's armor class: unarmored, as in D&D. Nothing reads it in combat yet
   HERO_AC = 10
 
-  attr_reader :hp, :max_hp, :ac, :blood_sugar, :knapsack, :depth, :log, :wielded
+  attr_reader :hp, :max_hp, :ac, :blood_sugar, :knapsack, :depth, :log, :wielded, :ring
 
   # In god mode the player takes no damage; everything else still can
   def initialize(god: false)
@@ -124,7 +166,9 @@ class Dungeon
     @blood_sugar = MAX_BLOOD_SUGAR
     @starving = 0
     @wielded = FISTS
-    @knapsack = { gold: 0, sandwiches: 0, potions: 0, speed_potions: 0, gas_potions: 0, scrolls: 0, eggs: [], weapons: [] }
+    @knapsack = { gold: 0, sandwiches: 0, potions: 0, speed_potions: 0, gas_potions: 0, scrolls: 0, mapping_scrolls: 0,
+                  peace_rings: 0, strength_rings: 0, protection_rings: 0, eggs: [], weapons: [] }
+    @ring = nil
     @hasted = 0
     @gaseous = 0
     @quick = false
@@ -159,6 +203,13 @@ class Dungeon
   CAGE_DEPTH = 5
   CAGE_ROOM = { w: 12, h: 15 }.freeze
   TRAP_DEPTH = 4
+
+  # Teleport plates lie on room floors, like gold. Stepping onto a cage plate lands the player in the cage room, so
+  # one turns up only on a level that has one. Anyone, player or monster, stepping onto a random plate lands in a
+  # random room, where the cage room is CAGE_ODDS times as likely as any other. The elevator room isn't built yet
+  CAGE_PLATE = "_"
+  RANDOM_PLATE = "ṯ"
+  CAGE_ODDS = 5.0 / 3
 
   # An egg is developed, with legs, wings, and a beak, or just yolk; candled once it's been held up to the light
   Egg = Struct.new(:developed, :candled)
@@ -221,11 +272,27 @@ class Dungeon
   SPEED_ROUNDS = 30
   GAS_ROUNDS = 10
 
-  # Thingages that walking into packs instead of attacks, with the knapsack slot each goes in and its full name
-  PACKABLE = POTIONS.to_h { |slot, p| [p[:row], slot] }.merge("scroll" => :scrolls).freeze
-  ITEM_NAMES = POTIONS.transform_values { |p| p[:name] }.merge(scrolls: "scroll of potion finding").freeze
+  # Each kind of scroll by knapsack slot: the THINGAGES row it spawns from, its full name, and its glyph.
+  # Reading one uses it up
+  SCROLLS = {
+    scrolls:         { row: "scroll of 3 potions", name: "scroll of potion finding", glyph: "?" },
+    mapping_scrolls: { row: "scroll of mapping",   name: "scroll of mapping",        glyph: "?" },
+  }.freeze
 
-  # How far, in squares each way, a scroll of potion finding reaches
+  # Each kind of ring by knapsack slot: the THINGAGES row it spawns from, its full name, and its glyph.
+  # Wearing one slips it on; only one fits at a time
+  RINGS = {
+    peace_rings:      { row: "ring of peace",      name: "ring of peace",      glyph: "=" },
+    strength_rings:   { row: "ring of strength",   name: "ring of strength",   glyph: "=" },
+    protection_rings: { row: "ring of protection", name: "ring of protection", glyph: "=" },
+  }.freeze
+
+  # Thingages that walking into packs instead of attacks, with the knapsack slot each goes in and its full name
+  ITEMS = POTIONS.merge(SCROLLS).merge(RINGS).freeze
+  PACKABLE = ITEMS.to_h { |slot, i| [i[:row], slot] }.freeze
+  ITEM_NAMES = ITEMS.transform_values { |i| i[:name] }.freeze
+
+  # How far, in squares each way, a scroll of potion finding or of mapping reaches
   SCROLL_RANGE = 20
 
   # What one press of each give button hands over, keyed by its knapsack slot
@@ -244,7 +311,7 @@ class Dungeon
 
   # The knapsack as [text, slot] pairs, e.g. ["3 🪓 axes", "axe"], with weapons grouped by kind in
   # packing order. The slot is :gold or :sandwiches, which give, :eggs, which candles, a POTIONS slot, which quaffs
-  # or throws, :scrolls, which reads, or a weapon name, which wields
+  # or throws, a SCROLLS slot, which reads, a RINGS slot, which wears, or a weapon name, which wields
   def contents
     packed = []
     packed << ["#{gold} gold", :gold] if gold.positive?
@@ -254,7 +321,14 @@ class Dungeon
       n = @knapsack[slot]
       packed << [n == 1 ? "#{p[:glyph]} #{p[:name]}" : "#{n} #{p[:glyph]} #{p[:name].sub("potion", "potions")}", slot] if n.positive?
     end
-    packed << [scrolls == 1 ? "? scroll of potion finding" : "#{scrolls} ? scrolls of potion finding", :scrolls] if scrolls.positive?
+    SCROLLS.each do |slot, s|
+      n = @knapsack[slot]
+      packed << [n == 1 ? "#{s[:glyph]} #{s[:name]}" : "#{n} #{s[:glyph]} #{s[:name].sub("scroll", "scrolls")}", slot] if n.positive?
+    end
+    RINGS.each do |slot, r|
+      n = @knapsack[slot]
+      packed << [n == 1 ? "#{r[:glyph]} #{r[:name]}" : "#{n} #{r[:glyph]} #{r[:name].sub("ring", "rings")}", slot] if n.positive?
+    end
     @knapsack[:weapons].group_by { |w| w[:name] }.each do |name, kind|
       many = pair?(name) ? "#{kind.size} pairs of #{label(kind.first)}" : "#{kind.size} #{label(kind.first)}s"
       packed << [kind.size == 1 ? label(kind.first) : many, name]
@@ -282,7 +356,7 @@ class Dungeon
     @knapsack[slot] -= 1
     case slot
     when :potions
-      @seen = Array.new(HEIGHT) { Array.new(WIDTH, true) }
+      @seen = Array.new(VIEWPORT_HEIGHT) { Array.new(VIEWPORT_WIDTH, true) }
       say "You quaff the potion of sight. The whole level is revealed!"
     when :speed_potions
       @hasted = SPEED_ROUNDS
@@ -306,9 +380,6 @@ class Dungeon
     say "Throw the #{potion[:name]} which way?"
   end
 
-  # Reads a scroll of potion finding from the knapsack: every potion of sight within SCROLL_RANGE is marked on
-  # the map for the rest of the level, however far or unseen, and the log says which way each lies.
-  # Reading takes a turn
   # "3 eggs", and once candled, what the light showed, e.g. "3 eggs (1 developed, 1 yolk, 1 unknown)"
   def egg_count(eggs)
     text = "#{eggs.size} #{eggs.size == 1 ? "egg" : "eggs"}"
@@ -342,19 +413,47 @@ class Dungeon
     end_turn
   end
 
-  def read
+  # Reads a scroll from the knapsack. Potion finding marks every potion of sight within SCROLL_RANGE on the map
+  # for the rest of the level, however far or unseen, and the log says which way each lies; mapping reveals every
+  # square within SCROLL_RANGE. Reading takes a turn
+  def read(slot = :scrolls)
     over? and return
     @throwable = nil
-    scrolls.zero? and return say("You have no scroll to read.")
+    (scroll = SCROLLS[slot]) or return
+    @knapsack[slot].zero? and return say(slot == :scrolls ? "You have no scroll to read." : "You have no #{scroll[:name]} to read.")
 
-    @knapsack[:scrolls] -= 1
-    found = @monsters.select do |m|
-      m.name == "potion" && (m.x - @px).abs <= SCROLL_RANGE && (m.y - @py).abs <= SCROLL_RANGE
+    @knapsack[slot] -= 1
+    case slot
+    when :scrolls
+      found = @monsters.select do |m|
+        m.name == "potion" && (m.x - @px).abs <= SCROLL_RANGE && (m.y - @py).abs <= SCROLL_RANGE
+      end
+
+      @detected.concat(found)
+      shown = found.empty? ? "no potions of sight nearby" :
+        "#{found.size == 1 ? "a potion" : "#{found.size} potions"} of sight: #{found.map { |m| bearing(m.x, m.y) }.join("; ")}"
+      say "You read the scroll of potion finding. It shows #{shown}."
+    when :mapping_scrolls
+      @seen.each_with_index do |row, y|
+        row.each_index { |x| row[x] = true if (x - @px).abs <= SCROLL_RANGE && (y - @py).abs <= SCROLL_RANGE }
+      end
+      say "You read the scroll of mapping. The level within #{SCROLL_RANGE} squares is revealed!"
     end
-    @detected.concat(found)
-    shown = found.empty? ? "no potions of sight nearby" :
-      "#{found.size == 1 ? "a potion" : "#{found.size} potions"} of sight: #{found.map { |m| bearing(m.x, m.y) }.join("; ")}"
-    say "You read the scroll of potion finding. It shows #{shown}."
+    end_turn
+  end
+
+  # Slips a ring from the knapsack onto a finger, packing any ring already worn. Nothing reads the worn ring
+  # yet. Swapping takes a turn
+  def wear(slot)
+    over? and return
+    @throwable = nil
+    (ring = RINGS[slot]) or return
+    @knapsack[slot].zero? and return say("You have no #{ring[:name]} to wear.")
+
+    @knapsack[slot] -= 1
+    @knapsack[@ring] += 1 if @ring
+    @ring = slot
+    say "You slip on the #{ring[:name]}."
     end_turn
   end
 
@@ -365,6 +464,7 @@ class Dungeon
     @throwable = nil
     weapons = @knapsack[:weapons]
     at = name ? weapons.index { |w| w[:name] == name } : 0
+
     (drawn = at && weapons.delete_at(at)) or
       return say(name ? "You have no #{name} in your knapsack." : "You have no weapon in your knapsack to wield.")
 
@@ -433,6 +533,7 @@ class Dungeon
       pick_up
       [@px, @py] == @cage&.dig(:plate) and return spring_trap
       @map[@py][@px] == ">" and return descend
+      ride_plate
     end
 
     end_turn
@@ -470,8 +571,8 @@ class Dungeon
   # The map as rows of [text, hungry] runs: the glyphs, split where a hungry creature is drawn, so a front end
   # can color those in HUNGRY_COLOR
   def map_runs
-    Array.new(HEIGHT) do |y|
-      Array.new(WIDTH) { |x| [glyph_at(x, y), hungry_at?(x, y)] }
+    Array.new(VIEWPORT_HEIGHT) do |y|
+      Array.new(VIEWPORT_WIDTH) { |x| [glyph_at(x, y), hungry_at?(x, y)] }
            .chunk_while { |a, b| a[1] == b[1] }.map { |run| [run.map(&:first).join, run.first[1]] }
     end
   end
@@ -487,8 +588,8 @@ class Dungeon
   end
 
   def rows
-    Array.new(HEIGHT) do |y|
-      Array.new(WIDTH) { |x| glyph_at(x, y) }.join
+    Array.new(VIEWPORT_HEIGHT) do |y|
+      Array.new(VIEWPORT_WIDTH) { |x| glyph_at(x, y) }.join
     end
   end
 
@@ -496,8 +597,8 @@ class Dungeon
 
   # Builds a fresh level at the current depth, with a cage room from CAGE_DEPTH on
   def build_level
-    @map = Array.new(HEIGHT) { Array.new(WIDTH, "#") }
-    @seen = Array.new(HEIGHT) { Array.new(WIDTH, false) }
+    @map = Array.new(VIEWPORT_HEIGHT) { Array.new(VIEWPORT_WIDTH, "#") }
+    @seen = Array.new(VIEWPORT_HEIGHT) { Array.new(VIEWPORT_WIDTH, false) }
     @rooms = []
     @cage = nil
     @cage_room = nil
@@ -506,7 +607,7 @@ class Dungeon
 
     caged = @depth >= CAGE_DEPTH
     if caged
-      @cage_room = { x: rand(1..WIDTH - CAGE_ROOM[:w] - 2), y: rand(1..HEIGHT - CAGE_ROOM[:h] - 2), **CAGE_ROOM }
+      @cage_room = { x: rand(1..VIEWPORT_WIDTH - CAGE_ROOM[:w] - 2), y: rand(1..VIEWPORT_HEIGHT - CAGE_ROOM[:h] - 2), **CAGE_ROOM }
       carve_room(@cage_room)
       @rooms << @cage_room
     end
@@ -516,7 +617,7 @@ class Dungeon
       h = rand(3..5)
 
       if w && h
-        room = { x: rand(1..WIDTH - w - 2), y: rand(1..HEIGHT - h - 2), w: w, h: h }
+        room = { x: rand(1..VIEWPORT_WIDTH - w - 2), y: rand(1..VIEWPORT_HEIGHT - h - 2), w: w, h: h }
 
         next if @rooms.any? { |r| overlap?(r, room) }
 
@@ -543,6 +644,12 @@ class Dungeon
     @monsters = []
     @detected = []
     @population = Hash.new(0)
+    # Plates go down first, so nothing else lands on one: a random plate in about one room in four past the first,
+    # and a cage plate in one room that's neither the first nor the cage room
+    @plates = {}
+    @rooms.drop(1).each { |room| @plates[free_spot(room)] = RANDOM_PLATE if rand(4).zero? }
+    plated = (@rooms.drop(1) - [@cage_room]).sample if @cage_room
+    @plates[free_spot(plated)] = CAGE_PLATE if plated
     @rooms.drop(1).each do |room|
       rand(0..2).times { @treasure[free_spot(room)] = rand(5..20) * @depth }
       @sandwiches[free_spot(room)] = 1 if rand(3).zero?
@@ -650,7 +757,7 @@ class Dungeon
   # Corridor squares, outside every room, that open straight onto a room's floor
   def hallway_ends
     in_room = ->(x, y) { @rooms.any? { |r| x.between?(r[:x], r[:x] + r[:w] - 1) && y.between?(r[:y], r[:y] + r[:h] - 1) } }
-    (0...HEIGHT).flat_map { |y| (0...WIDTH).map { |x| [x, y] } }.select do |x, y|
+    (0...VIEWPORT_HEIGHT).flat_map { |y| (0...VIEWPORT_WIDTH).map { |x| [x, y] } }.select do |x, y|
       @map[y][x] == "." && !in_room.(x, y) && !monster_at(x, y) &&
         [[1, 0], [-1, 0], [0, 1], [0, -1]].any? { |dx, dy| in_room.(x + dx, y + dy) }
     end
@@ -691,8 +798,8 @@ class Dungeon
   def free_spot(room)
     loop do
       spot = [rand(room[:x]...room[:x] + room[:w]), rand(room[:y]...room[:y] + room[:h])]
-      next if spot == [@px, @py] || @map[spot[1]][spot[0]] == ">"
-      next if @treasure.key?(spot) || @sandwiches.key?(spot) || monster_at(*spot)
+      next if spot == [@px, @py] || @map[spot[1]][spot[0]] == ">" || spot == @cage&.dig(:plate)
+      next if @treasure.key?(spot) || @sandwiches.key?(spot) || @plates.key?(spot) || monster_at(*spot)
 
       return spot
     end
@@ -730,12 +837,12 @@ class Dungeon
 
   # Walls and the edge of the map block the way
   def wall?(x, y)
-    return x.negative? || y.negative? || x >= WIDTH || y >= HEIGHT || @map[y][x] == "#"
+    return x.negative? || y.negative? || x >= VIEWPORT_WIDTH || y >= VIEWPORT_HEIGHT || @map[y][x] == "#"
   end
 
   def monster_at(x, y) return @monsters.find { |m| m.x == x && m.y == y } end
 
-  # The first hit on a pacifist also spurns it
+  # The first hit on a pacifist also spurns it; the second on a door makes it give up its pacifism and fight
   def attack(foe)
     dmg = rand(weapon_hit)
     foe.hp -= dmg
@@ -749,6 +856,11 @@ class Dungeon
     elsif foe.pacifist && !foe.spurned
       foe.spurned = true
       say "You hit the #{foe.name} for #{dmg}.#{" It stops following you." if follower?(foe)}"
+    elsif foe.pacifist && foe.name == "door"
+      foe.pacifist = false
+      foe.spurned = false
+      foe.aggressive = true
+      say "You hit the door for #{dmg}. It turns on you!"
     else
       say "You hit the #{foe.name} for #{dmg}.#{" It turns on you!" if provoked}"
     end
@@ -917,7 +1029,7 @@ class Dungeon
     [w[:glyph], w[:name]].compact.join(" ")
   end
 
-  # Walking into a potion or a scroll packs it into the knapsack instead of attacking it; quaff or read uses it later
+  # Walking into a potion, a scroll, or a ring packs it into the knapsack instead of attacking it; quaff, read, or wear uses it later
   def pack(thing, slot)
     @monsters.delete(thing)
     @knapsack[slot] += 1
@@ -943,6 +1055,26 @@ class Dungeon
       @sandwiches[spot] = @sandwiches.fetch(spot, 0) + 1
     end
     say "The #{foe.name} explodes into #{count} #{count == 1 ? "sandwich" : "sandwiches"}!"
+  end
+
+  # Standing on a teleport plate carries the player off to where it leads, and the new spot comes into view
+  def ride_plate
+    (plate = @plates[[@px, @py]]) or return
+
+    @px, @py = landing(plate)
+    reveal
+    say(plate == CAGE_PLATE ? "The plate flashes, and you land in the cage room." :
+                               "The plate flashes, and you land somewhere else in the dungeon.")
+  end
+
+  # A free spot in the cage room for a cage plate; for a random plate, in a random room, the cage room weighing
+  # CAGE_ODDS against every other room's 1
+  def landing(plate)
+    return free_spot(@cage_room) if plate == CAGE_PLATE
+
+    weights = @rooms.map { |r| r.equal?(@cage_room) ? CAGE_ODDS : 1 }
+    pick = rand * weights.sum
+    free_spot(@rooms.zip(weights).find { |_, w| (pick -= w).negative? }&.first || @rooms.last)
   end
 
   def pick_up
@@ -1063,10 +1195,17 @@ class Dungeon
       say("You die on depth #{@depth} with #{gold} gold.") if over?
     else
       return if gaseous? && !friend?(m) && !follower?(m) # nothing hostile bothers chasing mist
+      return if m.name == "door" # an angry door strikes from its hallway but never leaves it
 
       step = dx.abs >= dy.abs ? [dx <=> 0, 0] : [0, dy <=> 0]
       nx, ny = (follower?(m) && path_step(m)) || [m.x + step[0], m.y + step[1]]
-      m.x, m.y = nx, ny unless wall?(nx, ny) || monster_at(nx, ny) || [nx, ny] == [@px, @py]
+      return if wall?(nx, ny) || monster_at(nx, ny) || [nx, ny] == [@px, @py]
+
+      m.x, m.y = nx, ny
+      return unless @plates[[nx, ny]] == RANDOM_PLATE
+
+      say "The #{m.name} steps on a plate and vanishes!" if (nx - @px).abs <= SIGHT && (ny - @py).abs <= SIGHT
+      m.x, m.y = landing(RANDOM_PLATE)
     end
   end
 
@@ -1133,7 +1272,7 @@ class Dungeon
   def reveal
     (@py - SIGHT..@py + SIGHT).each do |y|
       (@px - SIGHT..@px + SIGHT).each do |x|
-        @seen[y][x] = true if x.between?(0, WIDTH - 1) && y.between?(0, HEIGHT - 1)
+        @seen[y][x] = true if x.between?(0, VIEWPORT_WIDTH - 1) && y.between?(0, VIEWPORT_HEIGHT - 1)
       end
     end
   end
@@ -1151,6 +1290,7 @@ class Dungeon
     elsif [x, y] == @nest then "&"
     elsif @treasure.key?([x, y]) then "$"
     elsif @sandwiches.key?([x, y]) then "%"
+    elsif @plates.key?([x, y]) then @plates[[x, y]]
     elsif [x, y] == @cage&.dig(:plate) then "o"
     else @map[y][x]
     end
@@ -1216,7 +1356,14 @@ class WebGame
         item = (params["item"] || "potions").to_sym
         Dungeon::POTIONS.key?(item) or return [404, {}, "Not found"]
         path == "/quaff" ? @game.quaff(item) : @game.aim(item)
-      when "/read" then @game.read
+      when "/read"
+        item = (params["item"] || "scrolls").to_sym
+        Dungeon::SCROLLS.key?(item) or return [404, {}, "Not found"]
+        @game.read(item)
+      when "/wear"
+        item = params["item"].to_s.to_sym
+        Dungeon::RINGS.key?(item) or return [404, {}, "Not found"]
+        @game.wear(item)
       when "/candle" then @game.candle
       when "/wield" then @game.wield(params["name"])
       when "/throw" then @game.hurl
@@ -1267,10 +1414,11 @@ class WebGame
     end
 
     # One button per knapsack entry: gold and sandwiches ready a gift, eggs are held up to the light, a potion
-    # quaffs (with a throw button beside it), a scroll reads, and a weapon kind wields one of them
+    # quaffs (with a throw button beside it), a scroll reads, a ring is worn, and a weapon kind wields one of them
     packed = @game.contents.map do |text, slot|
       action = if Dungeon::POTIONS.key?(slot) then "/quaff?item=#{slot}"
-               elsif slot == :scrolls then "/read"
+               elsif Dungeon::SCROLLS.key?(slot) then "/read?item=#{slot}"
+               elsif Dungeon::RINGS.key?(slot) then "/wear?item=#{slot}"
                elsif slot == :eggs then "/candle"
                elsif slot.is_a?(Symbol) then "/give?item=#{slot}"
                else "/wield?name=#{URI.encode_www_form_component(slot)}"
@@ -1379,7 +1527,8 @@ Scarpe.app(title: "Scarpe Rogue") do # , width: 560, height: 640) do
       @game.contents.each do |text, slot|
         button(text) do
           if Dungeon::POTIONS.key?(slot) then @game.quaff(slot)
-          elsif slot == :scrolls then @game.read
+          elsif Dungeon::SCROLLS.key?(slot) then @game.read(slot)
+          elsif Dungeon::RINGS.key?(slot) then @game.wear(slot)
           elsif slot == :eggs then @game.candle
           elsif slot.is_a?(Symbol) then @game.offer(slot)
           else @game.wield(slot)

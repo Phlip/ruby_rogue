@@ -1,6 +1,6 @@
-# Run with: ruby rogue.rb
+# Run with: ruby rogue.rb, which plays in the console like the original PC Rogue (the same as --dos)
 # Or in a browser: ruby rogue.rb --web [port], e.g. --web 8080, then open http://localhost:8080/ (default port 4567)
-# Or in the console, like the original PC Rogue: ruby rogue.rb --dos
+# Or in a desktop window, drawn by Scarpe: ruby rogue.rb --scarpe
 # Add --god to any of them for god mode, where the player takes no damage; --help lists all of these
 
 require 'socket'
@@ -17,40 +17,160 @@ class Dungeon
   # own business until the player hits it. A door is a pacifist that turns aggressive on the second hit. An eats
   # kind is a creature with blood sugar, which runs down once it wakes and which a sandwich fills again
 
+  # A lock's Finite State Machine: a door's, and any thingage's whose row has a transitions table. Inserting the key
+  # starts unlocking; pulling it out mid-turn locks up again, while waiting out the timer opens it. Once open,
+  # pulling the key out leaves it open, and only inserting the key locks it. A table of [state, event] => next
+  # state is the one place a machine's shape is written down: TRANSITIONS here, or a row's own transitions
+  module DoorLock
+    module LockEvent
+      KEY        = :key
+      REMOVE_KEY = :remove_key
+      TIMER      = :timer
+    end
+
+    # A state's chores: on_entry as the machine enters it, on_exit as it leaves. Each is handed whatever the
+    # machine's transit was, such as the game and the thingage the machine belongs to
+    class State
+      def on_entry(*); end
+      def on_exit(*); end
+    end
+
+    class LockState < State; end
+    class UnlockingState < State; end
+
+    # What opening was for: action, which each kind of open state overrides
+    class OpenState < State
+      def action(*); end
+    end
+
+    # An open sandwich, unwrapped and edible. Leaving it is eating it, so on_exit runs its action: 2d6 blood sugar
+    # for the eater, and one sandwich gone
+    class SandwichOpenState < OpenState
+      def on_exit(game, food) = action(game, food)
+      def action(game, food) = game.feed(food)
+    end
+
+    TRANSITIONS = {
+      [LockState,      LockEvent::KEY]        => UnlockingState,
+      [UnlockingState, LockEvent::REMOVE_KEY] => LockState,
+      [UnlockingState, LockEvent::TIMER]      => OpenState,
+      [OpenState,      LockEvent::KEY]        => LockState,
+    }.freeze
+
+    # Starts locked, and moves along its table: the old state's on_exit, then the new state's on_entry, each
+    # handed the transit's context. An event its state has no row for changes nothing, not even which state
+    # object it holds
+    class Machine
+      attr_reader :state
+
+      def initialize(transitions = TRANSITIONS)
+        @transitions = transitions
+        @state = LockState.new
+      end
+
+      def transit(event, *context)
+        target = @transitions[[@state.class, event]]
+        return unless target && target != @state.class
+
+        @state.on_exit(*context)
+        @state = target.new
+        @state.on_entry(*context)
+      end
+    end
+  end
+  include DoorLock
+
+  doorLikeTransitions = {[LockState,      LockEvent::KEY]        => UnlockingState,
+                  [UnlockingState, LockEvent::REMOVE_KEY] => LockState,
+                  [UnlockingState, LockEvent::TIMER]      => OpenState,
+                  [OpenState,      LockEvent::KEY]        => LockState,}
+
+
   THINGAGES = [
     { glyph: "@", name: "Ego", na: 1, cr: 1, hp: 15, ac: 15, str: 15, dex: 15, con: 11, int: 15, wis: 15, cha: 14,  hit: 1..8 },
     { glyph: "🗡", # light sword
-      name: "weapon", na: 1, cr: 1, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 10, con: 18, int: 18, wis: 10, cha: 10,  pacifist: 0.66 },
+      name: "weapon", na: 1, cr: 1, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 10, con: 18, int: 18, wis: 10, cha: 10,  pacifist: 0.66,
+      transitions: doorLikeTransitions },
     { glyph: "༺", # shield causes no damage and target wants to go where it nudges
-      name: "weapon", na: 1, cr: 1, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 10, con: 18, int: 18, wis: 10, cha: 10,  pacifist: 0.75 },
+      name: "weapon", na: 1, cr: 1, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 10, con: 18, int: 18, wis: 10, cha: 10,  pacifist: 0.75,
+      transitions: doorLikeTransitions },
     { glyph: "𓆩", # light shield causes d6 damage + str or dex or int benefits, one damage event per round is halved
-      name: "light shield", na: 10, cr: 3, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 10, con: 18, int: 18, wis: 10, cha: 10,  pacifist: 0.66, packable: 3 },
+      name: "light shield", na: 10, cr: 3, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 10, con: 18, int: 18, wis: 10, cha: 10,  pacifist: 0.66, packable: 3,
+      transitions: doorLikeTransitions },
     { glyph: "༒",  #  double-damage to anyone who is currently aggressive to Ego
-      name: "weapon", na: 10, cr: 1, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 10, con: 18, int: 18, wis: 10, cha: 10,  pacifist: 0.65 },
+      name: "weapon", na: 10, cr: 1, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 10, con: 18, int: 18, wis: 10, cha: 10,  pacifist: 0.65,
+      transitions: doorLikeTransitions },
     { glyph: "༻", # shield causes damage yet doubles your protection
-      name: "shield", na: 10, cr: 1, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 18, con: 18, int: 10, wis:  1, cha: 10,  pacifist: 0.5, packable: 6 },
-    { glyph: "R", name: "rat",      na:  8, cr: 1, hp:  3, hit: 1..2, ac: 10, str:  7, dex: 15, con: 11, int:  2, wis: 10, cha:  4, aggressive: true, eats: true },
-    { glyph: "C", name: "coyote",   na:  5, cr: 3, hp:  3, hit: 1..2, ac: 10, str: 17, dex: 15, con: 11, int: 16, wis: 15, cha: 14, aggressive: false, eats: true },
-    { glyph: "G", name: "goblin",   na:  8, cr: 2, hp:  6, hit: 1..4, ac: 10, str:  8, dex: 17, con: 10, int: 13, wis: 15, cha: 10, greedy: 0.5, eats: true },
-    { glyph: "O", name: "orc",      na:  5, cr: 4, hp: 10, hit: 2..6, ac: 15, str: 14, dex: 12, con: 17, int: 15, wis: 10, cha: 10, eats: true },
-    { glyph: "T", name: "troll",    na:  2, cr: 5, hp: 18, hit: 3..8, ac: 15, str: 16, dex: 10, con: 18, int: 10, wis: 10, cha: 10, eats: true },
-    { glyph: "#", name: "wall",     na: 17, cr: 1, hp:  3, hit: 0..0, ac: 10, str: 18, dex:  0, con: 18, int:  0, wis:  0, cha:  0, pacifist: true },
-    { glyph: "#", name: "door",     na:  4, cr: 1, hp: 30, hit: 1..4, ac: 10, str: 18, dex:  0, con: 18, int:  0, wis:  0, cha:  0, pacifist: true, out_of_band: true },
-    { glyph: "$", name: "gold",     na: 15, cr: 2, hp:  3, hit: 0..0, ac: 18, str: 18, dex:  0, con: 18, int:  0, wis:  0, cha:  0, pacifist: true, packable: 0.02 },
-    { glyph: "=", name: "ring of peace",     na:  3, cr: 5, hp: 20, hit: 0..0, ac: 18, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true, packable: 0.1 },
-    { glyph: "=", name: "ring of strength",     na:  3, cr: 5, hp: 20, hit: 0..0, ac: 18, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true, packable: 0.1 },
-    { glyph: "=", name: "ring of protection",   na:  3, cr: 5, hp: 20, hit: 0..0, ac: 18, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true, packable: 0.1 },
-    { glyph: "i", name: "candle",   na: 10, cr: 3, hp:  3, hit: 0..0, ac:  2, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true, packable: 1 },
-    { glyph: "¡", name: "potion",   na: 10, cr: 3, hp:  3, hit: 0..0, ac:  2, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true, packable: 0.5 },
-    { glyph: "?", name: "scroll of mapping", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.1 },
-    { glyph: "!", name: "slow potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5 },
-    { glyph: "!", name: "healing potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5 },
-    { glyph: "!", name: "empty potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5 },
-    { glyph: "~", name: "sandwich",   na: 20, cr: 4, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 1 },
-    { glyph: "?", name: "scroll of 3 potions", na:  1, cr: 6, hp:  3, hit: 0..0, ac:  2, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true, packable: 0.1 },
-    { glyph: "A", name: "Axebeak",    na:  1, cr: 5, hp: 28, hit: 4..9, ac: 15, str: 18, dex: 17, con: 16, int: 15, wis: 14, cha: 13, pacifist: false, eats: true },
-    { glyph: "Q", name: "Quail",    na:  1, cr: 5, hp: 28, hit: 4..9, ac: 15, str: 18, dex: 17, con: 16, int: 15, wis: 14, cha: 13, pacifist: true, eats: true }
+      name: "shield", na: 10, cr: 1, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 18, con: 18, int: 10, wis:  1, cha: 10,  pacifist: 0.5, packable: 6,
+      transitions: doorLikeTransitions },
+    { glyph: "R", name: "rat",      na:  8, cr: 1, hp:  3, hit: 1..2, ac: 10, str:  7, dex: 15, con: 11, int:  2, wis: 10, cha:  4, aggressive: true, eats: true,
+      transitions: doorLikeTransitions },
+    { glyph: "🐿️", name: "squirrel",      na:  8, cr: 1, hp:  3, hit: 1..2, ac: 10, str:  7, dex: 15, con: 11, int:  2, wis: 10, cha:  4, aggressive: true, eats: true,
+      transitions: doorLikeTransitions },
+    { glyph: "C", name: "coyote",   na:  5, cr: 3, hp:  3, hit: 1..2, ac: 10, str: 17, dex: 15, con: 11, int: 16, wis: 15, cha: 14, aggressive: false, eats: true,
+      transitions: doorLikeTransitions },
+    { glyph: "G", name: "goblin",   na:  8, cr: 2, hp:  6, hit: 1..4, ac: 10, str:  8, dex: 17, con: 10, int: 13, wis: 15, cha: 10, greedy: 0.5, eats: true,
+      transitions: doorLikeTransitions },
+    { glyph: "O", name: "orc",      na:  5, cr: 4, hp: 10, hit: 2..6, ac: 15, str: 14, dex: 12, con: 17, int: 15, wis: 10, cha: 10, eats: true,
+      transitions: doorLikeTransitions },
+    { glyph: "T", name: "troll",    na:  2, cr: 5, hp: 18, hit: 3..8, ac: 15, str: 16, dex: 10, con: 18, int: 10, wis: 10, cha: 10, eats: true,
+      transitions: doorLikeTransitions },
+    { glyph: "#", name: "wall",     na: 17, cr: 1, hp:  3, hit: 0..0, ac: 10, str: 18, dex:  0, con: 18, int:  0, wis:  0, cha:  0, pacifist: true,
+      transitions: doorLikeTransitions },
+    { glyph: "#", name: "door",     na:  4, cr: 1, hp: 30, hit: 1..4, ac: 10, str: 18, dex:  0, con: 18, int:  0, wis:  0, cha:  0, pacifist: true, out_of_band: true,
+      transitions: doorLikeTransitions },
+    { glyph: "$", name: "gold",     na: 15, cr: 2, hp:  3, hit: 0..0, ac: 18, str: 18, dex:  0, con: 18, int:  0, wis:  0, cha:  0, pacifist: true, packable: 0.02,
+      transitions: doorLikeTransitions },
+    { glyph: "=", name: "ring of peace",     na:  3, cr: 5, hp: 20, hit: 0..0, ac: 18, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true, packable: 0.1,
+      transitions: doorLikeTransitions },
+    { glyph: "=", name: "ring of strength",     na:  3, cr: 5, hp: 20, hit: 0..0, ac: 18, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true, packable: 0.1,
+      transitions: doorLikeTransitions },
+    { glyph: "=", name: "ring of protection",   na:  3, cr: 5, hp: 20, hit: 0..0, ac: 18, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true, packable: 0.1,
+      transitions: doorLikeTransitions },
+    { glyph: "i", name: "candle",   na: 10, cr: 3, hp:  3, hit: 0..0, ac:  2, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true, packable: 1,
+      transitions: doorLikeTransitions },
+    { glyph: "¡", name: "potion",   na: 10, cr: 3, hp:  3, hit: 0..0, ac:  2, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true, packable: 0.5,
+      transitions: doorLikeTransitions },
+    { glyph: "?", name: "scroll of mapping", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.1,
+      transitions: doorLikeTransitions },
+    { glyph: "!", name: "slow potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
+      transitions: doorLikeTransitions },
+    { glyph: "!", name: "healing potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
+      transitions: doorLikeTransitions },
+    { glyph: "!", name: "empty potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
+      transitions: doorLikeTransitions },
+    { glyph: "~", name: "sandwich",   na: 20, cr: 4, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 1,
+      transitions: {[LockState,      LockEvent::KEY]        => UnlockingState,
+                    [UnlockingState, LockEvent::REMOVE_KEY] => LockState,
+                    [UnlockingState, LockEvent::TIMER]      => SandwichOpenState,
+                    [SandwichOpenState,      LockEvent::KEY]        => LockState,}
+    },
+    { glyph: "?", name: "scroll of 3 potions", na:  1, cr: 6, hp:  3, hit: 0..0, ac:  2, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true, packable: 0.1,
+      transitions: {[LockState,      LockEvent::KEY]        => UnlockingState,
+                    [UnlockingState, LockEvent::REMOVE_KEY] => LockState,
+                    [UnlockingState, LockEvent::TIMER]      => OpenState,
+                    [OpenState,      LockEvent::KEY]        => LockState,}
+    },
+    { glyph: "A", name: "Axebeak",    na:  1, cr: 5, hp: 28, hit: 4..9, ac: 15, str: 18, dex: 17, con: 16, int: 15, wis: 14, cha: 13, pacifist: false, eats: true,
+      transitions: {[LockState,      LockEvent::KEY]        => UnlockingState,
+                    [UnlockingState, LockEvent::REMOVE_KEY] => LockState,
+                    [UnlockingState, LockEvent::TIMER]      => OpenState,
+                    [OpenState,      LockEvent::KEY]        => LockState,}
+    },
+    { glyph: "Q", name: "Quail",    na:  1, cr: 5, hp: 28, hit: 4..9, ac: 15, str: 18, dex: 17, con: 16, int: 15, wis: 14, cha: 13, pacifist: true, eats: true,
+      transitions: {[LockState,      LockEvent::KEY]        => UnlockingState,
+        [UnlockingState, LockEvent::REMOVE_KEY] => LockState,
+      [UnlockingState, LockEvent::TIMER]      => OpenState,
+      [OpenState,      LockEvent::KEY]        => LockState,}
+
+    }
   ]
+
+
+  # The Ego row describes the player, the only Ego there is, so it never spawns as a monster. The player's hit
+  # points, armor class, bare-handed hit, and six ability scores all come from it
+  PLAYER_KIND = "Ego"
+  PLAYER = THINGAGES.find { |k| k[:name] == PLAYER_KIND }
 
   # The creatures, by name, that have blood sugar
   EATERS = THINGAGES.select { |k| k[:eats] }.map { |k| k[:name] }.freeze
@@ -132,9 +252,11 @@ class Dungeon
   # sugar is a creature's blood sugar, nil until it wakes, and starving counts its rounds at zero.
   # The six ability scores come from the kind's THINGAGES row: str adds to every blow it lands, and con to the
   # hit points it spawns with. dex, int, wis and cha are carried along but nothing reads them yet.
-  # slowed counts down the rounds a potion of slowness lasts, and lagging marks the rounds it sits out
+  # slowed counts down the rounds a potion of slowness lasts, and lagging marks the rounds it sits out.
+  # weapon is the WEAPONS entry a cloaked weapon-thingage wields, under its cloak's glyph, name, and scores.
+  # locked marks a door that tapping won't open, and machine is a sandwich's lock, its wrapping
   Thingage = Struct.new(:x, :y, :glyph, :name, :hp, :hit, :str, :dex, :con, :int, :wis, :cha, :pacifist, :spurned, :greedy, :fed, :ally, :coins, :aggressive,
-                        :hasted, :gaseous, :farsighted, :nesting, :sugar, :starving, :slowed, :lagging)
+                        :hasted, :gaseous, :farsighted, :nesting, :sugar, :starving, :slowed, :lagging, :weapon, :locked, :machine)
   ABILITIES = %i[str dex con int wis cha].freeze
 
   # The D&D ability modifier: 10 and 11 give +0, and every two points up or down moves it by one.
@@ -146,14 +268,15 @@ class Dungeon
   # How many turns one sandwich keeps a goblin friendly
   FULL_TURNS = 30
 
-  # What the player swings, and for how much, until they seize something better
+  # What the player swings, and for how much, until they seize something better: the Ego row's hit
   BARE_HANDS = "fists"
-  BARE_HANDS_HIT = 2..6
+  BARE_HANDS_HIT = PLAYER[:hit]
   FISTS = { name: BARE_HANDS, glyph: nil, hit: BARE_HANDS_HIT }.freeze
 
   # Each weapon that spawns is one of these; its THINGAGES row only sets how often, how tough, and how peaceful.
   # A pair is two blades wielded together, so its name is already plural. A ranged weapon is never grabbed into
   # empty hands on defeating it; it goes into the knapsack, to wield when the player chooses
+
   WEAPONS = [
     { name: "dagger", glyph: "🗡️", hit: 3..7, packable: 1 },
     { name: "swords", glyph: "⚔️", hit: 4..10, pair: true, packable: 6 },
@@ -161,23 +284,32 @@ class Dungeon
     { name: "axe",    glyph: "🪓", hit: 5..12, packable: 4 },
   ].freeze
 
+  # A ranged weapon is strung while wielded and unstrung in the knapsack. Marching it strung wears the string: the
+  # first STRUNG_STEPS steps are safe, and after that each step has a SNAP_CHANCE of snapping it, ruining the bow
+  STRUNG_STEPS = 50
+  SNAP_CHANCE = 0.05
+
   # The kinds of shield, by their THINGAGES rows' names. Defeating one packs it; nothing uses a packed one yet
   SHIELDS = ["shield", "light shield"].freeze
 
-  # The hero's armor class: unarmored, as in D&D. Nothing reads it in combat yet
-  HERO_AC = 10
+  # The hero's armor class: the Ego row's. Nothing reads it in combat yet
+  HERO_AC = PLAYER[:ac]
 
-  attr_reader :hp, :max_hp, :ac, :blood_sugar, :knapsack, :depth, :log, :wielded, :ring
+  attr_reader :hp, :max_hp, :ac, :abilities, :blood_sugar, :knapsack, :depth, :log, :wielded, :ring
 
-  # In god mode the player takes no damage; everything else still can
-  def initialize(god: false)
-    @god = god
-    @max_hp = 20
+  # In god mode the player takes no damage; everything else still can. Like a monster's from its row, the
+  # player's hit points are the Ego row's plus its con modifier, though never fewer than 1
+  def initialize(godMode: false)
+    @godMode = godMode
+    @abilities = PLAYER.slice(*ABILITIES).freeze
+    @max_hp = [PLAYER[:hp] + Dungeon.modifier(@abilities[:con]), 1].max
     @ac = HERO_AC
     @hp = @max_hp
     @blood_sugar = MAX_BLOOD_SUGAR
     @starving = 0
     @wielded = FISTS
+    @strung_steps = 0
+    @facing = [1, 0]
     @knapsack = { gold: 0, sandwiches: 0, potions: 0, speed_potions: 0, gas_potions: 0, slow_potions: 0, healing_potions: 0,
                   empty_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0,
                   candles: 0, laced_potions: 0, laced_speed_potions: 0, laced_gas_potions: 0, laced_slow_potions: 0,
@@ -190,6 +322,7 @@ class Dungeon
     @won = false
     @trapped = false
     @depth = 1
+    @deepest = 1
     @log = ["You descend into the dark. Find the stairs (>)."]
     return build_level()
   end
@@ -226,6 +359,10 @@ class Dungeon
   RANDOM_PLATE = "ṯ"
   CAGE_ODDS = 5.0 / 3
 
+  # The chance a level has a random plate, a teleportation trap; it never has more than one, so fewer than one a
+  # level on average
+  TELEPORT_CHANCE = 0.5
+
   # An egg is developed, with legs, wings, and a beak, or just yolk; candled once it's been held up to the light
   Egg = Struct.new(:developed, :candled)
 
@@ -236,8 +373,8 @@ class Dungeon
   # From this depth on, one of the level's Quails nests in a hatchery: a room of its own with a nest of eggs
   HATCHERY_DEPTH = 8
 
-  def god?
-    @god
+  def godMode?
+    @godMode
   end
 
   # The wielded weapon as the banner shows it, e.g. "🗡️ dagger", or just "fists"
@@ -598,9 +735,13 @@ class Dungeon
     end
     @knapsack[:weapons] << @wielded unless @wielded == FISTS
     @wielded = drawn
+    @strung_steps = 0 # a bow strings fresh as it comes out, and unstrings as it goes in
     say "You now wield #{weapon}."
     end_turn
   end
+
+  # Steps marched with a ranged weapon strung, wearing its string
+  attr_reader :strung_steps
 
   # How far a thrown gift can fly
   THROW_RANGE = SIGHT
@@ -638,10 +779,141 @@ class Dungeon
     end_turn
   end
 
-  # Walking into a monster attacks it; walking onto > goes deeper
+  # Chooses a knapsack entry, by the slot contents gives it, for the Throw and Give buttons, without using it, as
+  # its radio button does; choosing takes no turn. A slot the knapsack doesn't hold chooses nothing
+  def choose(slot)
+    @chosen = contents.any? { |_, s| s == slot } ? slot : nil
+  end
+
+  # The chosen entry's slot, while the knapsack still holds one of it
+  def chosen
+    @chosen = nil unless contents.any? { |_, s| s == @chosen }
+    @chosen
+  end
+
+  # What one of a slot's things is called, e.g. "egg", "dagger", or "candle laced with potion of speed"
+  def item_noun(slot)
+    case slot
+    when :gold then "coin"
+    when :sandwiches then "sandwich"
+    when :eggs then "egg"
+    when :candles then "candle"
+    when :shields then @knapsack[:shields].first[:name]
+    when String then slot
+    else LACED.key?(slot) ? "candle laced with #{POTIONS[LACED[slot]][:name]}" : ITEM_NAMES[slot]
+    end
+  end
+
+  # The Throw and Give buttons' full names, e.g. "Throw egg left?", blank until something's chosen
+  def throw_label = "Throw #{chosen ? item_noun(chosen) : "____"} #{DIRECTIONS[@facing]}?"
+  def give_label = "Give #{chosen ? item_noun(chosen) : "____"} #{DIRECTIONS[@facing]}?"
+
+  # Throws the chosen thing the way the player faces. A potion, a laced candle, a coin, or a sandwich flies as its
+  # own throw always has; anything else is tossed
+  def throw_chosen
+    over? and return
+    @throwable = nil
+    slot = chosen or return say("Choose something by its radio button in the knapsack first.")
+    dx, dy = @facing
+    if POTIONS.key?(slot) then throw_potion(slot, dx, dy)
+    elsif LACED.key?(slot)
+      @flinging = :throw
+      fling_candle(slot, dx, dy)
+    elsif GIFTS.key?(slot)
+      @throwable = [slot, dx, dy]
+      hurl
+    else toss(slot, dx, dy)
+    end
+  end
+
+  # Gives the chosen thing to whoever stands the way the player faces. A coin or a sandwich is taken as giving one
+  # always has been; anything else, a creature keeps, wielding a weapon, though a door has no use for it. Giving
+  # takes a turn
+  def give_chosen
+    over? and return
+    @throwable = nil
+    slot = chosen or return say("Choose something by its radio button in the knapsack first.")
+    dx, dy = @facing
+    return give(slot, dx, dy) if GIFTS.key?(slot)
+
+    taker = monster_at(@px + dx, @py + dy) or return say("There's no one there to take it.")
+    noun = item_noun(slot)
+    (gaseous? || mist?(taker)) and return say("The #{noun} passes right through the #{taker.name}. You keep it.")
+    taker.name == "door" and return say("The door has no use for #{a_name(noun)}.")
+
+    thing = take_out(slot)
+    say "You give the #{taker.name} #{a_name(noun)}. It #{keep(taker, thing)}."
+    end_turn
+  end
+
+  # The chance a door at a hallway's end spawns locked, so that tapping it won't open it; a gift still will
+  DOOR_LOCKED_CHANCE = 0.5
+
+  # Each step's direction, as the tap button names it
+  DIRECTIONS = {
+    [0, -1] => "up", [0, 1] => "down", [-1, 0] => "left", [1, 0] => "right",
+    [-1, -1] => "up-left", [1, -1] => "up-right", [-1, 1] => "down-left", [1, 1] => "down-right",
+  }.freeze
+
+  # The way the player last moved, bumped, hit, gave, or threw toward, as [dx, dy]; a new game faces right
+  attr_reader :facing
+
+  # The tap button's full name, e.g. "tap left"
+  def tap_label = "tap #{DIRECTIONS[@facing]}"
+
+  # Taps whatever lies the way the player faces, without violence; tapping takes a turn. An unlocked door swings
+  # open, a locked one only rattles, and anyone else just feels the tap
+  def tap
+    over? and return
+    @throwable = nil
+    @stairs_question = nil
+    @offering = nil
+    x = @px + @facing[0]
+    y = @py + @facing[1]
+    if (m = monster_at(x, y))
+      if gaseous? || mist?(m)
+        say "Your tap passes right through the #{m.name}."
+      elsif m.name == "door" && m.locked
+        say "You tap the door. It rattles, but it's locked."
+      elsif m.name == "door"
+        @monsters.delete(m)
+        say "You tap the door, and it swings open."
+      elsif m.name == "sandwich"
+        unwrap(m, 1)
+      else
+        say "You tap the #{m.name}."
+      end
+    elsif wall?(x, y)
+      say "You tap the wall. It's solid."
+    else
+      say "You tap at empty air."
+    end
+    end_turn
+  end
+
+  # The stairs, by their glyph, and the way each goes. Stepping onto one asks whether to take it
+  STAIRS = { ">" => "down", "<" => "up" }.freeze
+
+  # "down" or "up" while the player stands on stairs they've just been asked about, else nil
+  attr_reader :stairs_question
+
+  # Answers the stairs question: yes takes the stairs, and no stays put; either way the question is gone. Taking
+  # the stairs is the step that reached them, so answering takes no turn of its own
+  def take_stairs(yes)
+    over? and return
+    way = @stairs_question or return
+    @stairs_question = nil
+    return say("You stay where you are.") unless yes
+
+    way == "down" ? descend : ascend
+  end
+
+  # Walking into a monster attacks it; walking onto stairs asks whether to take them
   def move(dx, dy)
     over? and return
     @throwable = nil
+    @stairs_question = nil
+    @facing = [dx, dy] unless dx.zero? && dy.zero?
     if (item = @offering)
       return fling_candle(item, dx, dy) if LACED.key?(item)
 
@@ -662,9 +934,13 @@ class Dungeon
       end
     else
       @px, @py = nx, ny
+      march
       pick_up
       [@px, @py] == @cage&.dig(:plate) and return spring_trap
-      @map[@py][@px] == ">" and return descend
+      if (way = STAIRS[@map[@py][@px]])
+        @stairs_question = way
+        say "You want to go #{way}?"
+      end
       ride_plate
     end
 
@@ -675,6 +951,7 @@ class Dungeon
   def rest
     over? and return
     @throwable = nil
+    @stairs_question = nil
     if @offering
       item = @offering
       @offering = nil
@@ -687,15 +964,30 @@ class Dungeon
     end_turn
   end
 
-  # Eating a sandwich from the knapsack takes a turn, at the end of which the player's blood sugar is full again
+  # Eating a sandwich from the knapsack wants low blood sugar; a refusal takes no turn. A packed sandwich counts
+  # as open, so eating takes a turn and then does what leaving SandwichOpenState does: its action
   def eat
-    @knapsack[:sandwiches] -= 1
+    peckish? or return say("Your blood sugar isn't low enough to want a sandwich.")
+
     end_turn
     return if over?
 
-    @blood_sugar = MAX_BLOOD_SUGAR
+    DoorLock::SandwichOpenState.new.action(self, nil)
+  end
+
+  # Below this, the player wants a sandwich
+  LOW_BLOOD_SUGAR = 50
+
+  def peckish? = @blood_sugar < LOW_BLOOD_SUGAR
+
+  # A sandwich eaten, as SandwichOpenState's action has it: 2d6 blood sugar, up to the most there is, and that
+  # sandwich gone, from the floor or, with none given, from the knapsack
+  def feed(food)
+    gain = rand(1..6) + rand(1..6)
+    @blood_sugar = [@blood_sugar + gain, MAX_BLOOD_SUGAR].min
     @starving = 0
-    say "You eat a sandwich. Your blood sugar is back to #{MAX_BLOOD_SUGAR}."
+    food ? @monsters.delete(food) : @knapsack[:sandwiches] -= 1
+    say "You eat the sandwich. Your blood sugar rises by #{gain}, to #{@blood_sugar}."
   end
 
   def hungry? = @blood_sugar.zero?
@@ -771,19 +1063,23 @@ class Dungeon
     # Carved first so it fits, the cage room moves second, so the player doesn't start in it
     @rooms.insert(1, @rooms.shift) if caged && @rooms.size >= 3
 
+    # The player starts on the < that climbs back up, on every level but the first
     @px, @py = center(@rooms.first)
+    @map[@py][@px] = "<" if @depth > 1
     sx, sy = center(@rooms.last)
     @map[sy][sx] = ">"
+    @downstairs = [sx, sy]
 
     @treasure = {}
     @sandwiches = {}
     @monsters = []
     @detected = []
     @population = Hash.new(0)
-    # Plates go down first, so nothing else lands on one: a random plate in about one room in four past the first,
-    # and a cage plate in one room that's neither the first nor the cage room
+    # Plates go down first, so nothing else lands on one: on TELEPORT_CHANCE of the levels, a random plate in one room
+    # past the first, and a cage plate in one room that's neither the first nor the cage room
     @plates = {}
-    @rooms.drop(1).each { |room| @plates[free_spot(room)] = RANDOM_PLATE if rand(4).zero? }
+    teleported = @rooms.drop(1).sample if rand < TELEPORT_CHANCE
+    @plates[free_spot(teleported)] = RANDOM_PLATE if teleported
     plated = (@rooms.drop(1) - [@cage_room]).sample if @cage_room
     @plates[free_spot(plated)] = CAGE_PLATE if plated
     @rooms.drop(1).each do |room|
@@ -812,7 +1108,10 @@ class Dungeon
 
     # A few doors, living walls, stand at the ends of hallways where a tunnel meets a room; food or a coin opens one
     door = THINGAGES.find { |k| k[:name] == "door" }
-    hallway_ends.sample(rand(2..door[:na])).each { |spot| spawn_monster(nil, door, at: spot) }
+    hallway_ends.sample(rand(2..door[:na])).each do |spot|
+      spawn_monster(nil, door, at: spot)
+      @monsters.last.locked = rand < DOOR_LOCKED_CHANCE
+    end
 
     reveal
   end
@@ -934,32 +1233,45 @@ class Dungeon
   def free_spot(room)
     loop do
       spot = [rand(room[:x]...room[:x] + room[:w]), rand(room[:y]...room[:y] + room[:h])]
-      next if spot == [@px, @py] || @map[spot[1]][spot[0]] == ">" || spot == @cage&.dig(:plate)
+      next if spot == [@px, @py] || STAIRS.key?(@map[spot[1]][spot[0]]) || spot == @cage&.dig(:plate)
       next if @treasure.key?(spot) || @sandwiches.key?(spot) || @plates.key?(spot) || monster_at(*spot)
 
       return spot
     end
   end
 
-  # The Ego row describes the player, the only Ego there is, so it never spawns as a monster
-  PLAYER_KIND = "Ego"
-
   # Picks a kind whose cr this depth has reached and whose na this level hasn't filled, skipping the unique
   # (na: 1) and out_of_band kinds; when none is left, nothing spawns. Naming a kind places it regardless, uniques
   # included, though it still counts toward its na; the Ego alone never spawns. It lands on a free spot in the
-  # room, or exactly at the given spot
+  # room, or exactly at the given spot.
+  # A weapon row spawns one of the WEAPONS, cloaked as a creature of this depth: it shows that creature's glyph and
+  # name, has its hit points, scores, and temper, and wields the weapon, hitting for its range. It lies dormant
+  # until woken, then fights as that creature, weapon in hand; defeating it drops the weapon
   def spawn_monster(room, kind = nil, at: nil)
     kind ||= THINGAGES.select { |k| k[:na] > 1 && !k[:out_of_band] && k[:cr] <= @depth && @population[k[:name]] < k[:na] }.sample
     (kind && kind[:name] != PLAYER_KIND) or return
 
     @population[kind[:name]] += 1
     x, y = at || free_spot(room)
-    pacifist = kind[:pacifist].is_a?(Float) ? rand < kind[:pacifist] : kind[:pacifist]
-    look = kind[:name] == "weapon" ? WEAPONS.sample : kind
-    greedy = kind[:greedy] && rand < kind[:greedy]
-    hp = [kind[:hp] + @depth + Dungeon.modifier(kind[:con]), 1].max
-    @monsters << Thingage.new(x, y, look[:glyph], look[:name], hp, look[:hit], *kind.values_at(*ABILITIES), pacifist, nil, greedy)
-                         .tap { |t| t.aggressive = kind[:aggressive] == true }
+    weapon = WEAPONS.sample if kind[:name] == "weapon"
+    body = weapon ? cloak_for(@depth) : kind
+    pacifist = weapon ? false : kind[:pacifist].is_a?(Float) ? rand < kind[:pacifist] : kind[:pacifist]
+    greedy = body[:greedy] && rand < body[:greedy]
+    hp = [body[:hp] + @depth + Dungeon.modifier(body[:con]), 1].max
+    @monsters << Thingage.new(x, y, body[:glyph], body[:name], hp, (weapon || body)[:hit], *body.values_at(*ABILITIES), pacifist, nil, greedy)
+                         .tap { |t| t.aggressive = body[:aggressive] == true }
+                         .tap { |t| t.weapon = weapon }
+  end
+
+  # The creatures a dormant weapon cloaks itself as
+  # TODO  make this work:  CLOAKS = %w[rat 🐿 wren coyote goblin troll axebeak].freeze
+  CLOAKS = %w[rat squirrel wren coyote goblin troll axebeak].freeze
+
+  # The cloak of the appropriate challenge rating for a depth: the toughest whose cr the depth has reached, or,
+  # shallower than all of t4hem, the mildest
+  def cloak_for(depth)
+    cloaks = THINGAGES.select { |k| CLOAKS.include?(k[:name]) }
+    cloaks.select { |k| k[:cr] <= depth }.max_by { |k| k[:cr] } || cloaks.min_by { |k| k[:cr] }
   end
 
   # One blow from a thingage: its hit roll plus its strength modifier. A blow that can land at all does at
@@ -981,12 +1293,14 @@ class Dungeon
   # The first hit on a pacifist also spurns it; the second on a door makes it give up its pacifism and fight
   def attack(foe)
     dmg = rand(weapon_hit)
+    return unwrap(foe, dmg) if foe.name == "sandwich"
+
     foe.hp -= dmg
     provoked = !foe.pacifist && !foe.aggressive
     foe.aggressive = true unless foe.pacifist
     if foe.hp <= 0
       @monsters.delete(foe)
-      return seize(foe) if WEAPONS.any? { |w| w[:name] == foe.name }
+      return seize(foe) if foe.weapon || WEAPONS.any? { |w| w[:name] == foe.name }
       return stow(foe) if SHIELDS.include?(foe.name) || PACKABLE.key?(foe.name)
 
       say "You defeat the #{foe.name}!"
@@ -1018,6 +1332,75 @@ class Dungeon
 
     say "You give the #{taker.name} #{GIFTS[item]}. It #{receive(taker, item)}."
     end_turn
+  end
+
+  # Takes one thing out of a knapsack slot and returns it: an egg, a weapon, or a shield as itself, and anything
+  # counted as its slot
+  def take_out(slot)
+    case slot
+    when :eggs then @knapsack[:eggs].shift
+    when :shields then @knapsack[:shields].shift
+    when String then @knapsack[:weapons].delete_at(@knapsack[:weapons].index { |w| w[:name] == slot })
+    else
+      @knapsack[slot] -= 1
+      slot
+    end
+  end
+
+  # A creature keeps what it's given or catches. A weapon it wields from then on, hitting for its range, and
+  # drops when defeated
+  def keep(taker, thing)
+    return "keeps it" unless thing.is_a?(Hash) && thing[:hit]
+
+    taker.weapon = thing
+    taker.hit = thing[:hit]
+    "wields it"
+  end
+
+  # Tosses anything with no throw of its own up to THROW_RANGE that way. The first touchable creature in its path
+  # catches and keeps it, wielding a weapon; a wall or a door stops it short. Landing, an egg breaks, and anything
+  # else lies there as itself, to pack again, or, a weapon or a shield, to defeat and take again. Tossing takes a
+  # turn
+  def toss(slot, dx, dy)
+    noun = item_noun(slot)
+    x, y = @px, @py
+    landing = nil
+    catcher = nil
+    THROW_RANGE.times do
+      ahead = monster_at(x + dx, y + dy)
+      break if wall?(x + dx, y + dy) || ahead&.name == "door"
+
+      x += dx
+      y += dy
+      break if (catcher = ahead) && !mist?(ahead)
+
+      catcher = nil
+      landing = [x, y] unless ahead # nothing lands on a misty thing it sails through
+    end
+    return say("Something is in the way. You keep the #{noun}.") if catcher.nil? && landing.nil?
+
+    thing = take_out(slot)
+    if catcher
+      say "You throw #{a_name(noun)}, and the #{catcher.name} catches it. It #{keep(catcher, thing)}."
+    elsif slot == :eggs
+      say "You throw an egg, and it breaks on the floor."
+    else
+      drop(thing, slot, *landing)
+      say "You throw #{a_name(noun)}, and it lands on the floor."
+    end
+    end_turn
+  end
+
+  # A tossed thing lying at x, y, as a thingage of its own: walking into it packs it again, or, for a weapon or a
+  # shield, strikes it, and defeating it seizes or stows it
+  def drop(thing, slot, x, y)
+    name, glyph, hit =
+      case slot
+      when String, :shields then [thing[:name], thing[:glyph], thing[:hit] || (0..0)]
+      else [ITEMS[slot][:row], ITEMS[slot][:glyph], 0..0]
+      end
+    row = THINGAGES.find { |k| k[:name] == name } || THINGAGES.find { |k| k[:name] == "weapon" }
+    @monsters << Thingage.new(x, y, glyph, name, 1, hit, *row.values_at(*ABILITIES), true)
   end
 
   # Throws a potion up to THROW_RANGE that way: the first touchable character in its path catches it and gains
@@ -1165,7 +1548,7 @@ class Dungeon
   # rounds cost a hit point, which can starve them to death
   def hunger
     if hungry?
-      if (@starving += 1) % STARVE_ROUNDS == 0 && !god?
+      if (@starving += 1) % STARVE_ROUNDS == 0 && !godMode?
         @hp -= 1
         say "You're starving and lose a hit point."
         say "You starve to death on depth #{@depth} with #{gold} gold." if @hp <= 0
@@ -1190,6 +1573,45 @@ class Dungeon
     end
   end
 
+  # One step marched. With a ranged weapon strung in hand, it wears the string, which past STRUNG_STEPS may snap
+  # at random, ruining the weapon and leaving the player bare-handed
+  def march
+    return unless @wielded[:ranged]
+
+    @strung_steps += 1
+    return unless @strung_steps > STRUNG_STEPS && rand < SNAP_CHANCE
+
+    name = @wielded[:name]
+    @wielded = FISTS
+    @strung_steps = 0
+    say "Strung too long on the march, your #{name}'s string snaps, and the #{name} breaks! You're down to your fists."
+  end
+
+  # A sandwich lying about has a lock for its wrapping, built from its row's transitions table
+  def food_machine(food)
+    food.machine ||= DoorLock::Machine.new(THINGAGES.find { |k| k[:name] == "sandwich" }[:transitions])
+  end
+
+  # Taps and blows wear a sandwich's wrapping down along its table. The first touch starts unwrapping it (KEY),
+  # every touch takes that much of its hit points, and with none left it's open, and edible (TIMER). Touching an
+  # open sandwich is eating it, when the player is peckish: KEY again, leaving SandwichOpenState for the lock, so
+  # its on_exit runs its action
+  def unwrap(food, damage)
+    machine = food_machine(food)
+    if machine.state.is_a?(DoorLock::OpenState)
+      peckish? or return say("The sandwich is open and edible, but your blood sugar isn't low enough to want it.")
+
+      return machine.transit(DoorLock::LockEvent::KEY, self, food)
+    end
+
+    machine.transit(DoorLock::LockEvent::KEY, self, food) if machine.state.is_a?(DoorLock::LockState)
+    food.hp -= damage
+    return say("You work at the sandwich's wrapping.") if food.hp.positive?
+
+    machine.transit(DoorLock::LockEvent::TIMER, self, food)
+    say "The sandwich's wrapping gives way. It's open, and edible."
+  end
+
   # Defeating a shield, or a potion or any other packable thing, packs it into the knapsack, room allowing; with no
   # room, it's left behind
   def stow(foe)
@@ -1206,22 +1628,25 @@ class Dungeon
     say "You defeat the #{foe.name} and pack it into your knapsack."
   end
 
-  # Defeating a weapon seizes it. Empty hands wield it: it shows in the banner and its hit range becomes the player's.
-  # A player already wielding one, or seizing a ranged one, packs it into the knapsack instead, room allowing; it
-  # keeps the packable weight and ranged flag from its WEAPONS entry
+  # Defeating a weapon seizes it, and defeating a cloaked one seizes the weapon it wielded. Empty hands wield it: it
+  # shows in the banner and its hit range becomes the player's. A player already wielding one, or seizing a ranged
+  # one, packs it into the knapsack instead, room allowing; it keeps the packable weight and ranged flag from its
+  # WEAPONS entry
   def seize(foe)
-    found = { name: foe.name, glyph: foe.glyph, hit: foe.hit }.merge(WEAPONS.find { |w| w[:name] == foe.name }&.slice(:packable, :ranged) || {})
+    held = foe.weapon || { name: foe.name, glyph: foe.glyph, hit: foe.hit }
+    found = held.slice(:name, :glyph, :hit).merge(WEAPONS.find { |w| w[:name] == held[:name] }&.slice(:packable, :ranged) || {})
+    them = pair?(found[:name]) ? "them" : "it"
+    what = foe.weapon ? "its #{found[:name]}" : them
     if @wielded != FISTS || found[:ranged]
-      them = pair?(foe.name) ? "them" : "it"
       room_for?(weapon_pounds(found)) or
-        return say("You defeat the #{foe.name}, but your knapsack is too full to carry #{them}, so you leave #{them} behind.")
+        return say("You defeat the #{foe.name}, but your knapsack is too full to carry #{what}, so you leave #{them} behind.")
 
       @knapsack[:weapons] << found
-      return say("You defeat the #{foe.name} and pack #{pair?(foe.name) ? "them" : "it"} into your knapsack.")
+      return say("You defeat the #{foe.name} and pack #{what} into your knapsack.")
     end
 
     @wielded = found
-    say "You defeat the #{foe.name} and seize #{pair?(foe.name) ? "them" : "it"}! You now wield #{weapon}."
+    say "You defeat the #{foe.name} and seize #{what}! You now wield #{weapon}."
   end
 
   def a_name(name)
@@ -1325,14 +1750,29 @@ class Dungeon
   end
 
   # Everyone on the player's side in the stairs' room comes down with them, landing in the new level's first room
+  # Only reaching a new deepest level toughens the player, so climbing up and down again earns nothing
   def descend
     party = side_in_room
     @depth += 1
-    @max_hp += 2
-    @hp = [@hp + 5, @max_hp].min
+    if @depth > @deepest
+      @deepest = @depth
+      @max_hp += 2
+      @hp = [@hp + 5, @max_hp].min
+    end
     say "You take the stairs down to depth #{@depth}."
     build_level
-    bring_down(party)
+    bring_along(party, @rooms.first, "down")
+  end
+
+  # Climbing the < builds a fresh level one up, and the player arrives on its > stairs, their side coming along
+  def ascend
+    party = side_in_room
+    @depth -= 1
+    say "You climb the stairs up to depth #{@depth}."
+    build_level
+    @px, @py = @downstairs
+    reveal
+    bring_along(party, @rooms.last, "up")
   end
 
   # The player's side: allies, goblins still full from a sandwich, and a Quail following along, unspurned and off
@@ -1348,15 +1788,16 @@ class Dungeon
     x.between?(r[:x], r[:x] + r[:w] - 1) && y.between?(r[:y], r[:y] + r[:h] - 1)
   end
 
-  def bring_down(party)
+  # The party lands in that room of the new level, beside wherever the player arrived
+  def bring_along(party, room, way)
     return if party.empty?
 
     party.each do |m|
-      m.x, m.y = free_spot(@rooms.first)
+      m.x, m.y = free_spot(room)
       @monsters << m
     end
     names = and_list(party.map { |m| "the #{m.name}" })
-    say "#{names[0].upcase}#{names[1..]} #{party.size == 1 ? "follows" : "follow"} you down."
+    say "#{names[0].upcase}#{names[1..]} #{party.size == 1 ? "follows" : "follow"} you #{way}."
   end
 
   # Ends one player action. A hasted player gets two actions per round, so only every second one lets
@@ -1424,10 +1865,11 @@ class Dungeon
       return if m.pacifist || friend?(m) || mist?(m) || gaseous?
 
       dmg = blow(m)
-      return say("The #{m.name} hits you for #{dmg}, but you take no damage.") if god?
+      with = " with its #{m.weapon[:name]}" if m.weapon
+      return say("The #{m.name} hits you#{with} for #{dmg}, but you take no damage.") if godMode?
 
       @hp -= dmg
-      say "The #{m.name} hits you for #{dmg}."
+      say "The #{m.name} hits you#{with} for #{dmg}."
       say("You die on depth #{@depth} with #{gold} gold.") if over?
     else
       return if gaseous? && !friend?(m) && !follower?(m) # nothing hostile bothers chasing mist
@@ -1550,8 +1992,8 @@ class WebGame
   attr_reader :game
 
   def initialize(god: false)
-    @god = god
-    @game = Dungeon.new(god: @god)
+    @godMode = god
+    @game = Dungeon.new(godMode: @godMode)
   end
 
   def serve(port)
@@ -1583,6 +2025,13 @@ class WebGame
       case path
       when "/move" then @game.move(params["dx"].to_i.clamp(-1, 1), params["dy"].to_i.clamp(-1, 1))
       when "/rest" then @game.rest
+      when "/tap" then @game.tap
+      when "/choose"
+        slot = @game.contents.map(&:last).find { |s| s.to_s == params["item"] } or return [404, {}, "Not found"]
+        @game.choose(slot)
+      when "/throw_chosen" then @game.throw_chosen
+      when "/give_chosen" then @game.give_chosen
+      when "/stairs" then @game.take_stairs(params["answer"] == "yes")
       when "/give"
         item = params["item"].to_s.to_sym
         Dungeon::GIFTS.key?(item) or return [404, {}, "Not found"]
@@ -1612,7 +2061,7 @@ class WebGame
         @game.fling(item, how)
       when "/wield" then @game.wield(params["name"])
       when "/throw" then @game.hurl
-      when "/new"  then @game = Dungeon.new(god: @god)
+      when "/new"  then @game = Dungeon.new(godMode: @godMode)
       else return [404, {}, "Not found"]
       end
       return [303, { "Location" => "/" }, ""]
@@ -1661,7 +2110,7 @@ class WebGame
     # One button per knapsack entry: gold and sandwiches ready a gift, eggs are held up to the light, a potion
     # quaffs (with throw and pour-into-a-candle buttons beside it), a laced candle is thrown (with a kick button
     # beside it), a scroll reads, a ring is worn, and a weapon kind wields one of them. Plain candles just wait
-    packed = @game.contents.map do |text, slot|
+    entry_for = lambda do |text, slot|
       next %(<span>#{h text}</span>) if %i[candles shields].include?(slot)
 
       if Dungeon::LACED.key?(slot)
@@ -1685,6 +2134,21 @@ class WebGame
       %(<div style="display: flex; gap: 4px;">#{entry}#{thrower}#{pourer}</div>)
     end
 
+    # Each entry's radio button chooses it for the Throw and Give buttons without using it
+    packed = @game.contents.map do |text, slot|
+      chooser = %(<form method="post" action="/choose?item=#{URI.encode_www_form_component(slot.to_s)}">) +
+                %(<input type="radio" name="chosen" aria-label="choose #{h text}" onchange="this.form.submit()") +
+                %(#{" checked" if @game.chosen == slot}></form>)
+      %(<div style="display: flex; gap: 4px; align-items: center;">#{chooser}#{entry_for.(text, slot)}</div>)
+    end
+
+    # Standing on stairs, the question and its answers come before the pad, so that y and n answer it
+    stairs = if (way = @game.stairs_question)
+               %(<div class="stairs">You want to go #{way}? ) +
+                 %(<form method="post" action="/stairs?answer=yes"><button data-keys="y" style="width: auto">Yes (y)</button></form>) +
+                 %(<form method="post" action="/stairs?answer=no"><button data-keys="n" style="width: auto">No (n)</button></form></div>)
+             end
+
     <<~HTML
       <!DOCTYPE html>
       <html>
@@ -1695,6 +2159,8 @@ class WebGame
           body { background: #111; color: #ddd; font-family: sans-serif; }
           pre { font-size: 15px; line-height: 1.1; overflow-x: auto; }
           .pad { display: grid; grid-template-columns: repeat(3, 60px); gap: 4px; }
+          .pad-row { display: flex; align-items: center; gap: 8px; }
+          .stairs { display: flex; align-items: center; gap: 4px; }
           form { margin: 0; }
           button { width: 100%; }
           .below { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 16px; }
@@ -1706,14 +2172,22 @@ class WebGame
       </head>
       <body style="width: 100%;">
         <main>
-        <p>#{"#{@game.outcome} &nbsp; " unless @game.outcome.empty?}#{"GOD MODE &nbsp; " if @game.god?}#{"#{h @game.effects} &nbsp; " unless @game.effects.empty?}HP #{@game.hp}/#{@game.max_hp} &nbsp; AC #{@game.ac} &nbsp; Weapon #{h @game.weapon} &nbsp; Blood sugar #{@game.blood_sugar} &nbsp; Gold #{@game.gold} &nbsp; Sandwiches #{@game.sandwiches} &nbsp; #{@game.load_text} &nbsp; Depth #{@game.depth}</p>
+        <p>#{"#{@game.outcome} &nbsp; " unless @game.outcome.empty?}#{"GOD MODE &nbsp; " if @game.godMode?}#{"#{h @game.effects} &nbsp; " unless @game.effects.empty?}HP #{@game.hp}/#{@game.max_hp} &nbsp; AC #{@game.ac} &nbsp; Weapon #{h @game.weapon} &nbsp; Blood sugar #{@game.blood_sugar} &nbsp; Gold #{@game.gold} &nbsp; Sandwiches #{@game.sandwiches} &nbsp; #{@game.load_text} &nbsp; Depth #{@game.depth}</p>
         <pre>#{map_html}</pre>
         <p>#{@game.log.map { |line| h line }.join("<br>")}</p>
         <!-- The map spans the page like a lintel over two posts: the move pad lower left, the knapsack lower right -->
         <div class="below">
           <div class="controls">
             #{%(<form method="post" action="/throw"><button data-keys="t" style="width: auto">throw (t)</button></form>) if @game.can_hurl?}
-            <div class="pad">#{buttons.join}</div>
+            #{stairs}
+            <div class="pad-row">
+              <div class="pad">#{buttons.join}</div>
+              <div class="controls">
+                <form method="post" action="/tap"><button data-keys="f" style="width: auto">#{h @game.tap_label} (f)</button></form>
+                <form method="post" action="/throw_chosen"><button data-keys="x" style="width: auto">#{h @game.throw_label} (x)</button></form>
+                <form method="post" action="/give_chosen"><button data-keys="g" style="width: auto">#{h @game.give_label} (g)</button></form>
+              </div>
+            </div>
             <form method="post" action="/inventory"><button data-keys="i" style="width: auto">Inventory (i)</button></form>
             <form method="post" action="/wield"><button data-keys="w" style="width: auto">Wield (w)</button></form>
           </div>
@@ -1768,6 +2242,7 @@ class DosBox
     "T" => [:throw, "Throw which item?"],
     "K" => [:kick,  "Kick which laced candle?"],
     "P" => [:pour,  "Pour which potion into a candle?"],
+    "s" => [:choose, "Select which item to throw or give?"],
   }.freeze
 
   HELP = [
@@ -1784,6 +2259,10 @@ class DosBox
     "$: give a coin",
     "%: give sandwich",
     "t: throw the gift",
+    "f: tap",
+    "s: select an item",
+    "x: throw selected",
+    "g: give selected",
     "?: knapsack/keys",
     "N: new game",
     "Q: quit",
@@ -1795,8 +2274,8 @@ class DosBox
   attr_reader :game
 
   def initialize(god: false)
-    @god = god
-    @game = Dungeon.new(god: @god)
+    @godMode = god
+    @game = Dungeon.new(godMode: @godMode)
     @pending = nil
     @note = nil
     @error = nil
@@ -1842,11 +2321,15 @@ class DosBox
     return answer(key) if @pending
     return @help = !@help if key == "?"
     return play_again(key) if @game.over? || @error
+    return @game.take_stairs(%w[y Y].include?(key)) if @game.stairs_question && %w[y Y n].include?(key)
 
     case key
     when "i" then @game.inventory
     when "w" then @game.wield
     when "t" then @game.hurl
+    when "f" then @game.tap
+    when "x" then @game.throw_chosen
+    when "g" then @game.give_chosen
     when "$" then @game.offer(:gold)
     when "%" then @game.offer(:sandwiches)
     else
@@ -1919,23 +2402,29 @@ class DosBox
   def status
     g = @game
     banner = g.outcome.empty? ? "" : "#{ESC}[7m #{g.outcome} #{ESC}[0m "
-    "#{banner}#{"GOD MODE  " if g.god?}#{"#{g.effects}  " unless g.effects.empty?}HP #{g.hp}/#{g.max_hp}  AC #{g.ac}  " \
+    "#{banner}#{"GOD MODE  " if g.godMode?}#{"#{g.effects}  " unless g.effects.empty?}HP #{g.hp}/#{g.max_hp}  AC #{g.ac}  " \
       "Weapon #{g.weapon}  Blood sugar #{g.blood_sugar}  Gold #{g.gold}  Sandwiches #{g.sandwiches}  #{g.load_text}  Depth #{g.depth}"
   end
 
-  # The knapsack, each entry lettered for the prompts, or the keys while ? shows them
+  # The knapsack, each entry lettered for the prompts, or the keys while ? shows them, the tap key named for the
+  # way the player faces
   def panel_lines
-    return HELP if @help
+    return HELP.map { |line| line == "f: tap" ? "f: #{@game.tap_label}" : line } if @help
 
+    # The tap, Throw, and Give keys are always on show, as the other views always show their buttons
+    buttons = ["f: #{@game.tap_label}", "x: #{@game.throw_label}", "g: #{@game.give_label}"]
     packed = @game.contents
-    return ["Knapsack: empty", "? lists the keys"] if packed.empty?
+    return ["Knapsack: empty", "? lists the keys"] + buttons if packed.empty?
 
-    ["Knapsack:"] + packed.each_with_index.map { |(text, _), i| "#{(97 + i).chr}) #{text}" }
+    ["Knapsack:"] + packed.each_with_index.map do |(text, slot), i|
+      "#{(97 + i).chr}) #{"(*) " if @game.chosen == slot}#{text}"
+    end + buttons
   end
 
   def prompt
     return "#{PROMPTS.values.to_h[@pending]} (#{letters}, Esc cancels)" if @pending
     return "#{ending} Play again? (y/n)" if @error || @game.over?
+    return "You want to go #{@game.stairs_question}? (y/n)" if @game.stairs_question
     return @note if @note
     return "Then an arrow sends it that way, or . keeps it" if @game.log.last.to_s.end_with?("which way?")
 
@@ -1959,7 +2448,7 @@ class DosBox
   end
 
   def replay
-    @game = Dungeon.new(god: @god)
+    @game = Dungeon.new(godMode: @godMode)
     @error = nil
     @pending = nil
   end
@@ -2001,6 +2490,7 @@ class DosBox
       Dungeon::LACED.key?(slot) ? @game.fling(slot, :kick) : @note = "Only a laced candle can be kicked."
     when :pour
       Dungeon::POTIONS.key?(slot) ? @game.pour(slot) : @note = "Only a potion can be poured into a candle."
+    when :choose then @game.choose(slot)
     end
   end
 
@@ -2015,13 +2505,13 @@ end
 USAGE = <<~TEXT
   Quail on the Run, a roguelike
 
-  Usage: ruby rogue.rb [--web [port] | --dos] [--god]
+  Usage: ruby rogue.rb [--dos | --web [port] | --scarpe] [--god]
          ruby rogue.rb --help
 
-    (no flags)    play in a desktop window, drawn by Scarpe
-    --web [port]  play in a browser instead, at http://localhost:port/ (port 1-65535, default 4567)
     --dos         play right here in the console, like the original PC Rogue: ANSI driver commands, OEM glyphs,
-                  and Rogue's keys (? lists them)
+                  and Rogue's keys (? lists them). This is the default, with no front end named
+    --web [port]  play in a browser instead, at http://localhost:port/ (port 1-65535, default 4567)
+    --scarpe      play in a desktop window, drawn by Scarpe
     --god         god mode: the player takes no damage
     -h, --help    show this help and exit
 TEXT
@@ -2032,8 +2522,9 @@ GOD = ARGV.include?("--god")
 
 if $PROGRAM_NAME == __FILE__ && (ARGV & %w[--help -h]).any?
   puts USAGE
-elsif $PROGRAM_NAME == __FILE__ && ARGV.include?("--dos")
-  DosBox.new(god: GOD).play
+elsif $PROGRAM_NAME == __FILE__ && (ARGV.include?("--dos") || (ARGV & %w[--web --scarpe]).empty?)
+  # The console is the default: --dos, or no front end named at all
+  DosBox.new(godMode: GOD).play
 elsif $PROGRAM_NAME == __FILE__ && ARGV.include?("--web")
   # The port is whatever follows --web, defaulting to 4567; another flag such as --god there means no port given
   arg = ARGV[ARGV.index("--web") + 1]
@@ -2041,13 +2532,13 @@ elsif $PROGRAM_NAME == __FILE__ && ARGV.include?("--web")
   port = arg ? Integer(arg, exception: false) : 4567
   abort "Usage: ruby rogue.rb --web [port] [--god], where port is 1-65535 (got #{arg.inspect})" unless port&.between?(1, 65_535)
 
-  WebGame.new(god: GOD).serve(port)
+  WebGame.new(godMode: GOD).serve(port)
 elsif $PROGRAM_NAME == __FILE__
 
 gem 'scarpe' # '0.1.0'
 require 'scarpe'
 Scarpe.app(title: "Scarpe Rogue") do # , width: 560, height: 640) do
-  @game = Dungeon.new(god: GOD)
+  @game = Dungeon.new(godMode: GOD)
 
   @status = stack(size: 1){}
   # Newlines become <br>, but runs of spaces still collapse, so blanks go in as non-breaking spaces
@@ -2058,7 +2549,33 @@ Scarpe.app(title: "Scarpe Rogue") do # , width: 560, height: 640) do
   #  make aggressive things attack the TODO weapon and the mobile wall
 
   redraw = lambda do
-    @status.replace "#{"#{@game.outcome}   " unless @game.outcome.empty?}#{"GOD MODE   " if @game.god?}#{"#{@game.effects}   " unless @game.effects.empty?}HP #{@game.hp}/#{@game.max_hp}   AC #{@game.ac}   Weapon #{@game.weapon}   Blood sugar #{@game.blood_sugar}   Gold #{@game.gold}   Sandwiches #{@game.sandwiches}   #{@game.load_text}   Depth #{@game.depth}"
+    # Beside the arrows: the stairs question while it's asked, then tap, Throw, and Give, each named afresh
+    @tap&.clear do
+      if (way = @game.stairs_question)
+        para "You want to go #{way}?"
+        button("Yes") do
+          @game.take_stairs(true)
+          redraw.call
+        end
+        button("No") do
+          @game.take_stairs(false)
+          redraw.call
+        end
+      end
+      button(@game.tap_label) do
+        @game.tap
+        redraw.call
+      end
+      button(@game.throw_label) do
+        @game.throw_chosen
+        redraw.call
+      end
+      button(@game.give_label) do
+        @game.give_chosen
+        redraw.call
+      end
+    end
+    @status.replace "#{"#{@game.outcome}   " unless @game.outcome.empty?}#{"GOD MODE   " if @game.godMode?}#{"#{@game.effects}   " unless @game.effects.empty?}HP #{@game.hp}/#{@game.max_hp}   AC #{@game.ac}   Weapon #{@game.weapon}   Blood sugar #{@game.blood_sugar}   Gold #{@game.gold}   Sandwiches #{@game.sandwiches}   #{@game.load_text}   Depth #{@game.depth}"
     # Hungry creatures go in as colored spans between the plain runs of the map
     pieces = @game.map_runs.each_with_index.flat_map do |runs, y|
       row = runs.map do |text, hungry|
@@ -2073,6 +2590,11 @@ Scarpe.app(title: "Scarpe Rogue") do # , width: 560, height: 640) do
     # kind wields one of them
     @packed.clear do
       @game.contents.each do |text, slot|
+        # A radio button of sorts: it chooses the entry for Throw and Give without using it
+        button(@game.chosen == slot ? "(•)" : "( )") do
+          @game.choose(slot)
+          redraw.call
+        end
         next para(text) if %i[candles shields].include?(slot) # plain candles wait for a potion; shields, for rules
 
         if Dungeon::LACED.key?(slot)
@@ -2112,7 +2634,9 @@ Scarpe.app(title: "Scarpe Rogue") do # , width: 560, height: 640) do
   end
 
   # Keypress isn't wired up in Scarpe 0.5.0's webview display yet, so moving is by button
-  PAD.each do |line|
+  # The tap button sits to the right of the arrows' middle row, in a slot redraw refills, since its name follows
+  # the way the player faces
+  PAD.each_with_index do |line, row|
     flow do
       line.each do |label, dx, dy|
         button(label, width: 60) do
@@ -2120,6 +2644,7 @@ Scarpe.app(title: "Scarpe Rogue") do # , width: 560, height: 640) do
           redraw.call
         end
       end
+      @tap = flow(width: 240) {} if row == 1
     end
   end
 
@@ -2150,7 +2675,7 @@ Scarpe.app(title: "Scarpe Rogue") do # , width: 560, height: 640) do
 
   flow do
     button("New game") do
-      @game = Dungeon.new(god: GOD)
+      @game = Dungeon.new(godMode: GOD)
       redraw.call
     end
   end

@@ -45,21 +45,21 @@ class DungeonTest < Minitest::Test
   end
 
   def ivar(name) = @game.instance_variable_get("@#{name}")
-  def set(name, value) = @game.instance_variable_set("@#{name}", value)
+  def arrangeSet(name, value) = @game.instance_variable_set("@#{name}", value)
 
   # Replaces the random level with one open room walled at the border, fully seen,
   # so each test places exactly the pieces it cares about
   def arrangeArena(px: 5, py: 5)
-    set :map, Array.new(H) { |y| Array.new(W) { |x| [0, W - 1].include?(x) || [0, H - 1].include?(y) ? "#" : "." } }
-    set :seen, Array.new(H) { Array.new(W, true) }
-    set :monsters, []
-    set :treasure, {}
-    set :sandwiches, {}
-    set :plates, {}
-    set :population, Hash.new(0)
-    set :detected, []
-    set :px, px
-    set :py, py
+    arrangeSet :map, Array.new(H) { |y| Array.new(W) { |x| [0, W - 1].include?(x) || [0, H - 1].include?(y) ? "#" : "." } }
+    arrangeSet :seen, Array.new(H) { Array.new(W, true) }
+    arrangeSet :monsters, []
+    arrangeSet :treasure, {}
+    arrangeSet :sandwiches, {}
+    arrangeSet :plates, {}
+    arrangeSet :population, Hash.new(0)
+    arrangeSet :detected, []
+    arrangeSet :px, px
+    arrangeSet :py, py
   end
 
   # A goblin that already fights, as most tests want; pass aggressive: false for one that starts neutral
@@ -87,7 +87,7 @@ class DungeonTest < Minitest::Test
     assert_equal Dungeon::HERO_AC, @game.ac
     assert_equal Dungeon::MAX_BLOOD_SUGAR, @game.blood_sugar
     assert_equal "fists", @game.weapon
-    assert_equal({ gold: 0, sandwiches: 0, potions: 0, speed_potions: 0, gas_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0, candles: 0, laced_potions: 0, laced_speed_potions: 0, laced_gas_potions: 0, eggs: [], weapons: [] }, @game.knapsack)
+    assert_equal({ gold: 0, sandwiches: 0, potions: 0, speed_potions: 0, gas_potions: 0, slow_potions: 0, healing_potions: 0, empty_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0, candles: 0, laced_potions: 0, laced_speed_potions: 0, laced_gas_potions: 0, laced_slow_potions: 0, laced_healing_potions: 0, laced_empty_potions: 0, eggs: [], weapons: [], shields: [] }, @game.knapsack)
     assert_equal 1, @game.depth
     assert_equal 1, @game.log.size
     refute @game.over?
@@ -105,7 +105,7 @@ class DungeonTest < Minitest::Test
 
   def test_at_zero_you_lose_a_hit_point_every_150_rounds
     arrangeArena
-    set :blood_sugar, 0
+    arrangeSet :blood_sugar, 0
     rounds(149)
     assert_equal 20, @game.hp
     rounds(1)
@@ -118,9 +118,9 @@ class DungeonTest < Minitest::Test
 
   def test_you_can_starve_to_death
     arrangeArena
-    set :blood_sugar, 0
-    set :starving, 149
-    set :hp, 1
+    arrangeSet :blood_sugar, 0
+    arrangeSet :starving, 149
+    arrangeSet :hp, 1
     rounds(1)
     assert @game.over?
     assert_equal "You starve to death on depth 1 with 0 gold.", last_log
@@ -129,15 +129,15 @@ class DungeonTest < Minitest::Test
   def test_god_mode_never_starves
     @game = Dungeon.new(god: true)
     arrangeArena
-    set :blood_sugar, 0
+    arrangeSet :blood_sugar, 0
     rounds(150)
     assert_equal 20, @game.hp
   end
 
   def test_resting_on_an_offered_sandwich_eats_it
     arrangeArena
-    set :blood_sugar, 0
-    set :starving, 140
+    arrangeSet :blood_sugar, 0
+    arrangeSet :starving, 140
     ivar(:knapsack)[:sandwiches] = 2
     @game.offer(:sandwiches)
     assert_equal "Give a sandwich which way? Rest to eat it yourself.", last_log
@@ -192,7 +192,7 @@ class DungeonTest < Minitest::Test
     row = @game.map_runs[5]
     assert_equal @game.rows[5], row.map(&:first).join, "the runs spell out the row"
     assert_equal [["g", true]], row.select { |_, hungry| hungry }, "only the hungry goblin"
-    set :blood_sugar, 0
+    arrangeSet :blood_sugar, 0
     assert_includes @game.map_runs[5], ["@", true]
   end
 
@@ -280,7 +280,7 @@ class DungeonTest < Minitest::Test
 
   def arrangeManyLevels(depth)
     arrangeArena(px: 1, py: 1)
-    set :depth, depth
+    arrangeSet :depth, depth
     room = { x: 2, y: 2, w: W - 4, h: H - 4 }
     loop { @game.send(:spawn_monster, room) or break }
     ivar(:monsters)
@@ -359,7 +359,7 @@ class DungeonTest < Minitest::Test
   # Lays one thingage of this kind (a THINGAGES row, or a tweaked copy of one) at the given depth
   def spawn_one(row, depth: 1)
     arrangeArena(px: 1, py: 1)
-    set :depth, depth
+    arrangeSet :depth, depth
     @game.send(:spawn_monster, room, row)
     ivar(:monsters).last
   end
@@ -367,7 +367,7 @@ class DungeonTest < Minitest::Test
   # The player's hit points lost when this thingage strikes once from beside them
   def one_blow_from(t)
     arrangeArena
-    set :hp, @game.max_hp
+    arrangeSet :hp, @game.max_hp
     t.aggressive = true # provoked, so it swings even if its kind starts neutral
     t.x, t.y = 6, 5
     ivar(:monsters) << t
@@ -609,7 +609,7 @@ class DungeonTest < Minitest::Test
     add_rat(8, 5)
     add_door(9, 5)
     add_wall_ally(10, 5)
-    add_weapon(11, 5)
+    arrangeWeapon(11, 5)
     assert_no_missing_scores(ivar(:monsters))
   end
 
@@ -687,7 +687,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_spawned_goblin_starts_neutral_and_fights_once_hit
     arrangeArena
-    set :depth, 2
+    arrangeSet :depth, 2
     @game.send(:spawn_monster, { x: 6, y: 5, w: 1, h: 1 }, kind("goblin").merge(hit: 2..2, str: 10, hp: 90))
     @game.rest
     assert_equal 20, @game.hp, "neutral: no blow"
@@ -904,7 +904,7 @@ class DungeonTest < Minitest::Test
 
   def test_death_ends_the_game
     arrangeArena
-    set :hp, 2
+    arrangeSet :hp, 2
     arrangeMonster(6, 5, hp: 100, hit: 5..5)
     @game.rest
     assert @game.over?
@@ -1070,7 +1070,7 @@ class DungeonTest < Minitest::Test
 
   def test_stepping_on_sandwiches_packs_them_without_healing
     arrangeArena
-    set :hp, 5
+    arrangeSet :hp, 5
     ivar(:sandwiches)[[6, 5]] = 3
     @game.move(1, 0)
     assert_equal 5, @game.hp
@@ -1084,7 +1084,7 @@ class DungeonTest < Minitest::Test
     ivar(:treasure)[[6, 5]] = 15
     ivar(:sandwiches)[[6, 5]] = 1
     @game.move(1, 0)
-    assert_equal({ gold: 15, sandwiches: 1, potions: 0, speed_potions: 0, gas_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0, candles: 0, laced_potions: 0, laced_speed_potions: 0, laced_gas_potions: 0, eggs: [], weapons: [] }, @game.knapsack)
+    assert_equal({ gold: 15, sandwiches: 1, potions: 0, speed_potions: 0, gas_potions: 0, slow_potions: 0, healing_potions: 0, empty_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0, candles: 0, laced_potions: 0, laced_speed_potions: 0, laced_gas_potions: 0, laced_slow_potions: 0, laced_healing_potions: 0, laced_empty_potions: 0, eggs: [], weapons: [], shields: [] }, @game.knapsack)
     assert_equal "You pack a sandwich into your knapsack.", last_log
   end
 
@@ -1103,7 +1103,7 @@ class DungeonTest < Minitest::Test
   def test_stairs_lead_to_a_new_deeper_level
     arrangeArena
     ivar(:map)[5][6] = ">"
-    set :hp, 10
+    arrangeSet :hp, 10
     old_map = ivar(:map)
 
     @game.move(1, 0)
@@ -1117,7 +1117,7 @@ class DungeonTest < Minitest::Test
   # An arena whose stairs room is x 3-12, y 3-7, with the stairs one step east of the player
   def stairs_room
     arrangeArena
-    set :rooms, [{ x: 3, y: 3, w: 10, h: 5 }]
+    arrangeSet :rooms, [{ x: 3, y: 3, w: 10, h: 5 }]
     ivar(:map)[5][6] = ">"
   end
 
@@ -1160,7 +1160,7 @@ class DungeonTest < Minitest::Test
 
   def test_rest_heals_one_point
     arrangeArena
-    set :hp, 10
+    arrangeSet :hp, 10
     @game.rest
     assert_equal 11, @game.hp
   end
@@ -1175,7 +1175,7 @@ class DungeonTest < Minitest::Test
 
   def test_unseen_tiles_are_blank
     arrangeArena
-    set :seen, Array.new(H) { Array.new(W, false) }
+    arrangeSet :seen, Array.new(H) { Array.new(W, false) }
     @game.send(:reveal)
     row = @game.rows[5]
     assert_equal ".", row[5 + Dungeon::SIGHT]
@@ -1184,7 +1184,7 @@ class DungeonTest < Minitest::Test
 
   def test_seen_tiles_stay_on_the_map_after_walking_away
     arrangeArena
-    set :seen, Array.new(H) { Array.new(W, false) }
+    arrangeSet :seen, Array.new(H) { Array.new(W, false) }
     @game.send(:reveal)
     (Dungeon::SIGHT + 3).times { @game.move(1, 0) }
     assert_equal ".", @game.rows[5][1]
@@ -1205,19 +1205,19 @@ class DungeonTest < Minitest::Test
 
   # --- weapons ---
 
-  def weapon_kind = Dungeon::THINGAGES.find { |k| k[:name] == "weapon" }
+  def assertWeapons = Dungeon::THINGAGES.find { |k| k[:name] == "weapon" }
 
   def dagger = Dungeon::WEAPONS.find { |w| w[:name] == "dagger" }
   def sword = { name: "sword", glyph: "⚔", hit: 4..4 }
 
-  def add_weapon(x, y, hp: 1, pacifist: false, kind: dagger)
+  def arrangeWeapon(x, y, hp: 1, pacifist: false, kind: dagger)
     ivar(:monsters) << thing(x, y, kind[:glyph], kind[:name], hp, kind[:hit], pacifist: pacifist)
   end
 
   def test_weapons_spawn_as_every_kind_of_weapon
     arrangeArena(px: 1, py: 1)
     room = { x: 2, y: 2, w: W - 4, h: H - 4 }
-    200.times { @game.send(:spawn_monster, room, weapon_kind) }
+    200.times { @game.send(:spawn_monster, room, assertWeapons) }
     spawned = ivar(:monsters).map { |m| { name: m.name, glyph: m.glyph, hit: m.hit } }.uniq
     assert_equal Dungeon::WEAPONS.map { |w| w.slice(:name, :glyph, :hit) }.sort_by { |w| w[:name] }, spawned.sort_by { |w| w[:name] }
   end
@@ -1230,7 +1230,7 @@ class DungeonTest < Minitest::Test
 
   def test_defeating_a_weapon_seizes_it
     arrangeArena
-    add_weapon(6, 5)
+    arrangeWeapon(6, 5)
     @game.move(1, 0)
     assert_empty ivar(:monsters)
     assert_equal "#{dagger[:glyph]} dagger", @game.weapon
@@ -1240,7 +1240,7 @@ class DungeonTest < Minitest::Test
 
   def test_wounding_a_weapon_does_not_seize_it
     arrangeArena
-    add_weapon(6, 5, hp: 100)
+    arrangeWeapon(6, 5, hp: 100)
     @game.move(1, 0)
     assert_equal "fists", @game.weapon
     assert_equal Dungeon::BARE_HANDS_HIT, @game.weapon_hit
@@ -1248,14 +1248,45 @@ class DungeonTest < Minitest::Test
 
   def test_a_second_weapon_goes_into_the_knapsack
     arrangeArena
-    set :wielded, sword
-    add_weapon(6, 5)
+    arrangeSet :wielded, sword
+    arrangeWeapon(6, 5)
     @game.move(1, 0)
     assert_empty ivar(:monsters)
     assert_equal "⚔ sword", @game.weapon, "the wielded weapon stays in hand"
     assert_equal 4..4, @game.weapon_hit
     assert_equal [dagger], @game.knapsack[:weapons]
     assert_equal "You defeat the dagger and pack it into your knapsack.", last_log
+  end
+
+  def bow = Dungeon::WEAPONS.find { |w| w[:name] == "bow" }
+
+  def test_a_bow_goes_into_the_knapsack_even_with_empty_hands
+    arrangeArena
+    arrangeWeapon(6, 5, kind: bow)
+    @game.move(1, 0)
+    assert_empty ivar(:monsters)
+    assert_equal "fists", @game.weapon, "not wielded automatically"
+    assert_equal [bow], @game.knapsack[:weapons]
+    assert_equal "You defeat the bow and pack it into your knapsack.", last_log
+  end
+
+  def test_a_packed_bow_is_wielded_when_you_choose
+    arrangeArena
+    arrangeWeapon(6, 5, kind: bow)
+    @game.move(1, 0)
+    @game.wield("bow")
+    assert_equal "🏹 bow", @game.weapon
+    assert_empty @game.knapsack[:weapons]
+  end
+
+  def test_a_bow_too_heavy_to_pack_is_left_behind_even_with_empty_hands
+    arrangeArena
+    ivar(:knapsack)[:gold] = 3000
+    arrangeWeapon(6, 5, kind: bow)
+    @game.move(1, 0)
+    assert_equal "fists", @game.weapon
+    assert_empty @game.knapsack[:weapons]
+    assert_equal "You defeat the bow, but your knapsack is too full to carry it, so you leave it behind.", last_log
   end
 
   def test_inventory_lists_packed_weapons
@@ -1320,7 +1351,7 @@ class DungeonTest < Minitest::Test
 
   def test_wield_swaps_and_cycles_through_packed_weapons
     arrangeArena
-    set :wielded, { name: "club", glyph: "🏏", hit: 1..1 }
+    arrangeSet :wielded, { name: "club", glyph: "🏏", hit: 1..1 }
     ivar(:knapsack)[:weapons].push(sword, { name: "bow", glyph: "🏹", hit: 3..3 })
 
     @game.wield
@@ -1351,7 +1382,7 @@ class DungeonTest < Minitest::Test
 
   def test_attacks_hit_with_the_wielded_weapon
     arrangeArena
-    set :wielded, { name: "club", glyph: nil, hit: 10..10 }
+    arrangeSet :wielded, { name: "club", glyph: nil, hit: 10..10 }
     arrangeMonster(6, 5, hp: 100, hit: 0..0)
     @game.move(1, 0)
     assert_equal 90, ivar(:monsters).first.hp
@@ -1360,7 +1391,7 @@ class DungeonTest < Minitest::Test
   def test_about_half_of_all_weapons_are_pacifists
     arrangeArena(px: 1, py: 1)
     room = { x: 2, y: 2, w: W - 4, h: H - 4 }
-    400.times { @game.send(:spawn_monster, room, weapon_kind) }
+    400.times { @game.send(:spawn_monster, room, assertWeapons) }
     share = ivar(:monsters).count(&:pacifist) / 400.0
     # assert_in_delta 0.5, share, 0.1
   end
@@ -1386,7 +1417,7 @@ class DungeonTest < Minitest::Test
     50.times.map do |seed|
       srand(seed)
       @game = Dungeon.new
-      set :depth, depth
+      arrangeSet :depth, depth
       @game.send(:build_level)
       ivar(:monsters).count { |m| m.name == "Quail" }
     end
@@ -1421,7 +1452,7 @@ class DungeonTest < Minitest::Test
 
   def test_walking_into_a_potion_packs_it_without_drinking
     arrangeArena
-    set :seen, Array.new(H) { Array.new(W, false) }
+    arrangeSet :seen, Array.new(H) { Array.new(W, false) }
     add_potion(6, 5)
     @game.move(1, 0)
     assert_empty ivar(:monsters)
@@ -1433,7 +1464,7 @@ class DungeonTest < Minitest::Test
 
   def test_quaffing_a_packed_potion_reveals_the_level
     arrangeArena
-    set :seen, Array.new(H) { Array.new(W, false) }
+    arrangeSet :seen, Array.new(H) { Array.new(W, false) }
     ivar(:knapsack)[:potions] = 2
     @game.quaff
     assert_equal 1, @game.potions
@@ -1461,7 +1492,7 @@ class DungeonTest < Minitest::Test
 
   def test_potion_of_sight_does_not_show_distant_monsters
     arrangeArena
-    set :seen, Array.new(H) { Array.new(W, false) }
+    arrangeSet :seen, Array.new(H) { Array.new(W, false) }
     ivar(:knapsack)[:potions] = 1
     far = 5 + Dungeon::SIGHT + 2
     arrangeMonster(far, 5)
@@ -1484,7 +1515,7 @@ class DungeonTest < Minitest::Test
     ivar(:monsters) << thing(x, y, "?", name, 3, 0..0, pacifist: true)
   end
 
-  def fog = set(:seen, Array.new(H) { Array.new(W, false) })
+  def fog = arrangeSet(:seen, Array.new(H) { Array.new(W, false) })
 
   def test_every_scroll_row_is_a_peaceful_thingage
     Dungeon::SCROLLS.each_value do |scroll|
@@ -2062,8 +2093,8 @@ class DungeonTest < Minitest::Test
 
   # One far room for a random plate to land in, and no cage room
   def one_far_room
-    set :rooms, [{ x: 20, y: 20, w: 3, h: 3 }]
-    set :cage_room, nil
+    arrangeSet :rooms, [{ x: 20, y: 20, w: 3, h: 3 }]
+    arrangeSet :cage_room, nil
   end
 
   def test_plates_are_map_features_not_thingages
@@ -2074,7 +2105,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_seen_plate_is_drawn
     arrangeArena
-    set :plates, { [7, 5] => Dungeon::RANDOM_PLATE, [5, 7] => Dungeon::CAGE_PLATE }
+    arrangeSet :plates, { [7, 5] => Dungeon::RANDOM_PLATE, [5, 7] => Dungeon::CAGE_PLATE }
     assert_equal "ṯ", @game.rows[5][7]
     assert_equal "_", @game.rows[7][5]
   end
@@ -2082,7 +2113,7 @@ class DungeonTest < Minitest::Test
   def test_a_random_plate_carries_the_player_to_a_room_and_stays_put
     arrangeArena
     one_far_room
-    set :plates, { [6, 5] => Dungeon::RANDOM_PLATE }
+    arrangeSet :plates, { [6, 5] => Dungeon::RANDOM_PLATE }
     @game.move(1, 0)
     assert in_rect?(ivar(:rooms).first, player), "landed at #{player}"
     assert_includes @game.log, "The plate flashes, and you land somewhere else in the dungeon."
@@ -2092,11 +2123,11 @@ class DungeonTest < Minitest::Test
   def test_a_cage_plate_lands_the_player_in_the_cage_room_without_springing_the_trap
     arena_trap
     room = { x: 10, y: 10, w: 12, h: 15 }
-    set :cage_room, room
-    set :rooms, [{ x: 28, y: 28, w: 5, h: 3 }, room]
-    set :px, 30
-    set :py, 30
-    set :plates, { [31, 30] => Dungeon::CAGE_PLATE }
+    arrangeSet :cage_room, room
+    arrangeSet :rooms, [{ x: 28, y: 28, w: 5, h: 3 }, room]
+    arrangeSet :px, 30
+    arrangeSet :py, 30
+    arrangeSet :plates, { [31, 30] => Dungeon::CAGE_PLATE }
     @game.move(1, 0)
     # assert in_rect?(room, player), "landed at #{player}"
     refute_equal cage[:plate], player
@@ -2108,7 +2139,7 @@ class DungeonTest < Minitest::Test
     arrangeArena
     one_far_room
     arrangeMonster(7, 5)
-    set :plates, { [6, 5] => Dungeon::RANDOM_PLATE }
+    arrangeSet :plates, { [6, 5] => Dungeon::RANDOM_PLATE }
     @game.rest
     goblin = ivar(:monsters).first
     assert in_rect?(ivar(:rooms).first, [goblin.x, goblin.y]), "landed at #{goblin.x}, #{goblin.y}"
@@ -2119,7 +2150,7 @@ class DungeonTest < Minitest::Test
     arrangeArena
     one_far_room
     arrangeMonster(7, 5)
-    set :plates, { [6, 5] => Dungeon::CAGE_PLATE }
+    arrangeSet :plates, { [6, 5] => Dungeon::CAGE_PLATE }
     @game.rest
     goblin = ivar(:monsters).first
     assert_equal [6, 5], [goblin.x, goblin.y]
@@ -2128,8 +2159,8 @@ class DungeonTest < Minitest::Test
   def test_a_random_plate_favors_the_cage_room_by_two_thirds
     arrangeArena
     cage_room = { x: 10, y: 10, w: 5, h: 5 }
-    set :rooms, [{ x: 30, y: 10, w: 5, h: 5 }, cage_room]
-    set :cage_room, cage_room
+    arrangeSet :rooms, [{ x: 30, y: 10, w: 5, h: 5 }, cage_room]
+    arrangeSet :cage_room, cage_room
     caged = 3000.times.count { in_rect?(cage_room, @game.send(:landing, Dungeon::RANDOM_PLATE)) }
     assert_in_delta 5.0 / 8, caged / 3000.0, 0.03, "5/3 against 1 is 5/8 of landings"
   end
@@ -2163,7 +2194,7 @@ class DungeonTest < Minitest::Test
     seeds.times.map do |seed|
       srand(seed)
       @game = Dungeon.new
-      set :depth, depth
+      arrangeSet :depth, depth
       @game.send(:build_level)
       yield seed
     end
@@ -2173,8 +2204,8 @@ class DungeonTest < Minitest::Test
   # runs along y 14, and the plate lies in the middle of the back row at 15, 10. The player stands below it, at 15, 17
   def arena_trap
     arrangeArena(px: 15, py: 17)
-    set :eggs, {}
-    set :cage, { xs: 10..21, ys: 10..13, line: [10..21, 14], plate: [15, 10], state: :set }
+    arrangeSet :eggs, {}
+    arrangeSet :cage, { xs: 10..21, ys: 10..13, line: [10..21, 14], plate: [15, 10], state: :arrangeSet }
   end
 
   def cage = ivar(:cage)
@@ -2182,8 +2213,8 @@ class DungeonTest < Minitest::Test
   # The player just below the plate, one step from springing the trap
   def by_the_plate
     arena_trap
-    set :px, 15
-    set :py, 11
+    arrangeSet :px, 15
+    arrangeSet :py, 11
   end
 
   def spring = @game.move(0, -1)
@@ -2290,7 +2321,7 @@ class DungeonTest < Minitest::Test
 
   def test_things_lying_on_the_plate_show_over_it
     arena_trap
-    set :treasure, { [15, 10] => 3 }
+    arrangeSet :treasure, { [15, 10] => 3 }
     assert_equal "$", @game.rows[10][15]
   end
 
@@ -2300,7 +2331,7 @@ class DungeonTest < Minitest::Test
     assert_equal [15, 14], player, "standing on the line"
     @game.move(0, -1)
     assert_equal [15, 13], player, "over the line and into the cage"
-    assert_equal :set, cage[:state]
+    assert_equal :arrangeSet, cage[:state]
     refute @game.over?
   end
 
@@ -2339,8 +2370,8 @@ class DungeonTest < Minitest::Test
     arrangeQuail(12, 12)
     arrangeMonster(18, 11, hp: 100, aggressive: false)
     arrangeMonster(15, 20, hp: 100, aggressive: false)  # outside
-    set :treasure, { [11, 11] => 30, [15, 18] => 50 } # one inside, one outside
-    set :sandwiches, { [20, 13] => 1 }
+    arrangeSet :treasure, { [11, 11] => 30, [15, 18] => 50 } # one inside, one outside
+    arrangeSet :sandwiches, { [20, 13] => 1 }
     ivar(:knapsack)[:gold] = 5
     spring
     assert_includes @game.log, "The bars slam down behind you. Your haul: a Quail, a goblin, 35 gold, and 1 sandwich."
@@ -2358,7 +2389,7 @@ class DungeonTest < Minitest::Test
 
   def test_eggs_lying_in_the_cage_hatch_too_but_not_those_outside
     by_the_plate
-    set :eggs, { [12, 11] => [egg(true), egg(true)], [15, 20] => [egg(true)] }
+    arrangeSet :eggs, { [12, 11] => [egg(true), egg(true)], [15, 20] => [egg(true)] }
     spring
     assert @game.won?
     assert_includes @game.log, "The bars slam down behind you. Your haul: 2 eggs."
@@ -2378,7 +2409,7 @@ class DungeonTest < Minitest::Test
 
   def test_deeper_nests_hold_more_developed_eggs
     { 8 => 3 / 9.0, 9 => 4 / 9.0, 11 => 6 / 9.0, 13 => 8 / 9.0, 20 => 0.9 }.each do |depth, chance|
-      set :depth, depth
+      arrangeSet :depth, depth
       assert_in_delta chance, @game.send(:developed_chance), 0.0001, "depth #{depth}"
     end
   end
@@ -2392,7 +2423,7 @@ class DungeonTest < Minitest::Test
   end
 
   def test_about_a_third_of_eggs_laid_at_depth_eight_are_developed
-    set :depth, 8
+    arrangeSet :depth, 8
     laid = Array.new(900) { @game.send(:lay_egg) }
     assert_in_delta 300, laid.count(&:developed), 60
   end
@@ -2455,7 +2486,7 @@ class DungeonTest < Minitest::Test
   def test_a_nesting_quail_waits_by_its_eggs_then_follows_them
     arrangeArena
     ivar(:monsters) << thing(9, 5, "Q", "Quail", 100, 0..0, pacifist: true, nesting: true)
-    set :eggs, { [6, 5] => [egg, egg(true)] }
+    arrangeSet :eggs, { [6, 5] => [egg, egg(true)] }
     @game.rest
     q = ivar(:monsters).first
     assert_equal [9, 5], [q.x, q.y], "nesting"
@@ -2470,8 +2501,8 @@ class DungeonTest < Minitest::Test
 
   def test_eggs_and_the_nest_are_drawn
     arrangeArena
-    set :eggs, { [6, 5] => [egg] }
-    set :nest, [7, 5]
+    arrangeSet :eggs, { [6, 5] => [egg] }
+    arrangeSet :nest, [7, 5]
     assert_equal "0", @game.rows[5][6]
     assert_equal "&", @game.rows[5][7]
   end
@@ -2603,6 +2634,249 @@ class DungeonTest < Minitest::Test
     assert_includes @game.log, "You throw the candle laced with potion of sight, and it bursts over empty floor."
   end
 
+  # --- slowness, healing, and empty potions ---
+
+  def add_new_potion(x, y, name) = ivar(:monsters) << thing(x, y, "!", name, 3, 0..0, pacifist: true)
+
+  def test_walking_into_a_new_potion_packs_it
+    { "slow potion" => [:slow_potions, "a potion of slowness"], "healing potion" => [:healing_potions, "a potion of healing"],
+      "empty potion" => [:empty_potions, "an empty potion"] }.each do |name, (slot, packed)|
+      arrangeArena
+      add_new_potion(6, 5, name)
+      @game.move(1, 0)
+      assert_equal 1, @game.knapsack[slot], name
+      assert_equal "You pack #{packed} into your knapsack.", last_log
+    end
+  end
+
+  def test_a_potion_of_healing_restores_you_to_full
+    arrangeArena
+    arrangeSet :hp, 5
+    ivar(:knapsack)[:healing_potions] = 1
+    @game.quaff(:healing_potions)
+    assert_equal @game.max_hp, @game.hp
+    assert_equal "You quaff the potion of healing. You feel whole again!", last_log
+  end
+
+  def test_an_empty_potion_does_nothing
+    arrangeArena
+    ivar(:knapsack)[:empty_potions] = 1
+    @game.quaff(:empty_potions)
+    assert_equal 0, @game.knapsack[:empty_potions]
+    assert_equal "You quaff the empty potion. It's empty. Nothing happens.", last_log
+  end
+
+  def test_slowness_gives_everyone_else_two_actions_for_yours
+    arrangeArena
+    arrangeMonster(9, 5, hp: 100, hit: 0..0)
+    ivar(:knapsack)[:slow_potions] = 1
+    @game.quaff(:slow_potions)
+    assert_equal [7, 5], [ivar(:monsters).first.x, ivar(:monsters).first.y], "two steps for your one"
+    assert_equal "Slowed #{Dungeon::SLOW_ROUNDS - 2}", @game.effects, "two rounds passed"
+  end
+
+  def test_slowness_wears_off
+    arrangeArena
+    arrangeSet :slowed, 1
+    @game.rest
+    refute @game.slowed?
+    assert_includes @game.log, "You speed back up."
+  end
+
+  def test_a_slowed_monster_sits_out_every_other_round
+    arrangeArena
+    arrangeMonster(9, 5, hp: 100, hit: 0..0).last.slowed = Dungeon::SLOW_ROUNDS
+    @game.rest
+    assert_equal [9, 5], [ivar(:monsters).first.x, ivar(:monsters).first.y], "sits out"
+    @game.rest
+    assert_equal [8, 5], [ivar(:monsters).first.x, ivar(:monsters).first.y], "then steps"
+    @game.rest
+    assert_equal [8, 5], [ivar(:monsters).first.x, ivar(:monsters).first.y], "then sits out again"
+  end
+
+  def test_a_thrown_potion_of_slowness_slows_its_catcher
+    arrangeArena
+    arrangeMonster(7, 5, hp: 100, hit: 0..0, aggressive: false)
+    throw_at(:slow_potions, 1, 0)
+    assert_equal Dungeon::SLOW_ROUNDS - 1, ivar(:monsters).first.slowed
+    assert_equal "You throw the potion of slowness at the goblin. It slows to half your pace!", last_log
+  end
+
+  def test_a_thrown_potion_of_healing_heals_its_catcher
+    arrangeArena
+    arrangeMonster(7, 5, hp: 5, hit: 0..0, aggressive: false)
+    throw_at(:healing_potions, 1, 0)
+    assert_equal 5 + Dungeon::HEAL_HP, ivar(:monsters).first.hp
+  end
+
+  def test_a_burst_of_slowness_slows_everyone_near
+    arrangeArena
+    near = bystander(9, 5)
+    ivar(:knapsack)[:laced_slow_potions] = 1
+    @game.fling(:laced_slow_potions, :throw)
+    @game.move(1, 0)
+    assert_equal Dungeon::SLOW_ROUNDS - 1, near.slowed
+    assert_equal "They slow to half your pace!", last_log
+  end
+
+  # --- defeating a shield, potion, or weapon packs it ---
+
+  def add_shield(x, y, name = "shield", glyph = "༻") = ivar(:monsters) << thing(x, y, glyph, name, 1, 0..0, pacifist: true)
+
+  def test_defeating_a_shield_packs_it
+    arrangeArena
+    add_shield(6, 5)
+    @game.move(1, 0)
+    assert_empty ivar(:monsters)
+    assert_equal [{ name: "shield", glyph: "༻" }], @game.knapsack[:shields]
+    assert_equal "You defeat the shield and pack it into your knapsack.", last_log
+    assert_includes @game.contents, ["༻ shield", :shields]
+    assert_equal 6, @game.load
+  end
+
+  def test_shields_of_a_kind_are_listed_together
+    ivar(:knapsack)[:shields] = [{ name: "light shield", glyph: "𓆩" }] * 2
+    assert_includes @game.contents, ["2 𓆩 light shields", :shields]
+    assert_equal 6, @game.load, "two light shields at 3 pounds each"
+  end
+
+  def test_a_shield_too_heavy_to_pack_is_left_behind
+    arrangeArena
+    ivar(:knapsack)[:gold] = 3000
+    add_shield(6, 5, "light shield", "𓆩")
+    @game.move(1, 0)
+    assert_empty ivar(:monsters)
+    assert_empty @game.knapsack[:shields]
+    assert_equal "You defeat the light shield, but your knapsack is too full to carry it, so you leave it behind.", last_log
+  end
+
+  def test_defeating_a_potion_packs_it
+    arrangeArena
+    potion = thing(6, 5, "¡", "potion", 1, 0..0, pacifist: true)
+    ivar(:monsters) << potion
+    @game.send(:attack, potion)
+    assert_equal 1, @game.knapsack[:potions]
+    assert_equal "You defeat the potion and pack it into your knapsack.", last_log
+  end
+
+  def test_defeating_a_weapon_still_wields_it_with_empty_hands
+    arrangeArena
+    arrangeWeapon(6, 5)
+    @game.move(1, 0)
+    assert_equal "dagger", @game.wielded[:name]
+    assert_empty @game.knapsack[:weapons]
+  end
+
+  # --- weight ---
+
+  def pounds(slot) = @game.pounds(slot)
+  def axe = Dungeon::WEAPONS.find { |w| w[:name] == "axe" }
+
+  def test_everything_the_knapsack_holds_has_a_weight
+    slots = @game.knapsack.select { |_, n| n.is_a?(Integer) }.keys
+    slots.each { |slot| assert_operator pounds(slot), :>, 0, slot }
+    Dungeon::WEAPONS.each { |w| assert_operator w[:packable], :>, 0, w[:name] }
+  end
+
+  def test_weights_come_from_the_lines_that_build_things
+    { gold: "1/50", sandwiches: "1", candles: "1", potions: "1/2", speed_potions: "1/2", scrolls: "1/10",
+      peace_rings: "1/10", laced_potions: "3/2" }.each do |slot, weight|
+      assert_equal Rational(weight), pounds(slot), slot
+    end
+  end
+
+  def test_an_empty_knapsack_weighs_nothing
+    assert_equal 0, @game.load
+    assert_equal "Load 0/60 lb", @game.load_text
+  end
+
+  def test_the_load_is_everything_in_the_knapsack_but_not_in_hand
+    ivar(:knapsack).merge!(gold: 50, sandwiches: 2, potions: 1, candles: 1, eggs: [egg, egg], weapons: [dagger, axe])
+    arrangeSet :wielded, axe
+    assert_equal Rational(21, 2), @game.load, "1 + 2 + 0.5 + 1 + 1 + 1 + 4; the axe in hand weighs nothing"
+    assert_equal "Load 10.5/60 lb", @game.load_text
+  end
+
+  def test_a_full_knapsack_refuses_an_item
+    arrangeArena
+    ivar(:knapsack)[:gold] = 3000
+    add_potion(6, 5)
+    @game.move(1, 0)
+    assert_equal "Your knapsack is too full for the potion of sight.", last_log
+    assert_equal 0, @game.knapsack[:potions]
+    assert_equal 1, ivar(:monsters).size, "it stays on the floor"
+    assert_equal [5, 5], player
+  end
+
+  def test_gold_goes_in_only_as_far_as_there_is_room
+    arrangeArena
+    ivar(:knapsack)[:sandwiches] = 59
+    arrangeSet :treasure, { [6, 5] => 80 }
+    @game.move(1, 0)
+    assert_equal 50, @game.gold, "a pound's room is 50 coins"
+    assert_equal({ [6, 5] => 30 }, ivar(:treasure), "the rest stays on the floor")
+    assert_includes @game.log, "You find 80 gold, but your knapsack has room for only 50."
+  end
+
+  def test_sandwiches_go_in_only_as_far_as_there_is_room
+    arrangeArena
+    ivar(:knapsack)[:gold] = 2950
+    arrangeSet :sandwiches, { [6, 5] => 3 }
+    @game.move(1, 0)
+    assert_equal 1, @game.sandwiches
+    assert_equal({ [6, 5] => 2 }, ivar(:sandwiches))
+    assert_includes @game.log, "Your knapsack has room for only 1 of the 3 sandwiches here."
+  end
+
+  def test_eggs_go_in_only_as_far_as_there_is_room
+    arrangeArena
+    ivar(:knapsack)[:sandwiches] = 59
+    arrangeSet :eggs, { [6, 5] => [egg, egg(true), egg] }
+    @game.move(1, 0)
+    assert_equal [egg, egg(true)], @game.knapsack[:eggs]
+    assert_equal({ [6, 5] => [egg] }, ivar(:eggs))
+    assert_includes @game.log, "You gather 2 eggs from the nest, leaving 1 for want of room."
+  end
+
+  def test_a_full_knapsack_leaves_the_eggs_in_the_nest
+    arrangeArena
+    ivar(:knapsack)[:sandwiches] = 60
+    arrangeSet :eggs, { [6, 5] => [egg, egg] }
+    @game.move(1, 0)
+    assert_empty @game.knapsack[:eggs]
+    assert_equal 2, ivar(:eggs)[[6, 5]].size
+    assert_includes @game.log, "Your knapsack is too full for the eggs."
+  end
+
+  def test_a_weapon_too_heavy_to_pack_is_left_behind
+    arrangeArena
+    arrangeSet :wielded, sword
+    ivar(:knapsack)[:gold] = 3000
+    arrangeWeapon(6, 5)
+    @game.move(1, 0)
+    assert_empty @game.knapsack[:weapons]
+    assert_equal "You defeat the dagger, but your knapsack is too full to carry it, so you leave it behind.", last_log
+  end
+
+  def test_a_seized_weapon_keeps_its_weight
+    arrangeArena
+    arrangeSet :wielded, sword
+    arrangeWeapon(6, 5)
+    @game.move(1, 0)
+    assert_equal 1, @game.knapsack[:weapons].first[:packable]
+    assert_equal 1, @game.load
+  end
+
+  def test_no_room_for_the_weapon_in_hand_means_no_swap
+    arrangeArena
+    arrangeSet :wielded, axe
+    ivar(:knapsack).merge!(weapons: [dagger], sandwiches: 58)
+    @game.wield
+    assert_equal "Your knapsack is too full to hold your axe in place of the dagger.", last_log
+    assert_equal axe, @game.wielded
+    assert_equal [dagger], @game.knapsack[:weapons]
+  end
+
   # --- giving ---
 
   def test_giving_a_coin_hands_it_to_the_monster_that_way
@@ -2718,7 +2992,7 @@ class DungeonTest < Minitest::Test
   def test_a_bribed_nesting_quail_leaves_its_eggs_to_follow_you
     arrangeArena
     ivar(:monsters) << thing(6, 5, "Q", "Quail", 100, 0..0, pacifist: true, nesting: true)
-    set :eggs, { [7, 6] => [egg, egg] }
+    arrangeSet :eggs, { [7, 6] => [egg, egg] }
     give(:gold, 1, 0)
     q = ivar(:monsters).first
     assert q.ally
@@ -2890,7 +3164,7 @@ class DungeonTest < Minitest::Test
 
   def test_rest_cancels_an_offer
     arrangeArena
-    set :hp, 10
+    arrangeSet :hp, 10
     ivar(:knapsack)[:gold] = 3
     @game.offer(:gold)
     @game.rest
@@ -3223,6 +3497,12 @@ class WebGameTest < Minitest::Test
     assert_equal 1, @web.game.knapsack[:laced_speed_potions]
   end
 
+  def test_a_packed_shield_shows_but_is_no_button
+    open_floor
+    @web.game.knapsack[:shields] << { name: "shield", glyph: "༻" }
+    assert_includes @web.respond("GET", "/").last, "<span>༻ shield</span>"
+  end
+
   def test_a_laced_candle_has_throw_and_kick_buttons
     open_floor
     @web.game.knapsack[:laced_gas_potions] = 1
@@ -3275,6 +3555,11 @@ class WebGameTest < Minitest::Test
     assert_includes @web.respond("GET", "/").last, "3 eggs (1 developed, 2 yolk)"
   end
 
+  def test_the_banner_shows_the_knapsacks_load
+    @web.game.knapsack[:sandwiches] = 12
+    assert_includes @web.respond("GET", "/").last, "Load 12/60 lb"
+  end
+
   def test_the_banner_says_when_the_adventure_ends_without_a_win
     @web.game.instance_variable_set(:@trapped, true)
     assert_includes @web.respond("GET", "/").last, "ADVENTURE OVER"
@@ -3290,7 +3575,7 @@ class CommandLineTest < Minitest::Test
   end
 
   def test_the_usage_names_every_flag
-    %w[--web --god --help -h].each { |flag| assert_includes USAGE, flag }
+    %w[--web --dos --god --help -h].each { |flag| assert_includes USAGE, flag }
     assert_includes USAGE, "default 4567"
   end
 
@@ -3307,5 +3592,697 @@ class CommandLineTest < Minitest::Test
     out, _, status = rogue("--web", "0", "--god", "--help")
     assert status.success?
     assert_equal USAGE, out, "it prints the usage instead of serving the game"
+  end
+end
+
+class DosBoxTest < Minitest::Test
+  W = Dungeon::VIEWPORT_WIDTH
+  H = Dungeon::VIEWPORT_HEIGHT
+
+  # A console game on an open floor, fully seen, with the player at 5, 5
+  def setup
+    srand(1234)
+    @dos = DosBox.new
+    { map: Array.new(H) { Array.new(W, ".") }, seen: Array.new(H) { Array.new(W, true) }, monsters: [], treasure: {},
+      sandwiches: {}, plates: {}, eggs: {}, detected: [], cage: nil, nest: nil, px: 5, py: 5 }.each { |name, value| set(name, value) }
+  end
+
+  def game = @dos.game
+  def set(name, value) = game.instance_variable_set("@#{name}", value)
+  def ivar(name) = game.instance_variable_get("@#{name}")
+  def knapsack = game.knapsack
+  def keys(*pressed) = pressed.each { |k| @dos.handle(k) }
+  def map_row(y) = @dos.lines[y + 1]
+  def prompt_line = @dos.lines.last
+
+  def test_the_map_wears_the_pcs_oem_glyphs
+    { "@" => "☺", "#" => "▒", "." => "·", ">" => "≡", "$" => "☼", "%" => "♣", "G" => "G", "¡" => "¡", "?" => "?" }.each do |glyph, oem|
+      assert_equal oem, @dos.oem(glyph), glyph
+    end
+  end
+
+  def test_glyphs_code_page_437_cannot_hold_become_rogues_weapon_and_armor
+    %w[🗡️ 🗡 ⚔️ 🏹 🪓 ༒].each { |glyph| assert_equal "↑", @dos.oem(glyph), glyph }
+    %w[༺ 𓆩 ༻].each { |glyph| assert_equal "]", @dos.oem(glyph), glyph }
+  end
+
+  def test_the_player_is_a_smiley_on_a_dotted_floor
+    row = map_row(5)[0, W]
+    assert_equal "☺", row[5]
+    assert_equal W - 1, row.count("·")
+  end
+
+  def test_the_screen_is_driver_commands
+    screen = @dos.screen
+    assert screen.start_with?("\e[1;1H"), "each line starts by placing the cursor"
+    assert_includes screen, "\e[2;1H#{map_row(0)}"
+    assert_includes screen, "\e[K", "and ends by erasing the rest of the line"
+    assert_includes @dos.lines.first, "HP 20/20"
+    assert_equal DosBox::SCREEN_ROWS, @dos.lines.size, "status, map, four log lines, prompt"
+  end
+
+  def test_lines_are_cut_to_the_console_width_without_breaking_a_color
+    assert_equal "\e[1;33mabc\e[0md", @dos.send(:fit, "\e[1;33mabc\e[0mdef", 4)
+    @dos.screen(40).split(/\e\[\d+;1H/).drop(1).each do |line|
+      assert_operator line.gsub(/\e\[[\d;?]*[A-Za-z]/, "").size, :<=, 40
+    end
+  end
+
+  def test_hungry_creatures_are_bright_yellow
+    set :blood_sugar, 0
+    assert_includes map_row(5), "\e[1;33m☺\e[0m"
+  end
+
+  def test_the_knapsack_sits_beside_the_map_with_letters
+    knapsack[:gold] = 5
+    knapsack[:speed_potions] = 1
+    assert map_row(0).end_with?(" Knapsack:")
+    assert map_row(1).end_with?(" a) 5 gold")
+    assert map_row(2).end_with?(" b) ! potion of speed")
+  end
+
+  def test_question_mark_swaps_the_knapsack_for_the_keys
+    keys "?"
+    assert map_row(0).end_with?(" Keys")
+    keys "?"
+    assert map_row(0).end_with?(" Knapsack: empty")
+  end
+
+  def test_rogues_letters_the_arrows_and_the_keypad_all_move
+    keys "l"
+    assert_equal [6, 5], [ivar(:px), ivar(:py)]
+    keys "ArrowRight", "6", "j", "ArrowDown", "y"
+    assert_equal [7, 6], [ivar(:px), ivar(:py)]
+  end
+
+  def test_dot_rests
+    keys "."
+    assert_equal "You catch your breath and find nothing beside you.", game.log.last
+  end
+
+  def test_the_console_names_arrow_and_keypad_keys
+    { "\e[A" => "ArrowUp", "\e[D" => "ArrowLeft", "\e[5~" => "PageUp", "\eOH" => "Home", "x" => "x", "\e" => "Escape" }.each do |sent, name|
+      reader, writer = IO.pipe
+      writer.write(sent)
+      assert_equal name, @dos.read_key(reader), sent.inspect
+      reader.close
+      writer.close
+    end
+  end
+
+  def test_a_closed_console_quits
+    reader, writer = IO.pipe
+    writer.close
+    assert_equal "Q", @dos.read_key(reader)
+  end
+
+  def test_a_uses_an_item_by_its_letter
+    knapsack[:speed_potions] = 1
+    keys "a"
+    assert_equal "Use which item? (a, Esc cancels)", prompt_line
+    keys "a"
+    assert game.hasted?
+    assert_equal 0, knapsack[:speed_potions]
+  end
+
+  def test_t_throws_an_item_then_an_arrow_sends_it
+    knapsack[:speed_potions] = 1
+    keys "T", "a"
+    assert_equal "Throw the potion of speed which way?", game.log.last
+    assert_equal "Then an arrow sends it that way, or . keeps it", prompt_line
+  end
+
+  def test_p_pours_a_potion_into_a_candle
+    knapsack[:speed_potions] = 1
+    knapsack[:candles] = 1
+    keys "P", "a"
+    assert_equal 1, knapsack[:laced_speed_potions]
+  end
+
+  def test_k_kicks_a_laced_candle
+    knapsack[:laced_gas_potions] = 1
+    keys "K", "a"
+    assert_equal "Kick the candle laced with potion of gaseous form which way?", game.log.last
+  end
+
+  def test_k_wont_kick_a_potion
+    knapsack[:speed_potions] = 1
+    keys "K", "a"
+    assert_equal "Only a laced candle can be kicked.", prompt_line
+    assert_equal 1, knapsack[:speed_potions]
+  end
+
+  def test_escape_cancels_a_prompt
+    knapsack[:speed_potions] = 1
+    keys "a", "Escape"
+    assert_equal "? for the keys", prompt_line
+    assert_equal 1, knapsack[:speed_potions]
+  end
+
+  def test_a_letter_with_no_item
+    knapsack[:speed_potions] = 1
+    keys "a", "z"
+    assert_equal "No item z.", prompt_line
+  end
+
+  def test_an_empty_knapsack_has_nothing_to_use
+    keys "a"
+    assert_equal "Your knapsack is empty.", prompt_line
+  end
+
+  def test_a_packed_shield_waits_for_its_rules
+    knapsack[:shields] << { name: "shield", glyph: "༻" }
+    keys "a", "a"
+    assert_equal "There's nothing to do with a shield yet.", prompt_line
+    assert_equal 1, knapsack[:shields].size
+  end
+
+  def test_q_and_control_c_quit
+    refute @dos.quit?
+    keys "Q"
+    assert @dos.quit?
+    other = DosBox.new
+    other.handle("\x03")
+    assert other.quit?
+  end
+
+  def test_n_starts_a_new_game
+    old = game
+    keys "N"
+    refute_same old, game
+  end
+
+  def test_nothing_moves_once_the_game_is_over
+    set :hp, 0
+    keys "l"
+    assert_equal [5, 5], [ivar(:px), ivar(:py)]
+  end
+
+  def test_dying_offers_to_play_again_or_exit
+    set :hp, 0
+    assert_equal "You died. Play again? (y/n)", prompt_line
+  end
+
+  def test_y_plays_again
+    old = game
+    set :hp, 0
+    keys "y"
+    refute_same old, game
+    refute game.over?
+    refute @dos.quit?
+    assert_equal "? for the keys", prompt_line
+  end
+
+  def test_n_or_escape_exits
+    set :hp, 0
+    keys "n"
+    assert @dos.quit?
+    other = DosBox.new
+    other.game.instance_variable_set(:@hp, 0)
+    other.handle("Escape")
+    assert other.quit?
+  end
+
+  def test_other_keys_wait_for_an_answer
+    set :hp, 0
+    keys "l", "a", "j", "."
+    refute @dos.quit?
+    assert_equal "You died. Play again? (y/n)", prompt_line
+  end
+
+  def test_winning_and_a_haul_with_nothing_hatching_offer_the_same
+    set :trapped, true
+    assert_equal "The adventure is over. Play again? (y/n)", prompt_line
+    set :won, true
+    assert_equal "You won! Play again? (y/n)", prompt_line
+  end
+
+  def test_a_key_that_breaks_the_game_offers_another_or_a_graceful_exit
+    game.define_singleton_method(:move) { |*| raise "boom" }
+    @dos.press("l")
+    refute @dos.quit?
+    assert_equal "The game broke (RuntimeError: boom). Play again? (y/n)", prompt_line
+    @dos.press("y")
+    assert_equal "? for the keys", prompt_line
+    @dos.press("l")
+    refute_match(/broke/, prompt_line, "the new game takes keys again")
+  end
+
+  def test_a_graceful_exit_leaves_the_last_screen_up
+    farewell = @dos.farewell
+    refute_includes farewell, "\e[2J", "nothing clears the screen"
+    assert farewell.start_with?("\e[0m\e[#{DosBox::SCREEN_ROWS + 1};1H"), "the cursor drops below the last screen"
+    assert_includes farewell, "\e[?25h", "and shows itself again"
+  end
+
+  def test_a_broken_game_says_how_on_its_way_out
+    game.define_singleton_method(:move) { |*| raise "boom" }
+    @dos.press("l")
+    @dos.press("n")
+    assert @dos.quit?
+    assert_includes @dos.farewell, "The game broke: RuntimeError: boom\n"
+  end
+
+  def test_a_utf8_console_gets_the_glyphs_as_they_are
+    assert_equal "☺·▒", @dos.encode("☺·▒", Encoding::UTF_8)
+  end
+
+  def test_a_dos_box_gets_code_page_437_bytes_low_glyphs_included
+    assert_equal [0x01, 0xFA, 0xB1, 0xF0, 0x05, 0x0F, 0x18, 0x1B, 0x5B, 0x4B], @dos.encode("☺·▒≡♣☼↑\e[K", Encoding::IBM437).bytes
+  end
+
+  def test_a_plain_ascii_console_gets_question_marks_not_control_codes
+    assert_equal "?.?\e[K", @dos.encode("☺.▒\e[K", Encoding::US_ASCII)
+  end
+end
+
+# --- a survey's Finite State Machine, invented test-side ---
+#
+# A Ruby port of a Java test that used Test Driven Development to architect a profilograph survey's Finite State
+# Machine. The Android app it drove isn't here, so this invents the whole object system that test needs: an
+# activity holding the current state, popups with buttons, a run and its device, and an in-memory database.
+# Each state does its chores on entry and exit, and TRANSITIONS, a table of [state, event] => next state, is
+# the one place the machine's shape is written down
+module Survey
+  # The events that drive the machine: the survey's buttons, and its popups' answers
+  module SurveyEvent
+    START_BUTTON   = :start_button
+    STOP_BUTTON    = :stop_button
+    STEP_BUTTON    = :step_button
+    WIZARD_BACK    = :wizard_back
+    RUN_NAMED      = :run_named      # Yes on the run-name popup
+    STOP_CONFIRMED = :stop_confirmed # Yes on the stop confirmation
+    STOP_DISMISSED = :stop_dismissed # the stop confirmation closed without a Yes
+    ROBOT_HALTED   = :robot_halted   # a launch whose robot command is a halt
+  end
+
+  Device = Struct.new(:id, :bluetooth_address, :name, :drive_wheel_diameter, :counts_per_revolution)
+  Run = Struct.new(:id, :name, :surveyor, :device, :device_id)
+  Step = Struct.new(:project)
+  Chart = Struct.new(:run)
+  Sample = Struct.new(:time_stamp, :speed)
+
+  # Stands in for the tablet's database: each insert keeps a copy and hands back the record's new id
+  class HostDatabase
+    def initialize
+      @devices = []
+      @runs = []
+    end
+
+    def insert_device(device) = (@devices << device.dup).size
+    def insert_run_record(run) = (@runs << run.dup).size
+    def run(id) = @runs[id - 1]&.dup
+  end
+
+  class Button
+    attr_reader :text
+
+    def initialize(text, &on_click)
+      @text = text
+      @on_click = on_click
+    end
+
+    def perform_click = @on_click.call
+  end
+
+  class EditText
+    attr_accessor :text
+  end
+
+  # A popup window, up until it's dismissed; dismissing it runs whatever its owner asked
+  class Popup
+    attr_reader :message
+
+    def initialize(message, &on_dismiss)
+      @message = message
+      @on_dismiss = on_dismiss
+    end
+
+    def dismiss = @on_dismiss.call
+  end
+
+  # The popup asking a new run's name; Yes names the run and starts collecting it
+  class CollectRunRequester
+    attr_reader :popup, :edit_text, :yes_button
+
+    def initialize(activity)
+      @edit_text = EditText.new
+      @yes_button = Button.new("Yes") { activity.name_run(@edit_text.text) }
+    end
+
+    def pop_up = (@popup = Popup.new("Name this run") { close })
+    def close = (@popup = nil)
+  end
+
+  # The popup asking whether to stop the run being collected: Yes stops it, and dismissing it goes back to collecting
+  class StopRunConfirmation
+    attr_reader :popup, :yes_button
+
+    def initialize(activity)
+      @activity = activity
+      @yes_button = Button.new("Yes") { activity.transit(SurveyEvent::STOP_CONFIRMED) }
+    end
+
+    def pop_up(run_name) = (@popup = Popup.new("Stop Run #{run_name}?") { dismissed })
+    def close = (@popup = nil)
+
+    private
+
+    def dismissed
+      close
+      @activity.transit(SurveyEvent::STOP_DISMISSED)
+    end
+  end
+
+  # A state of the survey, which knows the activity it runs in. Its chores go in on_entry and on_exit
+  class SurveyState
+    attr_reader :activity
+
+    def initialize(activity)
+      @activity = activity
+    end
+
+    def on_entry; end
+    def on_exit; end
+    def collecting_run = nil
+    def robot_command = nil
+    def app = activity.app
+  end
+
+  # Showing the chart, analyzing. Arriving by a stop, it reloads the stopped run from the database
+  class ChartState < SurveyState
+    def on_entry
+      activity.analyze
+      activity.reload_run if activity.current_survey_event == SurveyEvent::STOP_CONFIRMED
+    end
+  end
+
+  # Asking the new run's name, still analyzing, under the run-name popup. A chart with no run yet gets a fresh one,
+  # on a device not yet in the database
+  class RequestRunNameState < SurveyState
+    def on_entry
+      app.chart.run ||= Run.new(0, nil, nil, Device.new(0))
+      activity.analyze
+      activity.collect_run_requester.pop_up
+    end
+
+    def on_exit = activity.collect_run_requester.close
+  end
+
+  # Collecting a run, paused between steps
+  class PauseState < SurveyState
+    def on_entry = activity.collect
+    def collecting_run = app.chart.run
+  end
+
+  # Asking whether to stop the run being collected
+  class RequestStopState < SurveyState
+    def on_entry = app.stop_run_confirmation.pop_up(app.chart.run.name)
+    def on_exit = app.stop_run_confirmation.close
+    def collecting_run = app.chart.run
+  end
+
+  # Launching the robot one step along the run. With no speed on the signal yet its command is a halt, and a
+  # halted launch settles at once
+  class LaunchState < SurveyState
+    def collecting_run = app.chart.run
+
+    def robot_command
+      speed = app.current_signal.speed.to_f
+      command = format("%s %.1f 0 0 0", speed.zero? ? "stop" : "go", speed)
+      activity.transit(SurveyEvent::ROBOT_HALTED) if speed.zero?
+      command
+    end
+  end
+
+  # Settling after a step, before the next
+  class SettleState < SurveyState
+    def collecting_run = app.chart.run
+  end
+
+  # The machine's whole shape: [state, event] => the state it moves to. An event a state has no row for changes
+  # nothing, and neither does a row back to the same state, which would otherwise redo that state's chores
+  TRANSITIONS = {
+    [ChartState,          SurveyEvent::START_BUTTON]   => RequestRunNameState,
+    [RequestRunNameState, SurveyEvent::WIZARD_BACK]    => ChartState,
+    [RequestRunNameState, SurveyEvent::RUN_NAMED]      => PauseState,
+    [PauseState,          SurveyEvent::STOP_BUTTON]    => RequestStopState,
+    [PauseState,          SurveyEvent::WIZARD_BACK]    => PauseState, # Back never abandons a run being collected
+    [PauseState,          SurveyEvent::STEP_BUTTON]    => LaunchState,
+    [RequestStopState,    SurveyEvent::STOP_DISMISSED] => PauseState,
+    [RequestStopState,    SurveyEvent::STOP_CONFIRMED] => ChartState,
+    [LaunchState,         SurveyEvent::ROBOT_HALTED]   => SettleState,
+  }.freeze
+
+  class App
+    attr_accessor :current_project, :current_step, :chart, :current_signal
+    attr_reader :stop_run_confirmation
+
+    def initialize(activity)
+      @current_project = "Profileograph"
+      @chart = Chart.new
+      @current_signal = Sample.new(nil, 0.0)
+      @stop_run_confirmation = StopRunConfirmation.new(activity)
+    end
+  end
+
+  # The tablet's one activity: it holds the app, the database, the current state, and what the screen shows
+  class MainActivity
+    attr_reader :app, :host_database, :collect_run_requester, :mode, :status_bar, :reading, :reading_text
+    attr_accessor :state, :current_survey_event
+
+    def initialize
+      @host_database = HostDatabase.new
+      @app = App.new(self)
+      @collect_run_requester = CollectRunRequester.new(self)
+      @state = ChartState.new(self)
+      @state.on_entry
+    end
+
+    # Moves the machine along TRANSITIONS: leaves the old state, enters the new one
+    def transit(event)
+      @current_survey_event = event
+      target = TRANSITIONS[[@state.class, event]]
+      return if target.nil? || target == @state.class
+
+      @state.on_exit
+      @state = target.new(self)
+      @state.on_entry
+    end
+
+    # Comparing runs is for analyzing, not while one is being collected
+    def compare_menu_enabled? = @mode == :analyzing
+
+    # Yes on the run-name popup: names the run and starts collecting it
+    def name_run(name)
+      app.chart.run.name = name
+      transit(SurveyEvent::RUN_NAMED)
+    end
+
+    # Hot-wires the stop confirmation up, whatever the state
+    def pop_stop_run_confirmation_up = app.stop_run_confirmation.pop_up(app.chart.run.name)
+
+    def analyze
+      @mode = :analyzing
+      @status_bar = [:gray, "Analyzing"]
+    end
+
+    def collect
+      @mode = :collecting
+      @status_bar = [:green, "Collecting"]
+    end
+
+    def reload_run
+      id = app.chart.run&.id.to_i
+      app.chart.run = host_database.run(id) if id.positive?
+    end
+
+    # Elevation readings, one "station,,,elevation" line each. The reading's L is their mean, and its T their top
+    def activate_elevation(csv)
+      elevations = csv.lines.map { |line| line.split(",")[3].to_f }
+      @reading = elevations.sum / elevations.size
+      @reading_text = format("Reading L <big>%.3f</big> · T <big>%.3f</big>", @reading, elevations.max)
+    end
+  end
+end
+
+class SurveyStateMachineTest < Minitest::Test
+  include Survey
+  include Survey::SurveyEvent
+
+  def main_activity = @main_activity
+  def app = @main_activity.app
+  def state = @main_activity.state
+  def host_database = @main_activity.host_database
+  def transit(event) = @main_activity.transit(event)
+
+  # A fresh tablet, showing its chart
+  def arrange_profileograph_tablet
+    @main_activity = MainActivity.new
+  end
+
+  def assert_analyzing = assert_equal(:analyzing, main_activity.mode)
+  def assert_collecting = assert_equal(:collecting, main_activity.mode)
+  def assert_green_status_bar(text) = assert_equal([:green, text], main_activity.status_bar)
+  def assert_survey_state(state_class) = assert_instance_of(state_class, state)
+
+  def activate_elevation(csv, reading, text)
+    main_activity.activate_elevation(csv)
+    assert_in_delta reading, main_activity.reading, 1e-9
+    assert_equal text, main_activity.reading_text
+  end
+
+  def test_forge_the_one_finite_state_machine_to_rule_them_all
+    #  this is the test case that used Test Driven Development to architect the
+    #  Finite State Machine before putting it online and moving everything inside it.
+    #
+    #  Assertions for new FSM features belong in the test cases that need them
+
+    arrange_profileograph_tablet
+    assert_instance_of ChartState, state
+    assert_nil main_activity.collect_run_requester.popup
+    assert main_activity.compare_menu_enabled?
+    assert_nil app.current_step
+    app.current_step = Step.new(app.current_project)
+
+    transit START_BUTTON
+
+    assert_instance_of RequestRunNameState, state
+    refute_nil main_activity.collect_run_requester.popup
+    assert main_activity.compare_menu_enabled?
+    assert_equal 0, app.chart.run.device.id
+    device = app.chart.run.device
+    device.bluetooth_address = "CO:NS:EQ:UE:NC:ES"
+    device.name = "Consequences"
+    run = app.chart.run
+    run.device.id = host_database.insert_device(device)
+    run.surveyor = "Gordon"
+    app.chart.run.device_id = app.chart.run.device.id
+
+    app.chart.run.id = host_database.insert_run_record(app.chart.run) #  because stopping a Run reloads it
+
+    transit SurveyEvent::WIZARD_BACK # TODO  can we slip around this?
+
+    assert_instance_of ChartState, state
+    assert main_activity.compare_menu_enabled?
+
+    transit START_BUTTON #  also note that the Zero Wizard pages are states, but nobody cares
+
+    main_activity.state = RequestRunNameState.new(main_activity)
+    main_activity.current_survey_event = START_BUTTON
+    state.on_entry
+    refute_nil main_activity.collect_run_requester.popup
+    assert_analyzing
+    activate_elevation("001,,,0.1\n002,,,0.2", 0.15, "Reading L <big>0.150</big> · T <big>0.200</big>")
+
+    main_activity.collect_run_requester.edit_text.text = "Animal (Muppet)"
+    main_activity.collect_run_requester.yes_button.perform_click
+
+    assert_instance_of PauseState, state #  Note that BackButton does not transit away from CaptureState.  We exploit this
+    assert_green_status_bar "Collecting"
+    assert_nil main_activity.collect_run_requester.popup
+    assert_collecting
+    assert_equal "Animal (Muppet)", state.collecting_run.name
+
+    assert_nil app.stop_run_confirmation.popup
+
+    transit STOP_BUTTON
+
+    assert_instance_of RequestStopState, state
+    refute_nil app.stop_run_confirmation.popup
+
+    assert_equal "Yes", app.stop_run_confirmation.yes_button.text
+    assert_equal "Stop Run Animal (Muppet)?", app.stop_run_confirmation.popup.message
+
+    #  now back out of RequestStopState and return to PauseState
+
+    app.stop_run_confirmation.popup.dismiss
+
+    assert_instance_of PauseState, state
+    assert_nil app.stop_run_confirmation.popup
+
+    #  now hot-wire the stopRunConfirmation, hit the Back Button, and show that we _didn't_ dismiss the PopupWindow
+
+    main_activity.pop_stop_run_confirmation_up # hot-wire this.  Because this test case never hot-wires the state except when it does
+    refute_nil app.stop_run_confirmation.popup
+
+    transit SurveyEvent::WIZARD_BACK
+
+    assert_instance_of PauseState, state, "Pause + Back == Pause"
+
+    refute_nil app.stop_run_confirmation.popup, "not zilched, because transitions to the same state are no-ops"
+
+    #  from the Pause state, the Drive button sends us to the LaunchState
+
+    app.current_signal.time_stamp = Time.now
+
+    transit SurveyEvent::STEP_BUTTON
+
+    assert_instance_of LaunchState, state
+
+    #  all good things must eventually bug out
+
+    app.chart.run.device.drive_wheel_diameter = 42
+    app.chart.run.device.counts_per_revolution = 42
+
+    assert_equal "stop 0.0 0 0 0", state.robot_command # TODO  rename this to halt
+
+    assert_survey_state SettleState #  TODO stop slipping into Settle
+  end
+
+  # --- what the machine does beyond that one long walk ---
+
+  # A tablet collecting a named run, its device and run already in the database
+  def arrange_collecting
+    arrange_profileograph_tablet
+    transit START_BUTTON
+    run = app.chart.run
+    run.surveyor = "Gordon"
+    run.device.id = run.device_id = host_database.insert_device(run.device)
+    run.id = host_database.insert_run_record(run)
+    main_activity.collect_run_requester.edit_text.text = "Kermit"
+    main_activity.collect_run_requester.yes_button.perform_click
+  end
+
+  def test_yes_on_the_stop_confirmation_stops_the_run_and_reloads_it
+    arrange_collecting
+    transit STOP_BUTTON
+    app.stop_run_confirmation.yes_button.perform_click
+    assert_survey_state ChartState
+    assert_nil app.stop_run_confirmation.popup
+    assert_analyzing
+    assert main_activity.compare_menu_enabled?
+    assert_equal host_database.run(app.chart.run.id), app.chart.run, "the run as the database has it"
+    assert_equal "Gordon", app.chart.run.surveyor
+  end
+
+  def test_collecting_disables_comparing
+    arrange_collecting
+    refute main_activity.compare_menu_enabled?
+  end
+
+  def test_an_event_a_state_has_no_row_for_changes_nothing
+    arrange_profileograph_tablet
+    [STOP_BUTTON, STEP_BUTTON, WIZARD_BACK].each do |event|
+      transit event
+      assert_survey_state ChartState
+    end
+  end
+
+  def test_a_launch_with_speed_goes_and_stays_launched
+    arrange_collecting
+    transit STEP_BUTTON
+    app.current_signal.speed = 1.5
+    assert_equal "go 1.5 0 0 0", state.robot_command
+    assert_survey_state LaunchState
+  end
+
+  def test_the_table_joins_only_survey_states_by_survey_events
+    events = SurveyEvent.constants.map { |c| SurveyEvent.const_get(c) }
+    TRANSITIONS.each do |(from, event), to|
+      assert_operator from, :<, SurveyState
+      assert_operator to, :<, SurveyState
+      assert_includes events, event
+    end
   end
 end

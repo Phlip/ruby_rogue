@@ -1,6 +1,7 @@
 # Run with: ruby rogue.rb
 # Or in a browser: ruby rogue.rb --web [port], e.g. --web 8080, then open http://localhost:8080/ (default port 4567)
-# Add --god to either for god mode, where the player takes no damage; --help lists all of these
+# Or in the console, like the original PC Rogue: ruby rogue.rb --dos
+# Add --god to any of them for god mode, where the player takes no damage; --help lists all of these
 
 require 'socket'
 require 'uri'
@@ -23,11 +24,11 @@ class Dungeon
     { glyph: "༺", # shield causes no damage and target wants to go where it nudges
       name: "weapon", na: 1, cr: 1, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 10, con: 18, int: 18, wis: 10, cha: 10,  pacifist: 0.75 },
     { glyph: "𓆩", # light shield causes d6 damage + str or dex or int benefits, one damage event per round is halved
-      name: "light shield", na: 10, cr: 3, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 10, con: 18, int: 18, wis: 10, cha: 10,  pacifist: 0.66 },
+      name: "light shield", na: 10, cr: 3, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 10, con: 18, int: 18, wis: 10, cha: 10,  pacifist: 0.66, packable: 3 },
     { glyph: "༒",  #  double-damage to anyone who is currently aggressive to Ego
       name: "weapon", na: 10, cr: 1, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 10, con: 18, int: 18, wis: 10, cha: 10,  pacifist: 0.65 },
     { glyph: "༻", # shield causes damage yet doubles your protection
-      name: "shield", na: 10, cr: 1, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 18, con: 18, int: 10, wis:  1, cha: 10,  pacifist: 0.5 },
+      name: "shield", na: 10, cr: 1, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 18, con: 18, int: 10, wis:  1, cha: 10,  pacifist: 0.5, packable: 6 },
     { glyph: "R", name: "rat",      na:  8, cr: 1, hp:  3, hit: 1..2, ac: 10, str:  7, dex: 15, con: 11, int:  2, wis: 10, cha:  4, aggressive: true, eats: true },
     { glyph: "C", name: "coyote",   na:  5, cr: 3, hp:  3, hit: 1..2, ac: 10, str: 17, dex: 15, con: 11, int: 16, wis: 15, cha: 14, aggressive: false, eats: true },
     { glyph: "G", name: "goblin",   na:  8, cr: 2, hp:  6, hit: 1..4, ac: 10, str:  8, dex: 17, con: 10, int: 13, wis: 15, cha: 10, greedy: 0.5, eats: true },
@@ -35,18 +36,18 @@ class Dungeon
     { glyph: "T", name: "troll",    na:  2, cr: 5, hp: 18, hit: 3..8, ac: 15, str: 16, dex: 10, con: 18, int: 10, wis: 10, cha: 10, eats: true },
     { glyph: "#", name: "wall",     na: 17, cr: 1, hp:  3, hit: 0..0, ac: 10, str: 18, dex:  0, con: 18, int:  0, wis:  0, cha:  0, pacifist: true },
     { glyph: "#", name: "door",     na:  4, cr: 1, hp: 30, hit: 1..4, ac: 10, str: 18, dex:  0, con: 18, int:  0, wis:  0, cha:  0, pacifist: true, out_of_band: true },
-    { glyph: "$", name: "gold",     na: 15, cr: 2, hp:  3, hit: 0..0, ac: 18, str: 18, dex:  0, con: 18, int:  0, wis:  0, cha:  0, pacifist: true },
-    { glyph: "=", name: "ring of peace",     na:  3, cr: 5, hp: 20, hit: 0..0, ac: 18, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true },
-    { glyph: "=", name: "ring of strength",     na:  3, cr: 5, hp: 20, hit: 0..0, ac: 18, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true },
-    { glyph: "=", name: "ring of protection",   na:  3, cr: 5, hp: 20, hit: 0..0, ac: 18, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true },
-    { glyph: "i", name: "candle",   na: 10, cr: 3, hp:  3, hit: 0..0, ac:  2, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true },
-    { glyph: "¡", name: "potion",   na: 10, cr: 3, hp:  3, hit: 0..0, ac:  2, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true },
-    { glyph: "?", name: "scroll of mapping", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true },
-    { glyph: "!", name: "slow potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true },
-    { glyph: "!", name: "healing potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true },
-    { glyph: "!", name: "empty potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true },
-    { glyph: "~", name: "sandwich",   na: 20, cr: 4, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true },
-    { glyph: "?", name: "scroll of 3 potions", na:  1, cr: 6, hp:  3, hit: 0..0, ac:  2, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true },
+    { glyph: "$", name: "gold",     na: 15, cr: 2, hp:  3, hit: 0..0, ac: 18, str: 18, dex:  0, con: 18, int:  0, wis:  0, cha:  0, pacifist: true, packable: 0.02 },
+    { glyph: "=", name: "ring of peace",     na:  3, cr: 5, hp: 20, hit: 0..0, ac: 18, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true, packable: 0.1 },
+    { glyph: "=", name: "ring of strength",     na:  3, cr: 5, hp: 20, hit: 0..0, ac: 18, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true, packable: 0.1 },
+    { glyph: "=", name: "ring of protection",   na:  3, cr: 5, hp: 20, hit: 0..0, ac: 18, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true, packable: 0.1 },
+    { glyph: "i", name: "candle",   na: 10, cr: 3, hp:  3, hit: 0..0, ac:  2, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true, packable: 1 },
+    { glyph: "¡", name: "potion",   na: 10, cr: 3, hp:  3, hit: 0..0, ac:  2, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true, packable: 0.5 },
+    { glyph: "?", name: "scroll of mapping", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.1 },
+    { glyph: "!", name: "slow potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5 },
+    { glyph: "!", name: "healing potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5 },
+    { glyph: "!", name: "empty potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5 },
+    { glyph: "~", name: "sandwich",   na: 20, cr: 4, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 1 },
+    { glyph: "?", name: "scroll of 3 potions", na:  1, cr: 6, hp:  3, hit: 0..0, ac:  2, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true, packable: 0.1 },
     { glyph: "A", name: "Axebeak",    na:  1, cr: 5, hp: 28, hit: 4..9, ac: 15, str: 18, dex: 17, con: 16, int: 15, wis: 14, cha: 13, pacifist: false, eats: true },
     { glyph: "Q", name: "Quail",    na:  1, cr: 5, hp: 28, hit: 4..9, ac: 15, str: 18, dex: 17, con: 16, int: 15, wis: 14, cha: 13, pacifist: true, eats: true }
   ]
@@ -130,9 +131,10 @@ class Dungeon
   # fed counts down the turns a goblin stays friendly after a sandwich; an ally keeps the coins it pockets.
   # sugar is a creature's blood sugar, nil until it wakes, and starving counts its rounds at zero.
   # The six ability scores come from the kind's THINGAGES row: str adds to every blow it lands, and con to the
-  # hit points it spawns with. dex, int, wis and cha are carried along but nothing reads them yet
+  # hit points it spawns with. dex, int, wis and cha are carried along but nothing reads them yet.
+  # slowed counts down the rounds a potion of slowness lasts, and lagging marks the rounds it sits out
   Thingage = Struct.new(:x, :y, :glyph, :name, :hp, :hit, :str, :dex, :con, :int, :wis, :cha, :pacifist, :spurned, :greedy, :fed, :ally, :coins, :aggressive,
-                        :hasted, :gaseous, :farsighted, :nesting, :sugar, :starving)
+                        :hasted, :gaseous, :farsighted, :nesting, :sugar, :starving, :slowed, :lagging)
   ABILITIES = %i[str dex con int wis cha].freeze
 
   # The D&D ability modifier: 10 and 11 give +0, and every two points up or down moves it by one.
@@ -150,13 +152,17 @@ class Dungeon
   FISTS = { name: BARE_HANDS, glyph: nil, hit: BARE_HANDS_HIT }.freeze
 
   # Each weapon that spawns is one of these; its THINGAGES row only sets how often, how tough, and how peaceful.
-  # A pair is two blades wielded together, so its name is already plural
+  # A pair is two blades wielded together, so its name is already plural. A ranged weapon is never grabbed into
+  # empty hands on defeating it; it goes into the knapsack, to wield when the player chooses
   WEAPONS = [
-    { name: "dagger", glyph: "🗡️", hit: 3..7 },
-    { name: "swords", glyph: "⚔️", hit: 4..10, pair: true },
-    { name: "bow",    glyph: "🏹", hit: 2..9 },
-    { name: "axe",    glyph: "🪓", hit: 5..12 },
+    { name: "dagger", glyph: "🗡️", hit: 3..7, packable: 1 },
+    { name: "swords", glyph: "⚔️", hit: 4..10, pair: true, packable: 6 },
+    { name: "bow",    glyph: "🏹", hit: 2..9, packable: 2, ranged: true },
+    { name: "axe",    glyph: "🪓", hit: 5..12, packable: 4 },
   ].freeze
+
+  # The kinds of shield, by their THINGAGES rows' names. Defeating one packs it; nothing uses a packed one yet
+  SHIELDS = ["shield", "light shield"].freeze
 
   # The hero's armor class: unarmored, as in D&D. Nothing reads it in combat yet
   HERO_AC = 10
@@ -172,11 +178,13 @@ class Dungeon
     @blood_sugar = MAX_BLOOD_SUGAR
     @starving = 0
     @wielded = FISTS
-    @knapsack = { gold: 0, sandwiches: 0, potions: 0, speed_potions: 0, gas_potions: 0, scrolls: 0, mapping_scrolls: 0,
-                  peace_rings: 0, strength_rings: 0, protection_rings: 0, candles: 0, laced_potions: 0,
-                  laced_speed_potions: 0, laced_gas_potions: 0, eggs: [], weapons: [] }
+    @knapsack = { gold: 0, sandwiches: 0, potions: 0, speed_potions: 0, gas_potions: 0, slow_potions: 0, healing_potions: 0,
+                  empty_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0,
+                  candles: 0, laced_potions: 0, laced_speed_potions: 0, laced_gas_potions: 0, laced_slow_potions: 0,
+                  laced_healing_potions: 0, laced_empty_potions: 0, eggs: [], weapons: [], shields: [] }
     @ring = nil
     @hasted = 0
+    @slowed = 0
     @gaseous = 0
     @quick = false
     @won = false
@@ -259,25 +267,32 @@ class Dungeon
 
   # Rounds the player has left of each timed potion; a round is one turn of everyone else's
   def hasted? = @hasted.positive?
+  def slowed? = @slowed.positive?
   def gaseous? = @gaseous.positive?
 
   # The timed potion effects for the banner, e.g. "Hasted 12   Gaseous 3", or "" when none
   def effects
-    [("Hasted #{@hasted}" if hasted?), ("Gaseous #{@gaseous}" if gaseous?)].compact.join("   ")
+    [("Hasted #{@hasted}" if hasted?), ("Slowed #{@slowed}" if slowed?), ("Gaseous #{@gaseous}" if gaseous?)].compact.join("   ")
   end
 
   # Each kind of potion by knapsack slot: the THINGAGES row it spawns from, its full name, and its glyph.
   # Quaffing one gives the drinker its power, and so does throwing it at a character close by
   POTIONS = {
-    potions:       { row: "potion",       name: "potion of sight",        glyph: "¡" },
-    speed_potions: { row: "speed potion", name: "potion of speed",        glyph: "!" },
-    gas_potions:   { row: "gas potion",   name: "potion of gaseous form", glyph: "~" },
+    potions:         { row: "potion",         name: "potion of sight",        glyph: "¡" },
+    speed_potions:   { row: "speed potion",   name: "potion of speed",        glyph: "!", packable: 0.5 },
+    gas_potions:     { row: "gas potion",     name: "potion of gaseous form", glyph: "~", packable: 0.5 },
+    slow_potions:    { row: "slow potion",    name: "potion of slowness",     glyph: "!" },
+    healing_potions: { row: "healing potion", name: "potion of healing",      glyph: "!" },
+    empty_potions:   { row: "empty potion",   name: "empty potion",           glyph: "!" },
   }.freeze
 
-  # A potion of speed gives two actions for everyone else's one for this many rounds;
-  # gaseous form leaves nothing able to touch, or be touched by, the drinker for this many
+  # A potion of speed gives two actions for everyone else's one for this many rounds; slowness gives everyone else
+  # two for the drinker's one for SLOW_ROUNDS; gaseous form leaves nothing able to touch, or be touched by, the
+  # drinker for GAS_ROUNDS. Healing restores the player to full, and a monster, which has no full, by HEAL_HP
   SPEED_ROUNDS = 30
+  SLOW_ROUNDS = 20
   GAS_ROUNDS = 10
+  HEAL_HP = 10
 
   # Each kind of scroll by knapsack slot: the THINGAGES row it spawns from, its full name, and its glyph.
   # Reading one uses it up
@@ -313,6 +328,49 @@ class Dungeon
   # What one press of each give button hands over, keyed by its knapsack slot
   GIFTS = { gold: "a coin", sandwiches: "a sandwich" }.freeze
 
+  # The most the knapsack holds, in pounds. What's wielded is in hand and what's worn is on a finger, so neither
+  # counts. Each thing's weight is the packable on the line that builds it: its THINGAGES row, its WEAPONS entry,
+  # or, for a potion with no row of its own, its POTIONS entry. A Quail egg has no line, so it weighs EGG_POUNDS
+  ENCUMBRANCE = 60
+  EGG_POUNDS = 0.5
+
+  # A weight as an exact fraction, so that, say, 3,000 coins at 0.02 pounds weigh 60 pounds even
+  def self.pounds(weight) = Rational(weight.to_s)
+
+  def self.packable(name) = THINGAGES.find { |k| k[:name] == name }&.dig(:packable)
+
+  # Pounds one thing from a knapsack slot weighs; a laced candle is its candle and its potion together
+  def pounds(slot)
+    return pounds(:candles) + pounds(LACED[slot]) if LACED.key?(slot)
+
+    Dungeon.pounds(case slot
+                   when :gold then Dungeon.packable("gold")
+                   when :sandwiches then Dungeon.packable("sandwich")
+                   else ITEMS.fetch(slot)[:packable] || Dungeon.packable(ITEMS.fetch(slot)[:row])
+                   end)
+  end
+
+  # Pounds a weapon weighs, packed: its WEAPONS entry's packable
+  def weapon_pounds(w) = Dungeon.pounds(WEAPONS.find { |k| k[:name] == w[:name] }&.dig(:packable) || 0)
+
+  # Pounds in the knapsack now
+  def load
+    counted = @knapsack.sum { |slot, n| n.is_a?(Integer) ? n * pounds(slot) : 0 }
+    counted + @knapsack[:eggs].size * Dungeon.pounds(EGG_POUNDS) + @knapsack[:weapons].sum { |w| weapon_pounds(w) } +
+      @knapsack[:shields].sum { |s| Dungeon.pounds(Dungeon.packable(s[:name])) }
+  end
+
+  def room_for?(weight) = load + weight <= ENCUMBRANCE
+
+  # How many of count things, each weighing that much, the knapsack has room for
+  def fitting(count, each) = [count, ((ENCUMBRANCE - load) / each).floor].min.clamp(0..)
+
+  # The load for the banner, e.g. "Load 12.5/60 lb"
+  def load_text
+    shown = load.round(1)
+    "Load #{shown.denominator == 1 ? shown.to_i : shown.to_f}/#{ENCUMBRANCE} lb"
+  end
+
   # Readies a gift from the knapsack; the next arrow hands it that way instead of moving, and rest cancels it,
   # except that resting on a sandwich eats it yourself
   def offer(item)
@@ -326,7 +384,8 @@ class Dungeon
 
   # The knapsack as [text, slot] pairs, e.g. ["3 🪓 axes", "axe"], with weapons grouped by kind in
   # packing order. The slot is :gold or :sandwiches, which give, :eggs, which candles, a POTIONS slot, which quaffs
-  # or throws, a SCROLLS slot, which reads, a RINGS slot, which wears, or a weapon name, which wields
+  # or throws, a SCROLLS slot, which reads, a RINGS slot, which wears, :candles and :shields, which wait, or a
+  # weapon name, which wields
   def contents
     packed = []
     packed << ["#{gold} gold", :gold] if gold.positive?
@@ -353,6 +412,9 @@ class Dungeon
     @knapsack[:weapons].group_by { |w| w[:name] }.each do |name, kind|
       many = pair?(name) ? "#{kind.size} pairs of #{label(kind.first)}" : "#{kind.size} #{label(kind.first)}s"
       packed << [kind.size == 1 ? label(kind.first) : many, name]
+    end
+    @knapsack[:shields].group_by { |s| s[:name] }.each_value do |kind|
+      packed << [kind.size == 1 ? label(kind.first) : "#{kind.size} #{label(kind.first)}s", :shields]
     end
     packed
   end
@@ -392,6 +454,14 @@ class Dungeon
     when :gas_potions
       @gaseous = GAS_ROUNDS
       "You turn to mist. Nothing can touch you, and you can touch nothing."
+    when :slow_potions
+      @slowed = SLOW_ROUNDS
+      "Everything else speeds up to twice your pace!"
+    when :healing_potions
+      @hp = @max_hp
+      "You feel whole again!"
+    when :empty_potions
+      "It's empty. Nothing happens."
     end
   end
 
@@ -522,6 +592,10 @@ class Dungeon
     (drawn = at && weapons.delete_at(at)) or
       return say(name ? "You have no #{name} in your knapsack." : "You have no weapon in your knapsack to wield.")
 
+    unless @wielded == FISTS || room_for?(weapon_pounds(@wielded))
+      weapons.insert(at, drawn)
+      return say("Your knapsack is too full to hold your #{@wielded[:name]} in place of the #{drawn[:name]}.")
+    end
     @knapsack[:weapons] << @wielded unless @wielded == FISTS
     @wielded = drawn
     say "You now wield #{weapon}."
@@ -626,12 +700,16 @@ class Dungeon
 
   def hungry? = @blood_sugar.zero?
 
+  # The map as rows of [glyph, hungry] squares, for a front end that draws it a square at a time
+  def cells
+    Array.new(VIEWPORT_HEIGHT) { |y| Array.new(VIEWPORT_WIDTH) { |x| [glyph_at(x, y), hungry_at?(x, y)] } }
+  end
+
   # The map as rows of [text, hungry] runs: the glyphs, split where a hungry creature is drawn, so a front end
   # can color those in HUNGRY_COLOR
   def map_runs
-    Array.new(VIEWPORT_HEIGHT) do |y|
-      Array.new(VIEWPORT_WIDTH) { |x| [glyph_at(x, y), hungry_at?(x, y)] }
-           .chunk_while { |a, b| a[1] == b[1] }.map { |run| [run.map(&:first).join, run.first[1]] }
+    cells.map do |row|
+      row.chunk_while { |a, b| a[1] == b[1] }.map { |run| [run.map(&:first).join, run.first[1]] }
     end
   end
 
@@ -758,7 +836,7 @@ class Dungeon
         [-1, 0, 1].product([-1, 0, 1]).all? { |dx, dy| xs.cover?(cx + dx) && ys.cover?(cy + dy) || @map[cy + dy][cx + dx] == "#" }
       end
     end
-    (chosen = sealed.sample) and chosen.merge(state: :set)
+    (chosen = sealed.sample) and chosen.merge(state: :arrangeSet)
   end
 
   # Inside the cage, behind the line
@@ -909,6 +987,8 @@ class Dungeon
     if foe.hp <= 0
       @monsters.delete(foe)
       return seize(foe) if WEAPONS.any? { |w| w[:name] == foe.name }
+      return stow(foe) if SHIELDS.include?(foe.name) || PACKABLE.key?(foe.name)
+
       say "You defeat the #{foe.name}!"
       explode(foe) if foe.name == "Quail"
     elsif foe.pacifist && !foe.spurned
@@ -990,6 +1070,9 @@ class Dungeon
     potions:       "Their eyes blaze: they can see you from anywhere now.",
     speed_potions: "They speed up to two actions for your one!",
     gas_potions:   "They turn to mist!",
+    slow_potions:    "They slow to half your pace!",
+    healing_potions: "They look healthier.",
+    empty_potions:   "Nothing happens. It was empty.",
   }.freeze
 
   # A laced candle bursts at x, y, and its potion's power washes over every character in the burst area, the
@@ -1018,6 +1101,14 @@ class Dungeon
     when :gas_potions
       m.gaseous = GAS_ROUNDS
       "It turns to mist!"
+    when :slow_potions
+      m.slowed = SLOW_ROUNDS
+      "It slows to half your pace!"
+    when :healing_potions
+      m.hp += HEAL_HP
+      "It looks healthier."
+    when :empty_potions
+      "Nothing happens. It was empty."
     end
   end
 
@@ -1099,11 +1190,32 @@ class Dungeon
     end
   end
 
+  # Defeating a shield, or a potion or any other packable thing, packs it into the knapsack, room allowing; with no
+  # room, it's left behind
+  def stow(foe)
+    shield = SHIELDS.include?(foe.name)
+    weight = shield ? Dungeon.pounds(Dungeon.packable(foe.name)) : pounds(PACKABLE[foe.name])
+    room_for?(weight) or
+      return say("You defeat the #{foe.name}, but your knapsack is too full to carry it, so you leave it behind.")
+
+    if shield
+      @knapsack[:shields] << { name: foe.name, glyph: foe.glyph }
+    else
+      @knapsack[PACKABLE[foe.name]] += 1
+    end
+    say "You defeat the #{foe.name} and pack it into your knapsack."
+  end
+
   # Defeating a weapon seizes it. Empty hands wield it: it shows in the banner and its hit range becomes the player's.
-  # A player already wielding one packs the new weapon into the knapsack instead
+  # A player already wielding one, or seizing a ranged one, packs it into the knapsack instead, room allowing; it
+  # keeps the packable weight and ranged flag from its WEAPONS entry
   def seize(foe)
-    found = { name: foe.name, glyph: foe.glyph, hit: foe.hit }
-    if @wielded != FISTS
+    found = { name: foe.name, glyph: foe.glyph, hit: foe.hit }.merge(WEAPONS.find { |w| w[:name] == foe.name }&.slice(:packable, :ranged) || {})
+    if @wielded != FISTS || found[:ranged]
+      them = pair?(foe.name) ? "them" : "it"
+      room_for?(weapon_pounds(found)) or
+        return say("You defeat the #{foe.name}, but your knapsack is too full to carry #{them}, so you leave #{them} behind.")
+
       @knapsack[:weapons] << found
       return say("You defeat the #{foe.name} and pack #{pair?(foe.name) ? "them" : "it"} into your knapsack.")
     end
@@ -1134,9 +1246,11 @@ class Dungeon
 
   # Walking into a potion, a scroll, or a ring packs it into the knapsack instead of attacking it; quaff, read, or wear uses it later
   def pack(thing, slot)
+    room_for?(pounds(slot)) or return say("Your knapsack is too full for the #{ITEM_NAMES[slot]}.")
+
     @monsters.delete(thing)
     @knapsack[slot] += 1
-    say "You pack a #{ITEM_NAMES[slot]} into your knapsack."
+    say "You pack #{a_name(ITEM_NAMES[slot])} into your knapsack."
   end
 
   # Where x, y lies from the player in compass steps, e.g. "12 east and 3 north"
@@ -1180,19 +1294,31 @@ class Dungeon
     free_spot(@rooms.zip(weights).find { |_, w| (pick -= w).negative? }&.first || @rooms.last)
   end
 
+  # Takes what lies here into the knapsack, as much as it has room for; the rest stays where it lies
   def pick_up
-    if (coins = @treasure.delete([@px, @py]))
-      @knapsack[:gold] += coins
-      say "You find #{coins} gold!"
+    spot = [@px, @py]
+    if (coins = @treasure.delete(spot))
+      taken = fitting(coins, pounds(:gold))
+      @knapsack[:gold] += taken
+      @treasure[spot] = coins - taken if taken < coins
+      say taken == coins ? "You find #{coins} gold!" : "You find #{coins} gold, but your knapsack has room for only #{taken}."
     end
-    if (count = @sandwiches.delete([@px, @py]))
-      @knapsack[:sandwiches] += count
-      say "You pack #{count == 1 ? "a sandwich" : "#{count} sandwiches"} into your knapsack."
+    if (count = @sandwiches.delete(spot))
+      taken = fitting(count, pounds(:sandwiches))
+      @knapsack[:sandwiches] += taken
+      @sandwiches[spot] = count - taken if taken < count
+      say taken == count ? "You pack #{count == 1 ? "a sandwich" : "#{count} sandwiches"} into your knapsack." :
+                           "Your knapsack has room for only #{taken} of the #{count} sandwiches here."
     end
-    return unless (laid = @eggs.delete([@px, @py]))
+    return unless (laid = @eggs.delete(spot))
 
-    @knapsack[:eggs].concat(laid)
-    say "You gather #{laid.size == 1 ? "an egg" : "#{laid.size} eggs"} from the nest."
+    taken = fitting(laid.size, Dungeon.pounds(EGG_POUNDS))
+    @eggs[spot] = laid.drop(taken) if taken < laid.size
+    return say("Your knapsack is too full for the #{laid.size == 1 ? "egg" : "eggs"}.") if taken.zero?
+
+    @knapsack[:eggs].concat(laid.first(taken))
+    left = laid.size - taken
+    say "You gather #{taken == 1 ? "an egg" : "#{taken} eggs"} from the nest#{", leaving #{left} for want of room" if left.positive?}."
     nesters = @monsters.select(&:nesting)
     nesters.each { |m| m.nesting = false }
     say "The nesting Quail stirs and follows its eggs!" if nesters.any?
@@ -1234,12 +1360,16 @@ class Dungeon
   end
 
   # Ends one player action. A hasted player gets two actions per round, so only every second one lets
-  # everyone else act; each round that passes wears down the timed potions
+  # everyone else act, and a slowed one gets one for two rounds, so everyone else acts twice; each round that
+  # passes wears down the timed potions
   def end_turn
     return if hasted? && (@quick = !@quick) # the first of a hasted pair: the dungeon waits
 
-    monsters_act
-    round_passes
+    (slowed? ? 2 : 1).times do
+      monsters_act
+      round_passes
+      break if over?
+    end
   end
 
   def round_passes
@@ -1247,15 +1377,17 @@ class Dungeon
       @quick = false
       say "You slow back down."
     end
+    say "You speed back up." if slowed? && (@slowed -= 1).zero?
     say "You become solid again." if gaseous? && (@gaseous -= 1).zero?
     @monsters.each do |m|
       m.hasted -= 1 if m.hasted.to_i.positive?
+      m.slowed -= 1 if m.slowed.to_i.positive?
       m.gaseous -= 1 if m.gaseous.to_i.positive?
     end
     hunger
   end
 
-  # Every monster takes its turn, a hasted one two
+  # Every monster takes its turn, a hasted one two, and a slowed one only every other round
   def monsters_act
     @monsters.dup.each do |m|
       next if m.hp <= 0 # slain by an ally earlier this turn
@@ -1264,6 +1396,7 @@ class Dungeon
         m.fed -= 1
         say "The #{m.name} is hungry again." if m.fed.zero?
       end
+      next if m.slowed.to_i.positive? && (m.lagging = !m.lagging) # the round a slowed one sits out
       (m.hasted.to_i.positive? ? 2 : 1).times do
         act(m)
         return if over?
@@ -1529,7 +1662,7 @@ class WebGame
     # quaffs (with throw and pour-into-a-candle buttons beside it), a laced candle is thrown (with a kick button
     # beside it), a scroll reads, a ring is worn, and a weapon kind wields one of them. Plain candles just wait
     packed = @game.contents.map do |text, slot|
-      next %(<span>#{h text}</span>) if slot == :candles
+      next %(<span>#{h text}</span>) if %i[candles shields].include?(slot)
 
       if Dungeon::LACED.key?(slot)
         thrower = %(<form method="post" action="/fling?item=#{slot}&amp;how=throw"><button style="width: auto">#{h text}</button></form>)
@@ -1573,7 +1706,7 @@ class WebGame
       </head>
       <body style="width: 100%;">
         <main>
-        <p>#{"#{@game.outcome} &nbsp; " unless @game.outcome.empty?}#{"GOD MODE &nbsp; " if @game.god?}#{"#{h @game.effects} &nbsp; " unless @game.effects.empty?}HP #{@game.hp}/#{@game.max_hp} &nbsp; AC #{@game.ac} &nbsp; Weapon #{h @game.weapon} &nbsp; Blood sugar #{@game.blood_sugar} &nbsp; Gold #{@game.gold} &nbsp; Sandwiches #{@game.sandwiches} &nbsp; Depth #{@game.depth}</p>
+        <p>#{"#{@game.outcome} &nbsp; " unless @game.outcome.empty?}#{"GOD MODE &nbsp; " if @game.god?}#{"#{h @game.effects} &nbsp; " unless @game.effects.empty?}HP #{@game.hp}/#{@game.max_hp} &nbsp; AC #{@game.ac} &nbsp; Weapon #{h @game.weapon} &nbsp; Blood sugar #{@game.blood_sugar} &nbsp; Gold #{@game.gold} &nbsp; Sandwiches #{@game.sandwiches} &nbsp; #{@game.load_text} &nbsp; Depth #{@game.depth}</p>
         <pre>#{map_html}</pre>
         <p>#{@game.log.map { |line| h line }.join("<br>")}</p>
         <!-- The map spans the page like a lintel over two posts: the move pad lower left, the knapsack lower right -->
@@ -1604,15 +1737,290 @@ class WebGame
   end
 end
 
+# Plays the game in a text console, the way the original PC Rogue did. The screen is drawn with ANSI escape
+# sequences, the driver commands MS-DOS's ANSI.SYS understood (cursor position, erase, and the 16 colors), and
+# the map in the IBM PC's OEM glyphs, code page 437. Keys come in raw, one at a time, Rogue's hjklyubn included
+class DosBox
+  ESC = "\e"
+
+  # The PC Rogue look: a smiley for the player, shaded walls, dotted floors, a triple bar for the stairs, and so on.
+  # A glyph code page 437 has no room for, such as an emoji weapon, becomes Rogue's weapon arrow, or a shield's ]
+  OEM = { "@" => "☺", "#" => "▒", "." => "·", ">" => "≡", "$" => "☼", "%" => "♣" }.freeze
+  SHIELDS = %w[༺ 𓆩 ༻].freeze
+  WEAPON = "↑"
+
+  # The OEM glyphs in code page 437's low, control-code range, which a DOS console still draws rather than obeys
+  LOW_GLYPHS = { "☺" => "\x01", "♣" => "\x05", "☼" => "\x0F", "↑" => "\x18" }.freeze
+
+  # The escape sequences a terminal sends for the arrow and keypad keys, named as the browser names them, so the
+  # movement PAD reads them all alike
+  ESCAPES = {
+    "\e[A" => "ArrowUp", "\e[B" => "ArrowDown", "\e[C" => "ArrowRight", "\e[D" => "ArrowLeft",
+    "\e[H" => "Home", "\e[1~" => "Home", "\eOH" => "Home", "\e[F" => "End", "\e[4~" => "End", "\eOF" => "End",
+    "\e[5~" => "PageUp", "\e[6~" => "PageDown", "\e[E" => "Clear", "\e[G" => "Clear", "\eOE" => "Clear",
+    "\e" => "Escape",
+  }.freeze
+
+  # Commands that ask which knapsack entry, by its letter, before they act
+  PROMPTS = {
+    "a" => [:use,   "Use which item?"],
+    "T" => [:throw, "Throw which item?"],
+    "K" => [:kick,  "Kick which laced candle?"],
+    "P" => [:pour,  "Pour which potion into a candle?"],
+  }.freeze
+
+  HELP = [
+    "Keys",
+    "hjklyubn, arrows,",
+    "  or keypad: move",
+    ". or 5: rest",
+    "i: inventory",
+    "w: wield",
+    "a: use an item",
+    "T: throw an item",
+    "K: kick a candle",
+    "P: pour a potion",
+    "$: give a coin",
+    "%: give sandwich",
+    "t: throw the gift",
+    "?: knapsack/keys",
+    "N: new game",
+    "Q: quit",
+  ].freeze
+
+  # The status line, the map, the four log lines, and the prompt
+  SCREEN_ROWS = 1 + Dungeon::VIEWPORT_HEIGHT + 4 + 1
+
+  attr_reader :game
+
+  def initialize(god: false)
+    @god = god
+    @game = Dungeon.new(god: @god)
+    @pending = nil
+    @note = nil
+    @error = nil
+    @help = false
+    @quit = false
+  end
+
+  def quit? = @quit
+
+  # A map glyph as the PC drew it
+  def oem(glyph)
+    OEM.fetch(glyph) do
+      next glyph if glyph.ascii_only?
+      next "]" if SHIELDS.include?(glyph)
+
+      glyph.encode(Encoding::IBM437) && glyph.size == 1 ? glyph : WEAPON
+    rescue EncodingError
+      WEAPON
+    end
+  end
+
+  # The whole screen as one string of driver commands, for a console width columns wide
+  def screen(width = 80)
+    lines.each_with_index.map { |line, i| "#{ESC}[#{i + 1};1H#{fit(line, width)}#{ESC}[0m#{ESC}[K" }.join
+  end
+
+  # The screen's lines: the status, the map with the knapsack (or the keys) beside it, the log, and a prompt
+  def lines
+    panel = panel_lines
+    map = @game.cells.map do |row|
+      row.map { |glyph, hungry| hungry ? "#{ESC}[1;33m#{oem(glyph)}#{ESC}[0m" : oem(glyph) }.join
+    end
+    map = map.each_with_index.map { |row, i| panel[i] ? "#{row} #{panel[i]}" : row }
+    [status] + map + Array.new(4) { |i| @game.log[i].to_s } + [prompt]
+  end
+
+  # Handles one key, as read_key names it. Once the game is over, or has broken, only y (play again) and n or Esc
+  # (exit) still do anything, besides Q, N, and ?
+  def handle(key)
+    @note = nil
+    return @quit = true if ["Q", "\x03", "\x04"].include?(key)
+    return replay if key == "N"
+    return answer(key) if @pending
+    return @help = !@help if key == "?"
+    return play_again(key) if @game.over? || @error
+
+    case key
+    when "i" then @game.inventory
+    when "w" then @game.wield
+    when "t" then @game.hurl
+    when "$" then @game.offer(:gold)
+    when "%" then @game.offer(:sandwiches)
+    else
+      if (command = PROMPTS[key])
+        @game.contents.empty? ? @note = "Your knapsack is empty." : @pending = command.first
+      elsif (pad = PAD.flatten(1).find { |_, _, _, keys| keys.split.include?(key) })
+        _, dx, dy = pad
+        dx.zero? && dy.zero? ? @game.rest : @game.move(dx, dy)
+      end
+    end
+  end
+
+  # Handles one key as handle does, except that a key that breaks the game is caught, and the player offered a
+  # fresh one or a graceful exit
+  def press(key)
+    handle(key)
+  rescue StandardError => e
+    @pending = nil
+    @error = e
+  end
+
+  # Plays until the player quits, then exits gracefully
+  def play
+    require 'io/console'
+    write "#{ESC}[2J#{ESC}[?25l"
+    $stdin.raw do |input|
+      until quit?
+        write screen(($stdout.winsize.last rescue 80))
+        press(read_key(input))
+      end
+    end
+  ensure
+    write farewell
+  end
+
+  # A graceful exit leaves the last screen up, to scroll away like any other output, and puts the colors, the
+  # cursor, and the shell's prompt back below it; a game that broke says how, there
+  def farewell
+    goodbye = "#{ESC}[0m#{ESC}[#{SCREEN_ROWS + 1};1H#{ESC}[?25h\n"
+    return goodbye unless @error
+
+    "#{goodbye}The game broke: #{@error.class}: #{@error.message}\n#{@error.backtrace.to_a.first(5).map { |l| "  #{l}\n" }.join}"
+  end
+
+  # One key from the console: a plain character, or the name of an arrow, keypad, or Escape key
+  def read_key(input)
+    key = input.getc or return "Q"
+    return key unless key == ESC
+
+    key += input.getc while IO.select([input], nil, nil, 0.05) && !key.match?(/\A\e(\[[\d;]*[A-Za-z~]|O[A-Za-z])\z/)
+    ESCAPES.fetch(key, "Escape")
+  end
+
+  # Text for the console: as is for a UTF-8 one; for a DOS box in code page 437, glyph for glyph, the low ones
+  # included; for any other, with ? for whatever it can't show
+  def encode(text, encoding = $stdout.external_encoding || Encoding.default_external)
+    return text if encoding == Encoding::UTF_8
+
+    text = text.gsub(Regexp.union(LOW_GLYPHS.keys), LOW_GLYPHS) if encoding == Encoding::IBM437
+    text.encode(encoding, undef: :replace, invalid: :replace, replace: "?")
+  end
+
+  private
+
+  def write(text)
+    $stdout.write(encode(text))
+    $stdout.flush
+  end
+
+  def status
+    g = @game
+    banner = g.outcome.empty? ? "" : "#{ESC}[7m #{g.outcome} #{ESC}[0m "
+    "#{banner}#{"GOD MODE  " if g.god?}#{"#{g.effects}  " unless g.effects.empty?}HP #{g.hp}/#{g.max_hp}  AC #{g.ac}  " \
+      "Weapon #{g.weapon}  Blood sugar #{g.blood_sugar}  Gold #{g.gold}  Sandwiches #{g.sandwiches}  #{g.load_text}  Depth #{g.depth}"
+  end
+
+  # The knapsack, each entry lettered for the prompts, or the keys while ? shows them
+  def panel_lines
+    return HELP if @help
+
+    packed = @game.contents
+    return ["Knapsack: empty", "? lists the keys"] if packed.empty?
+
+    ["Knapsack:"] + packed.each_with_index.map { |(text, _), i| "#{(97 + i).chr}) #{text}" }
+  end
+
+  def prompt
+    return "#{PROMPTS.values.to_h[@pending]} (#{letters}, Esc cancels)" if @pending
+    return "#{ending} Play again? (y/n)" if @error || @game.over?
+    return @note if @note
+    return "Then an arrow sends it that way, or . keeps it" if @game.log.last.to_s.end_with?("which way?")
+
+    "? for the keys"
+  end
+
+  # How the game ended, for the play-again offer
+  def ending
+    return "The game broke (#{@error.class}: #{@error.message})." if @error
+    return "You died." if @game.hp <= 0
+
+    @game.won? ? "You won!" : "The adventure is over."
+  end
+
+  # Once the game is over: y starts a new one, and n or Esc exits gracefully
+  def play_again(key)
+    case key
+    when "y", "Y" then replay
+    when "n", "Escape" then @quit = true
+    end
+  end
+
+  def replay
+    @game = Dungeon.new(god: @god)
+    @error = nil
+    @pending = nil
+  end
+
+  def letters
+    last = (96 + @game.contents.size).chr
+    last == "a" ? "a" : "a-#{last}"
+  end
+
+  # The knapsack letter answers a pending prompt, which then acts as the web page's buttons do
+  def answer(key)
+    verb = @pending
+    @pending = nil
+    return if key == "Escape"
+
+    index = key.ord - 97 if key.size == 1
+    _, slot = index&.between?(0, 25) && @game.contents[index]
+    slot or return @note = "No item #{key}."
+
+    case verb
+    when :use
+      if Dungeon::POTIONS.key?(slot) then @game.quaff(slot)
+      elsif Dungeon::SCROLLS.key?(slot) then @game.read(slot)
+      elsif Dungeon::RINGS.key?(slot) then @game.wear(slot)
+      elsif Dungeon::LACED.key?(slot) then @game.fling(slot, :throw)
+      elsif slot == :eggs then @game.candle
+      elsif slot == :candles then @note = "A candle needs a potion poured into it first: P."
+      elsif slot == :shields then @note = "There's nothing to do with a shield yet."
+      elsif slot.is_a?(Symbol) then @game.offer(slot)
+      else @game.wield(slot)
+      end
+    when :throw
+      if Dungeon::POTIONS.key?(slot) then @game.aim(slot)
+      elsif Dungeon::LACED.key?(slot) then @game.fling(slot, :throw)
+      elsif Dungeon::GIFTS.key?(slot) then @game.offer(slot)
+      else @note = "You can't throw that."
+      end
+    when :kick
+      Dungeon::LACED.key?(slot) ? @game.fling(slot, :kick) : @note = "Only a laced candle can be kicked."
+    when :pour
+      Dungeon::POTIONS.key?(slot) ? @game.pour(slot) : @note = "Only a potion can be poured into a candle."
+    end
+  end
+
+  # Cuts a line to width visible columns, leaving its escape sequences whole
+  def fit(line, width)
+    shown = 0
+    line.scan(/\e\[[\d;?]*[A-Za-z]|./m).take_while { |piece| piece.start_with?(ESC) || (shown += 1) <= width }.join
+  end
+end
+
 # What --help prints
 USAGE = <<~TEXT
   Quail on the Run, a roguelike
 
-  Usage: ruby rogue.rb [--web [port]] [--god]
+  Usage: ruby rogue.rb [--web [port] | --dos] [--god]
          ruby rogue.rb --help
 
     (no flags)    play in a desktop window, drawn by Scarpe
     --web [port]  play in a browser instead, at http://localhost:port/ (port 1-65535, default 4567)
+    --dos         play right here in the console, like the original PC Rogue: ANSI driver commands, OEM glyphs,
+                  and Rogue's keys (? lists them)
     --god         god mode: the player takes no damage
     -h, --help    show this help and exit
 TEXT
@@ -1623,6 +2031,8 @@ GOD = ARGV.include?("--god")
 
 if $PROGRAM_NAME == __FILE__ && (ARGV & %w[--help -h]).any?
   puts USAGE
+elsif $PROGRAM_NAME == __FILE__ && ARGV.include?("--dos")
+  DosBox.new(god: GOD).play
 elsif $PROGRAM_NAME == __FILE__ && ARGV.include?("--web")
   # The port is whatever follows --web, defaulting to 4567; another flag such as --god there means no port given
   arg = ARGV[ARGV.index("--web") + 1]
@@ -1647,7 +2057,7 @@ Scarpe.app(title: "Scarpe Rogue") do # , width: 560, height: 640) do
   #  make aggressive things attack the TODO weapon and the mobile wall
 
   redraw = lambda do
-    @status.replace "#{"#{@game.outcome}   " unless @game.outcome.empty?}#{"GOD MODE   " if @game.god?}#{"#{@game.effects}   " unless @game.effects.empty?}HP #{@game.hp}/#{@game.max_hp}   AC #{@game.ac}   Weapon #{@game.weapon}   Blood sugar #{@game.blood_sugar}   Gold #{@game.gold}   Sandwiches #{@game.sandwiches}   Depth #{@game.depth}"
+    @status.replace "#{"#{@game.outcome}   " unless @game.outcome.empty?}#{"GOD MODE   " if @game.god?}#{"#{@game.effects}   " unless @game.effects.empty?}HP #{@game.hp}/#{@game.max_hp}   AC #{@game.ac}   Weapon #{@game.weapon}   Blood sugar #{@game.blood_sugar}   Gold #{@game.gold}   Sandwiches #{@game.sandwiches}   #{@game.load_text}   Depth #{@game.depth}"
     # Hungry creatures go in as colored spans between the plain runs of the map
     pieces = @game.map_runs.each_with_index.flat_map do |runs, y|
       row = runs.map do |text, hungry|
@@ -1662,7 +2072,7 @@ Scarpe.app(title: "Scarpe Rogue") do # , width: 560, height: 640) do
     # kind wields one of them
     @packed.clear do
       @game.contents.each do |text, slot|
-        next para(text) if slot == :candles # plain candles just wait for a potion
+        next para(text) if %i[candles shields].include?(slot) # plain candles wait for a potion; shields, for rules
 
         if Dungeon::LACED.key?(slot)
           button(text) do

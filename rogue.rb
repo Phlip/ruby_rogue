@@ -1745,7 +1745,8 @@ class DosBox
 
   # The PC Rogue look: a smiley for the player, shaded walls, dotted floors, a triple bar for the stairs, and so on.
   # A glyph code page 437 has no room for, such as an emoji weapon, becomes Rogue's weapon arrow, or a shield's ]
-  OEM = { "@" => "☺", "#" => "▒", "." => "·", ">" => "≡", "$" => "☼", "%" => "♣" }.freeze
+  OEM = { # "@" => "☺",
+          "#" => "▒", "." => "·", ">" => "≡", "$" => "☼", "%" => "♣" }.freeze
   SHIELDS = %w[༺ 𓆩 ༻].freeze
   WEAPON = "↑"
 

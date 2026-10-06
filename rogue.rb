@@ -190,6 +190,8 @@ class Dungeon
   #  test that going down a level boosts your life level and those
   #   of every follower
 
+  #  put these glyphs into the CRT simulator plz only hide them in DOSBOX mode: def test_glyphs_code_page_437_cannot_hold_become_rogues_weapon_and_armor
+
   #  potion of out of focusness - Rs become Qs, Qs become Plants, potted plants become quails, Ts become Cs, Cs become
   #  dead bodies stay there until Milda cleans them up
 
@@ -860,6 +862,34 @@ class Dungeon
 
   # The tap button's full name, e.g. "tap left"
   def tap_label = "tap #{DIRECTIONS[@facing]}"
+
+  # The give coin button's full name, e.g. "give coin ($) right"
+  def give_coin_label = "give coin ($) #{DIRECTIONS[@facing]}"
+
+  # Hands a coin straight to whoever stands the way the player faces, no asking which way. With no one there it
+  # lands on that square, starting a pile of gold there or adding to one. Giving takes a turn; a coin kept, because
+  # of a wall or mist, doesn't
+  def give_coin
+    over? and return
+    @throwable = nil
+    @offering = nil
+    gold.zero? and return say("You have no gold to give.")
+
+    x = @px + @facing[0]
+    y = @py + @facing[1]
+    if (taker = monster_at(x, y))
+      (gaseous? || mist?(taker)) and return say("A coin passes right through the #{taker.name}. You keep it.")
+
+      say "You give the #{taker.name} a coin. It #{receive(taker, :gold)}."
+    else
+      wall?(x, y) and return say("A wall is in the way. You keep the coin.")
+
+      @knapsack[:gold] -= 1
+      @treasure[[x, y]] = @treasure.fetch([x, y], 0) + 1
+      say "No one is there, so the coin lands on the floor."
+    end
+    end_turn
+  end
 
   # Taps whatever lies the way the player faces, without violence; tapping takes a turn. An unlocked door swings
   # open, a locked one only rattles, and anyone else just feels the tap
@@ -1991,8 +2021,8 @@ PAD = [
 class WebGame
   attr_reader :game
 
-  def initialize(god: false)
-    @godMode = god
+  def initialize(godMode: false)
+    @godMode = godMode
     @game = Dungeon.new(godMode: @godMode)
   end
 
@@ -2026,6 +2056,7 @@ class WebGame
       when "/move" then @game.move(params["dx"].to_i.clamp(-1, 1), params["dy"].to_i.clamp(-1, 1))
       when "/rest" then @game.rest
       when "/tap" then @game.tap
+      when "/give_coin" then @game.give_coin
       when "/choose"
         slot = @game.contents.map(&:last).find { |s| s.to_s == params["item"] } or return [404, {}, "Not found"]
         @game.choose(slot)
@@ -2102,9 +2133,12 @@ class WebGame
   def page
     buttons = PAD.flatten(1).map do |label, dx, dy, keys|
       action = dx.zero? && dy.zero? ? "/rest" : "/move?dx=#{dx}&amp;dy=#{dy}"
-      # The rest button is underlined while something alive or magic is beside the player, worth searching
+      # The rest button is underlined while something alive or magic is beside the player, worth searching, and the
+      # arrow the player faces is highlighted, the way tap, Throw, and Give go
       lit = action == "/rest" && @game.alive_nearby?
-      %(<form method="post" action="#{action}"><button data-keys="#{h keys}"#{' style="text-decoration: underline"' if lit}>#{label}</button></form>)
+      facing = [dx, dy] == @game.facing
+      %(<form method="post" action="#{action}"><button data-keys="#{h keys}"#{' class="facing" aria-pressed="true"' if facing}) +
+        %(#{' style="text-decoration: underline"' if lit}>#{label}</button></form>)
     end
 
     # One button per knapsack entry: gold and sandwiches ready a gift, eggs are held up to the light, a potion
@@ -2160,6 +2194,7 @@ class WebGame
           pre { font-size: 15px; line-height: 1.1; overflow-x: auto; }
           .pad { display: grid; grid-template-columns: repeat(3, 60px); gap: 4px; }
           .pad-row { display: flex; align-items: center; gap: 8px; }
+          .pad button.facing { background: #{Dungeon::HUNGRY_COLOR}; color: #111; font-weight: bold; }
           .stairs { display: flex; align-items: center; gap: 4px; }
           form { margin: 0; }
           button { width: 100%; }
@@ -2193,7 +2228,7 @@ class WebGame
           </div>
           <aside class="panel">
             #{%(<div class="knapsack">Knapsack: #{packed.join}</div>) if packed.any?}
-            <form method="post" action="/give?item=gold"><button data-keys="$">give coin ($)</button></form>
+            <form method="post" action="/give_coin"><button data-keys="$">#{h @game.give_coin_label}</button></form>
             <form method="post" action="/give?item=sandwiches"><button data-keys="%">give sandwich (%)</button></form>
           </aside>
         </div>
@@ -2256,7 +2291,7 @@ class DosBox
     "T: throw an item",
     "K: kick a candle",
     "P: pour a potion",
-    "$: give a coin",
+    "$: give coin",
     "%: give sandwich",
     "t: throw the gift",
     "f: tap",
@@ -2273,8 +2308,8 @@ class DosBox
 
   attr_reader :game
 
-  def initialize(god: false)
-    @godMode = god
+  def initialize(godMode: false)
+    @godMode = godMode
     @game = Dungeon.new(godMode: @godMode)
     @pending = nil
     @note = nil
@@ -2330,7 +2365,7 @@ class DosBox
     when "f" then @game.tap
     when "x" then @game.throw_chosen
     when "g" then @game.give_chosen
-    when "$" then @game.offer(:gold)
+    when "$" then @game.give_coin
     when "%" then @game.offer(:sandwiches)
     else
       if (command = PROMPTS[key])
@@ -2409,7 +2444,10 @@ class DosBox
   # The knapsack, each entry lettered for the prompts, or the keys while ? shows them, the tap key named for the
   # way the player faces
   def panel_lines
-    return HELP.map { |line| line == "f: tap" ? "f: #{@game.tap_label}" : line } if @help
+    if @help
+      named = { "f: tap" => "f: #{@game.tap_label}", "$: give coin" => "$: coin #{Dungeon::DIRECTIONS[@game.facing]}" }
+      return HELP.map { |line| named.fetch(line, line) }
+    end
 
     # The tap, Throw, and Give keys are always on show, as the other views always show their buttons
     buttons = ["f: #{@game.tap_label}", "x: #{@game.throw_label}", "g: #{@game.give_label}"]
@@ -2549,6 +2587,16 @@ Scarpe.app(title: "Scarpe Rogue") do # , width: 560, height: 640) do
   #  make aggressive things attack the TODO weapon and the mobile wall
 
   redraw = lambda do
+    PAD.zip(@arrows.to_a).each do |line, slot|
+      slot&.clear do
+        line.each do |label, dx, dy|
+          button([dx, dy] == @game.facing ? "[#{label}]" : label, width: 60) do
+            dx.zero? && dy.zero? ? @game.rest : @game.move(dx, dy)
+            redraw.call
+          end
+        end
+      end
+    end
     # Beside the arrows: the stairs question while it's asked, then tap, Throw, and Give, each named afresh
     @tap&.clear do
       if (way = @game.stairs_question)
@@ -2572,6 +2620,12 @@ Scarpe.app(title: "Scarpe Rogue") do # , width: 560, height: 640) do
       end
       button(@game.give_label) do
         @game.give_chosen
+        redraw.call
+      end
+    end
+    @give_coin&.clear do
+      button(@game.give_coin_label) do
+        @game.give_coin
         redraw.call
       end
     end
@@ -2634,26 +2688,20 @@ Scarpe.app(title: "Scarpe Rogue") do # , width: 560, height: 640) do
   end
 
   # Keypress isn't wired up in Scarpe 0.5.0's webview display yet, so moving is by button
-  # The tap button sits to the right of the arrows' middle row, in a slot redraw refills, since its name follows
-  # the way the player faces
-  PAD.each_with_index do |line, row|
+  # Each row of arrows sits in a slot redraw refills, so the arrow the player faces can be marked, [→]. The tap
+  # button sits to the right of their middle row, in a slot redraw also refills, since its name follows that way too
+  @arrows = []
+  PAD.each_with_index do |_, row|
     flow do
-      line.each do |label, dx, dy|
-        button(label, width: 60) do
-          dx.zero? && dy.zero? ? @game.rest : @game.move(dx, dy)
-          redraw.call
-        end
-      end
+      @arrows << flow {}
       @tap = flow(width: 240) {} if row == 1
     end
   end
 
-  # Each give button readies its gift; the next arrow hands it over
+  # The give coin button gives straight away, the way the player faces, so redraw renames it; the give sandwich
+  # button readies its gift, and the next arrow hands it over
   flow do
-    button("give coin") do
-      @game.offer(:gold)
-      redraw.call
-    end
+    @give_coin = flow {}
     button("give sandwich") do
       @game.offer(:sandwiches)
       redraw.call

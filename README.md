@@ -1,6 +1,6 @@
 # Quail on the Run
 
-A roguelike in one Ruby file. Go down into the dungeon, find a Quail's nest, take the eggs, and get them
+A fun, one-file roguelike game platform. Go down into the dungeon, find a Quail's nest, take the eggs, and get them
 caged with you before the dark (or your blood sugar) gets you.
 
 ```
@@ -16,7 +16,6 @@ which needs the `scarpe` gem.
 | -------------------------------- | ----------------------------------------------------------------------------------------------- |
 | `ruby rogue.rb` or `--dos`       | Right in your terminal, styled after the original PC Rogue: ANSI screen, code page 437 glyphs, Rogue's keys |
 | `ruby rogue.rb --web [port]`     | In a browser at `http://localhost:4567/` (or the port you give, 1–65535)                         |
-| `ruby rogue.rb --scarpe`         | In a desktop window drawn by Scarpe, with buttons instead of keys                               |
 | add `--god`                      | God mode: you take no damage, everything else still can                                          |
 | `ruby rogue.rb --help`           | Lists all of the above                                                                          |
 
@@ -88,7 +87,7 @@ rake ship your message here  # run the tests; only if they pass, commit everythi
 rake claude                  # open Claude Code here; words after it become the first prompt
 ```
 
-`rogue.rb` holds the game (`Dungeon`) and its front ends (`DosBox`, `WebGame`, and the Scarpe app at the
-bottom). Every kind of creature and item is one row of `Dungeon::THINGAGES`: its glyph, D&D-style ability
-scores, challenge rating (the first depth it turns up on), and how peaceful it is. Doors, sandwiches, and
-the other locked things share a small state machine, `Dungeon::DoorLock`.
+`rogue.rb` holds the game (`Dungeon`) and its front ends (`DosBox` and `WebGame`). Every kind of creature and 
+item is one row of `Dungeon::THINGAGES`: its glyph, D&D-style ability scores, challenge rating 
+(the first depth it turns up on), and how peaceful it is. Doors, sandwiches, and the other locked 
+things share a small state machine, `Dungeon::DoorLock`.

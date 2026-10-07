@@ -7,6 +7,37 @@ caged with you before the dark (or your blood sugar) gets you.
 ruby rogue.rb
 ```
 
+That opens a DOS box window like this, using the same technology as the original Rogue "Tunnels of Doom."
+The one where classically you had to get an "Amulet of Yendor" in the 1980s.
+
+```
+
+HP 15/15  AC 15  Weapon fists  Blood sugar 100  Gold 0  Sandwiches 0  Load 0/60 lb  Depth 1
+Knapsack: empty
+? lists the keys
+f: tap right
+x: Throw ____ right?
+g: Give ____ right?
+▒▒▒▒▒▒▒▒▒▒▒▒▒                                              
+▒▒▒▒▒▒▒▒▒▒▒▒▒                                              
+▒▒▒▒▒▒▒▒▒▒▒▒▒                                              
+▒▒▒▒▒▒▒▒▒▒▒▒▒                                              
+▒▒▒·······▒▒▒                                              
+▒▒▒·······▒▒▒                                              
+▒▒▒···@···▒▒▒                                              
+▒▒▒·······▒▒▒                                              
+▒▒▒▒▒▒▒▒▒▒▒▒▒                                              
+▒▒▒▒▒▒·▒▒▒▒▒▒                                              
+▒▒▒▒▒▒·▒▒▒▒▒▒                                              
+▒▒▒▒▒▒·▒▒▒▒▒▒                                              
+▒▒▒▒▒········
+
+You descend into the dark. Find the stairs (>).
+
+? for the keys
+```
+
+
 Nothing to install: the game uses only Ruby's standard library. The only exception is the desktop window,
 which needs the `scarpe` gem.
 

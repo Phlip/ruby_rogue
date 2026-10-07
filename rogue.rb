@@ -1165,7 +1165,7 @@ class Dungeon
         [-1, 0, 1].product([-1, 0, 1]).all? { |dx, dy| xs.cover?(cx + dx) && ys.cover?(cy + dy) || @map[cy + dy][cx + dx] == "#" }
       end
     end
-    (chosen = sealed.sample) and chosen.merge(state: :arrangeSet)
+    (chosen = sealed.sample) and chosen.merge(state: :arrange_set)
   end
 
   # Inside the cage, behind the line

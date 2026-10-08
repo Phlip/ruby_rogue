@@ -70,7 +70,8 @@ You lose if your hit points run out.
 
 ## What you'll meet
 
-- **Rats, squirrels**: they attack on sight.
+- **Rats**: they attack on sight.
+- **Squirrels**: curious. They come up and tap you, harmlessly, until you hit one; then it bites.
 - **Coyotes, goblins, orcs, trolls**: they leave you alone until you hit them.
 - **Goblins** like sandwiches (they'll be friendly for a while) and some will take a coin and fight for you.
 - **Doors**: tap one to open it, but a locked one only rattles. A coin or a sandwich opens it too. Hit a door

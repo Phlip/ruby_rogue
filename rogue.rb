@@ -14,7 +14,8 @@ class Dungeon
   # where the game places it on purpose. out_of_band does the same for a kind with an na above 1.
   # A fractional pacifist is the chance each one spawns pacifist; greedy is the chance a coin will buy it.
   # Only an aggressive kind chases and strikes from the start; every other kind starts neutral, minding its
-  # own business until the player hits it. A door is a pacifist that turns aggressive on the second hit. An eats
+  # own business until the player hits it. A curious kind comes up to the player and taps them, harmlessly, until
+  # the player hits it. A door is a pacifist that turns aggressive on the second hit. An eats
   # kind is a creature with blood sugar, which runs down once it wakes and which a sandwich fills again
 
   # A lock's Finite State Machine: a door's, and any thingage's whose row has a transitions table. Inserting the key
@@ -104,7 +105,7 @@ class Dungeon
       transitions: doorLikeTransitions },
     { glyph: "R", name: "rat",      na:  8, cr: 1, hp:  3, hit: 1..2, ac: 10, str:  7, dex: 15, con: 11, int:  2, wis: 10, cha:  4, aggressive: true, eats: true,
       transitions: doorLikeTransitions },
-    { glyph: "🐿️", name: "squirrel",      na:  8, cr: 1, hp:  3, hit: 1..2, ac: 10, str:  7, dex: 15, con: 11, int:  2, wis: 10, cha:  4, aggressive: true, eats: true,
+    { glyph: "🐿️", name: "squirrel",      na:  8, cr: 1, hp:  3, hit: 1..2, ac: 10, str:  7, dex: 15, con: 11, int:  2, wis: 10, cha:  4, curious: true, eats: true,
       transitions: doorLikeTransitions },
     { glyph: "C", name: "coyote",   na:  5, cr: 3, hp:  3, hit: 1..2, ac: 10, str: 17, dex: 15, con: 11, int: 16, wis: 15, cha: 14, aggressive: false, eats: true,
       transitions: doorLikeTransitions },
@@ -173,6 +174,9 @@ class Dungeon
 
   # The creatures, by name, that have blood sugar
   EATERS = THINGAGES.select { |k| k[:eats] }.map { |k| k[:name] }.freeze
+
+  # The creatures, by name, that come up and tap the player until they're hit
+  CURIOUS = THINGAGES.select { |k| k[:curious] }.map { |k| k[:name] }.freeze
 
   #⚔️🛡️ 🏹
 #  ⚔⊹ ࣪ ˖༺𓆩༒︎𓆪༻⋆༺𓆩⚔𓆪༻⋆꧁⎝ 𓆩༺✧༻𓆪 ⎠꧂༺𓆩༒︎𓆪༻
@@ -1938,7 +1942,7 @@ class Dungeon
     return if m.hp <= 0 || m.spurned || m.nesting
     return board_plate(m) if m.plate_bound
     # A neutral thingage stays put and never strikes; friends and the Quail follow, and only the aggressive fight
-    return unless m.aggressive || friend?(m) || follower?(m)
+    return unless m.aggressive || friend?(m) || follower?(m) || curious?(m)
 
     dx = @px - m.x
     dy = @py - m.y
@@ -1949,6 +1953,7 @@ class Dungeon
     if m.ally && !mist?(m) && (enemy = hostile_beside(m))
       ally_strike(m, enemy)
     elsif dx.abs + dy.abs == 1
+      return say("The #{m.name} taps you.") if curious?(m) && !mist?(m) && !gaseous?
       return if m.pacifist || friend?(m) || mist?(m) || gaseous?
 
       dmg = blow(m)
@@ -1974,19 +1979,21 @@ class Dungeon
     end
   end
 
-  # A Quail walks to the plate it saw the player ride and steps on, landing in a random room like any rider.
-  # It gives up if no walk gets there
+  # A Quail walks to the plate it saw the player ride, one action per square, steps onto it as an action of its
+  # own, and rides it on the next, landing in a random room like any rider. It gives up if no walk gets there
   def board_plate(m)
     plate = m.plate_bound
+    if [m.x, m.y] == plate
+      m.plate_bound = nil
+      m.x, m.y = landing(RANDOM_PLATE)
+      return say("The #{m.name} pops out of thin air, following you!") if (m.x - @px).abs <= SIGHT && (m.y - @py).abs <= SIGHT
+      return
+    end
+
     (nx, ny = path_step(m, plate)) or return m.plate_bound = nil
     return if monster_at(nx, ny) || [nx, ny] == [@px, @py]
 
     m.x, m.y = nx, ny
-    return unless [nx, ny] == plate
-
-    m.plate_bound = nil
-    m.x, m.y = landing(RANDOM_PLATE)
-    say "The #{m.name} pops out of thin air, following you!" if (m.x - @px).abs <= SIGHT && (m.y - @py).abs <= SIGHT
   end
 
   # The first square of the shortest walk from m to beside the player, around walls and other thingages, or nil
@@ -2020,6 +2027,11 @@ class Dungeon
 
   def friend?(m)
     m.ally || m.fed.to_i.positive?
+  end
+
+  # A curious creature, not yet hit and no weapon in disguise, comes up to the player to tap them
+  def curious?(m)
+    !m.aggressive && !m.weapon && CURIOUS.include?(m.name)
   end
 
   # The Quail trails the player whatever its mood, until a hit spurns it

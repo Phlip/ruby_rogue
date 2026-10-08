@@ -761,17 +761,17 @@ class DungeonTest < Minitest::Test
     assert_equal Dungeon::ABILITIES.map { |a| kind("weapon")[a] }, scores(thing(0, 0, "🪓", "axe", 5, 5..12))
   end
 
-  # --- temperament: rats start aggressive, everything else neutral ---
+  # --- temperament: rats start aggressive, squirrels curious, everything else neutral ---
 
-  # def test_only_the_rat_row_is_aggressive
-  #   aggressives = Dungeon::THINGAGES.select { |k| k[:aggressive] }.map { |k| k[:name] }
-  #   assert_equal %w[rat], aggressives
-  # end
+  def test_only_the_rat_row_is_aggressive
+    aggressives = Dungeon::THINGAGES.select { |k| k[:aggressive] }.map { |k| k[:name] }
+    assert_equal %w[rat], aggressives
+  end
 
   def test_spawned_rats_are_aggressive_and_everything_else_neutral
     rat = spawn_one(kind("rat"))
     assert rat.aggressive
-    %w[goblin wall orc troll weapon gold sandwich potion Quail].each do |name|
+    %w[squirrel goblin wall orc troll weapon gold sandwich potion Quail].each do |name|
       assert_equal false, spawn_one(kind(name), depth: 5).aggressive, name
     end
   end
@@ -794,6 +794,15 @@ class DungeonTest < Minitest::Test
     arrange_monster(9, 5, aggressive: false)
     3.times { @game.rest }
     assert_equal [9, 5], [assert_get(:monsters).first.x, assert_get(:monsters).first.y]
+  end
+
+  def test_a_curious_squirrel_comes_up_and_taps_without_harm
+    arrange_arena
+    arrange_get(:monsters) << thing(8, 5, "🐿️", "squirrel", 100, 2..2, aggressive: false)
+    3.times { @game.rest }
+    assert_equal [6, 5], [assert_get(:monsters).first.x, assert_get(:monsters).first.y]
+    assert_equal "The squirrel taps you.", last_log
+    assert_equal 20, @game.hp
   end
 
   def test_an_aggressive_rat_chases_and_bites
@@ -2445,6 +2454,8 @@ class DungeonTest < Minitest::Test
     arrange_set :plates, { [6, 5] => Dungeon::RANDOM_PLATE }
     @game.move(1, 0)
     assert_equal [7, 5], [quail.x, quail.y], "walks toward the plate"
+    @game.rest
+    assert_equal [6, 5], [quail.x, quail.y], "steps onto the plate, and waits there for its next action"
     @game.rest
     assert in_rect?(assert_get(:rooms).first, [quail.x, quail.y]), "landed at #{quail.x}, #{quail.y}"
     assert_nil quail.plate_bound

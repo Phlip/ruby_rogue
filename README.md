@@ -47,6 +47,7 @@ which needs the `scarpe` gem.
 | -------------------------------- | ----------------------------------------------------------------------------------------------- |
 | `ruby rogue.rb` or `--dos`       | Right in your terminal, styled after the original PC Rogue: ANSI screen, code page 437 glyphs, Rogue's keys |
 | `ruby rogue.rb --web [port]`     | In a browser at `http://localhost:4567/` (or the port you give, 1–65535)                         |
+| add `--level N`                  | Start at depth N (1–99), as though you'd already come down that far; New game starts there too   |
 | add `--god`                      | God mode: you take no damage, everything else still can                                          |
 | `ruby rogue.rb --help`           | Lists all of the above                                                                          |
 

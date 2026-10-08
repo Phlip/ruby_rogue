@@ -85,7 +85,6 @@ class Dungeon
                   [UnlockingState, LockEvent::TIMER]      => OpenState,
                   [OpenState,      LockEvent::KEY]        => LockState,}
 
-
   THINGAGES = [
     { glyph: "@", name: "Ego", na: 1, cr: 1, hp: 15, ac: 15, str: 15, dex: 15, con: 11, int: 15, wis: 15, cha: 14,  hit: 1..8 },
     { glyph: "🗡", # light sword
@@ -256,9 +255,10 @@ class Dungeon
   # hit points it spawns with. dex, int, wis and cha are carried along but nothing reads them yet.
   # slowed counts down the rounds a potion of slowness lasts, and lagging marks the rounds it sits out.
   # weapon is the WEAPONS entry a cloaked weapon-thingage wields, under its cloak's glyph, name, and scores.
-  # locked marks a door that tapping won't open, and machine is a sandwich's lock, its wrapping
+  # locked marks a door that tapping won't open, and machine is a sandwich's lock, its wrapping.
+  # plate_bound is the random plate a Quail saw the player ride, which it heads for until it steps on
   Thingage = Struct.new(:x, :y, :glyph, :name, :hp, :hit, :str, :dex, :con, :int, :wis, :cha, :pacifist, :spurned, :greedy, :fed, :ally, :coins, :aggressive,
-                        :hasted, :gaseous, :farsighted, :nesting, :sugar, :starving, :slowed, :lagging, :weapon, :locked, :machine)
+                        :hasted, :gaseous, :farsighted, :nesting, :sugar, :starving, :slowed, :lagging, :weapon, :locked, :machine, :plate_bound)
   ABILITIES = %i[str dex con int wis cha].freeze
 
   # The D&D ability modifier: 10 and 11 give +0, and every two points up or down moves it by one.
@@ -300,8 +300,9 @@ class Dungeon
   attr_reader :hp, :max_hp, :ac, :abilities, :blood_sugar, :knapsack, :depth, :log, :wielded, :ring
 
   # In god mode the player takes no damage; everything else still can. Like a monster's from its row, the
-  # player's hit points are the Ego row's plus its con modifier, though never fewer than 1
-  def initialize(godMode: false)
+  # player's hit points are the Ego row's plus its con modifier, though never fewer than 1. A game can start at a
+  # deeper level, as though the player had already come down that far, max hit points and all
+  def initialize(godMode: false, level: 1)
     @godMode = godMode
     @abilities = PLAYER.slice(*ABILITIES).freeze
     @max_hp = [PLAYER[:hp] + Dungeon.modifier(@abilities[:con]), 1].max
@@ -323,9 +324,12 @@ class Dungeon
     @quick = false
     @won = false
     @trapped = false
-    @depth = 1
-    @deepest = 1
-    @log = ["You descend into the dark. Find the stairs (>)."]
+    @depth = level
+    @deepest = level
+    @levels = {}
+    @max_hp += 2 * (level - 1)
+    @hp = @max_hp
+    @log = ["You descend into the dark#{" to depth #{level}" if level > 1}. Find the stairs (>)."]
     return build_level()
   end
 
@@ -903,7 +907,7 @@ class Dungeon
     if (m = monster_at(x, y))
       if gaseous? || mist?(m)
         say "Your tap passes right through the #{m.name}."
-      elsif m.name == "door" && m.locked
+      elsif m.name == "door" && !door_machine(m).state.is_a?(DoorLock::OpenState)
         say "You tap the door. It rattles, but it's locked."
       elsif m.name == "door"
         @monsters.delete(m)
@@ -913,10 +917,8 @@ class Dungeon
       else
         say "You tap the #{m.name}."
       end
-    elsif wall?(x, y)
-      say "You tap the wall. It's solid."
     else
-      say "You tap at empty air."
+      return # tapping a wall or empty air is a bad keystroke: it just disappears, no message and no turn
     end
     end_turn
   end
@@ -952,15 +954,18 @@ class Dungeon
 
     nx = @px + dx
     ny = @py + dy
-    wall?(nx, ny) and return say("You bump the wall.")
+    # A bad keystroke just disappears: bumping a wall turns the player to face it, and nothing else, not even a turn
+    return if wall?(nx, ny)
 
     if (foe = monster_at(nx, ny))
       gaseous? and return say("You drift against the #{foe.name}, but you can't touch it.")
 
       if mist?(foe)
         say "Your blow passes right through the misty #{foe.name}."
+      elsif (slot = PACKABLE[foe.name])
+        pack(foe, slot) or return # a full knapsack says so, and costs no turn
       else
-        (slot = PACKABLE[foe.name]) ? pack(foe, slot) : attack(foe)
+        attack(foe)
       end
     else
       @px, @py = nx, ny
@@ -1095,6 +1100,7 @@ class Dungeon
 
     # The player starts on the < that climbs back up, on every level but the first
     @px, @py = center(@rooms.first)
+    @upstairs = [@px, @py]
     @map[@py][@px] = "<" if @depth > 1
     sx, sy = center(@rooms.last)
     @map[sy][sx] = ">"
@@ -1617,6 +1623,17 @@ class Dungeon
     say "Strung too long on the march, your #{name}'s string snaps, and the #{name} breaks! You're down to your fists."
   end
 
+  # A door's lock, built from its row's transitions table. A door that spawned unlocked has already had its key
+  # turned and its timer run out, so its machine stands open; a locked one stays locked
+  def door_machine(door)
+    door.machine ||= DoorLock::Machine.new(THINGAGES.find { |k| k[:name] == "door" }[:transitions]).tap do |machine|
+      unless door.locked
+        machine.transit(DoorLock::LockEvent::KEY)
+        machine.transit(DoorLock::LockEvent::TIMER)
+      end
+    end
+  end
+
   # A sandwich lying about has a lock for its wrapping, built from its row's transitions table
   def food_machine(food)
     food.machine ||= DoorLock::Machine.new(THINGAGES.find { |k| k[:name] == "sandwich" }[:transitions])
@@ -1700,12 +1717,17 @@ class Dungeon
   end
 
   # Walking into a potion, a scroll, or a ring packs it into the knapsack instead of attacking it; quaff, read, or wear uses it later
+  # Packs it, room allowing; true when it did, so a refusal can cost no turn
   def pack(thing, slot)
-    room_for?(pounds(slot)) or return say("Your knapsack is too full for the #{ITEM_NAMES[slot]}.")
+    unless room_for?(pounds(slot))
+      say "Your knapsack is too full for the #{ITEM_NAMES[slot]}."
+      return false
+    end
 
     @monsters.delete(thing)
     @knapsack[slot] += 1
     say "You pack #{a_name(ITEM_NAMES[slot])} into your knapsack."
+    true
   end
 
   # Where x, y lies from the player in compass steps, e.g. "12 east and 3 north"
@@ -1729,10 +1751,19 @@ class Dungeon
     say "The #{foe.name} explodes into #{count} #{count == 1 ? "sandwich" : "sandwiches"}!"
   end
 
-  # Standing on a teleport plate carries the player off to where it leads, and the new spot comes into view
+  # Standing on a teleport plate carries the player off to where it leads, and the new spot comes into view.
+  # A Quail that sees the player ride a random plate goes after them through it
   def ride_plate
     (plate = @plates[[@px, @py]]) or return
 
+    if plate == RANDOM_PLATE
+      @monsters.each do |m|
+        next unless follower?(m) && m.hp.positive? && !m.spurned && !m.nesting
+        next unless (m.x - @px).abs <= SIGHT && (m.y - @py).abs <= SIGHT
+
+        m.plate_bound = [@px, @py]
+      end
+    end
     @px, @py = landing(plate)
     reveal
     say(plate == CAGE_PLATE ? "The plate flashes, and you land in the cage room." :
@@ -1780,9 +1811,33 @@ class Dungeon
   end
 
   # Everyone on the player's side in the stairs' room comes down with them, landing in the new level's first room
-  # Only reaching a new deepest level toughens the player, so climbing up and down again earns nothing
+  # Everything that makes a level that level, kept in @levels by depth while the player is elsewhere
+  LEVEL_STATE = %i[@map @seen @rooms @cage @cage_room @eggs @nest @treasure @sandwiches @monsters @detected
+                   @population @plates @upstairs @downstairs].freeze
+
+  # Leaves the current level as it stands, minus whoever comes along, to be found again on coming back
+  def remember_level(party)
+    party.each { |m| @monsters.delete(m) } # in place, so the level keeps its very own list
+    @levels[@depth] = LEVEL_STATE.to_h { |ivar| [ivar, instance_variable_get(ivar)] }
+  end
+
+  # Arrives at the current depth: the level as the player left it, if they've been here, else a new one. Either
+  # way the player stands on the stairs they came by: the < coming down, the > going up
+  def enter_level(way)
+    if (left = @levels.delete(@depth))
+      left.each { |ivar, value| instance_variable_set(ivar, value) }
+    else
+      build_level
+    end
+    @px, @py = (way == "up" ? @downstairs : @upstairs) || [@px, @py]
+    reveal
+  end
+
+  # Only reaching a new deepest level toughens the player, so climbing up and down again earns nothing. A level
+  # already visited is the one the player left
   def descend
     party = side_in_room
+    remember_level(party)
     @depth += 1
     if @depth > @deepest
       @deepest = @depth
@@ -1790,18 +1845,18 @@ class Dungeon
       @hp = [@hp + 5, @max_hp].min
     end
     say "You take the stairs down to depth #{@depth}."
-    build_level
+    enter_level("down")
     bring_along(party, @rooms.first, "down")
   end
 
-  # Climbing the < builds a fresh level one up, and the player arrives on its > stairs, their side coming along
+  # Climbing the < returns to the level one up as the player left it, or builds it new if they never saw it, as
+  # after starting deep with --level, and the player arrives on its > stairs, their side coming along
   def ascend
     party = side_in_room
+    remember_level(party)
     @depth -= 1
     say "You climb the stairs up to depth #{@depth}."
-    build_level
-    @px, @py = @downstairs
-    reveal
+    enter_level("up")
     bring_along(party, @rooms.last, "up")
   end
 
@@ -1824,6 +1879,7 @@ class Dungeon
 
     party.each do |m|
       m.x, m.y = free_spot(room)
+      m.plate_bound = nil # the plate it was heading for is on the level left behind
       @monsters << m
     end
     names = and_list(party.map { |m| "the #{m.name}" })
@@ -1880,6 +1936,7 @@ class Dungeon
   # hostile monster beside it instead. Nothing touches a misty thing or a gaseous player, nor wants to
   def act(m)
     return if m.hp <= 0 || m.spurned || m.nesting
+    return board_plate(m) if m.plate_bound
     # A neutral thingage stays put and never strikes; friends and the Quail follow, and only the aggressive fight
     return unless m.aggressive || friend?(m) || follower?(m)
 
@@ -1917,10 +1974,25 @@ class Dungeon
     end
   end
 
+  # A Quail walks to the plate it saw the player ride and steps on, landing in a random room like any rider.
+  # It gives up if no walk gets there
+  def board_plate(m)
+    plate = m.plate_bound
+    (nx, ny = path_step(m, plate)) or return m.plate_bound = nil
+    return if monster_at(nx, ny) || [nx, ny] == [@px, @py]
+
+    m.x, m.y = nx, ny
+    return unless [nx, ny] == plate
+
+    m.plate_bound = nil
+    m.x, m.y = landing(RANDOM_PLATE)
+    say "The #{m.name} pops out of thin air, following you!" if (m.x - @px).abs <= SIGHT && (m.y - @py).abs <= SIGHT
+  end
+
   # The first square of the shortest walk from m to beside the player, around walls and other thingages, or nil
   # when no walk gets there. Everything else steps straight at the player and gets stuck behind corners; only
-  # the Quail is clever enough to find its way round
-  def path_step(m)
+  # the Quail is clever enough to find its way round. Given a goal square instead, the walk ends on it
+  def path_step(m, goal = nil)
     start = [m.x, m.y]
     first = { start => nil } # each square reached, mapped to the first step taken toward it
     queue = [start]
@@ -1929,6 +2001,8 @@ class Dungeon
       [[1, 0], [-1, 0], [0, 1], [0, -1]].each do |dx, dy|
         nxt = [spot[0] + dx, spot[1] + dy]
         next if first.key?(nxt) || wall?(*nxt)
+        return first[spot] || nxt if nxt == goal
+        next if goal && nxt == [@px, @py]
         return first[spot] if nxt == [@px, @py]
         next if monster_at(*nxt)
 
@@ -2004,10 +2078,88 @@ class Dungeon
     end
   end
 
+  # say counts every message in @said, so a press can tell which messages it caused, though the log keeps only four
   def say(msg)
     @log = (@log + [msg]).last(4)
+    @said = @said.to_i + 1
     nil
   end
+
+  # Remembers a press of a repeatable key, counting how many times in a row it's been the same one, and the
+  # messages it caused
+  def note_press(press)
+    @streak = press == @last_press ? @streak.to_i + 1 : 1
+    @last_press = press
+  end
+
+  def messages_since(said) = @log.last([@said.to_i - said, @log.size].min)
+
+  # What the player would notice around them: who's in sight and who's beside them (and how a lock beside them
+  # stands), their hit points and hunger, a stairs question, what's in hand, and whether the game is over
+  def situation
+    within = ->(r) { @monsters.select { |m| (m.x - @px).abs <= r && (m.y - @py).abs <= r } }
+    [within.(SIGHT).map(&:object_id).sort, within.(1).map { |m| [m.object_id, m.machine&.state&.class&.name] }.sort,
+     @hp, hungry?, @stairs_question, @wielded, over?]
+  end
+
+  # Presses the last repeated key up to REPEATS more times, stopping at any change of local situation: someone
+  # comes into sight or beside the player, or leaves; hit points or hunger change; a stairs question comes up; a
+  # press says something other than what the last one said (numbers aside, so blow after blow still counts as the
+  # same); or a press does nothing at all
+  def repeat_last
+    name, args = @last_press
+    REPEATS.times do
+      before = situation
+      spot = [@px, @py]
+      heard = @press_said
+      public_send(name, *args)
+      news = @press_said
+      break if over? || situation != before || news.map { |m| m.gsub(/\d+/, "#") } != heard.map { |m| m.gsub(/\d+/, "#") }
+      break if news.empty? && [@px, @py] == spot
+    end
+  end
+
+  # After the same key three times running, the rest key presses it for you again, up to three more times; see
+  # repeat_last. Moves (and the attacks and throws an arrow makes), taps, and coins repeat; any other action ends the
+  # run of presses
+  REPEAT_AFTER = 3
+  REPEATS = 3
+
+  module Repeating
+    REPEATABLE = %i[move tap give_coin].freeze
+    BREAKERS = %i[offer inventory quaff pour fling aim candle read wear wield hurl choose throw_chosen give_chosen
+                  take_stairs].freeze
+
+    REPEATABLE.each do |name|
+      define_method(name) do |*args|
+        note_press([name, args])
+        said = @said.to_i
+        result = super(*args)
+        @press_said = messages_since(said)
+        result
+      end
+    end
+
+    BREAKERS.each do |name|
+      define_method(name) do |*args, &block|
+        @streak = 0
+        super(*args, &block)
+      end
+    end
+
+    # The rest key repeats the last key when it's been pressed three times running, unless a gift is readied, when
+    # resting still keeps or eats it
+    def rest
+      return repeat_last if repeat_ready?
+
+      @streak = 0
+      super
+    end
+
+    # Whether the rest key will repeat the last key, for a front end to say so
+    def repeat_ready? = @streak.to_i >= REPEAT_AFTER && !@offering && !over?
+  end
+  prepend Repeating
 end
 
 # The movement pad both front ends draw: label, dx, dy, and the browser keys that press it
@@ -2021,9 +2173,10 @@ PAD = [
 class WebGame
   attr_reader :game
 
-  def initialize(godMode: false)
+  def initialize(godMode: false, level: 1)
     @godMode = godMode
-    @game = Dungeon.new(godMode: @godMode)
+    @level = level
+    @game = Dungeon.new(godMode: @godMode, level: @level)
   end
 
   def serve(port)
@@ -2092,7 +2245,7 @@ class WebGame
         @game.fling(item, how)
       when "/wield" then @game.wield(params["name"])
       when "/throw" then @game.hurl
-      when "/new"  then @game = Dungeon.new(godMode: @godMode)
+      when "/new"  then @game = Dungeon.new(godMode: @godMode, level: @level)
       else return [404, {}, "Not found"]
       end
       return [303, { "Location" => "/" }, ""]
@@ -2137,6 +2290,7 @@ class WebGame
       # arrow the player faces is highlighted, the way tap, Throw, and Give go
       lit = action == "/rest" && @game.alive_nearby?
       facing = [dx, dy] == @game.facing
+      label = "again" if action == "/rest" && @game.repeat_ready? # after three of a key, rest repeats it
       %(<form method="post" action="#{action}"><button data-keys="#{h keys}"#{' class="facing" aria-pressed="true"' if facing}) +
         %(#{' style="text-decoration: underline"' if lit}>#{label}</button></form>)
     end
@@ -2255,7 +2409,7 @@ class DosBox
   # The PC Rogue look: a smiley for the player, shaded walls, dotted floors, a triple bar for the stairs, and so on.
   # A glyph code page 437 has no room for, such as an emoji weapon, becomes Rogue's weapon arrow, or a shield's ]
   OEM = { # "@" => "☺",
-          "#" => "▒", "." => "·", ">" => "≡", "$" => "☼", "%" => "♣" }.freeze
+          "#" => "▒", "." => "·", ">" => "≡", "$" => "☼", "%" => "♣", "🐿️" => "s", "🐿" => "s" }.freeze
   SHIELDS = %w[༺ 𓆩 ༻].freeze
   WEAPON = "↑"
 
@@ -2303,14 +2457,16 @@ class DosBox
     "Q: quit",
   ].freeze
 
-  # The status line, the map, the four log lines, and the prompt
+  # The status line, the map, the four log lines, and the prompt; the knapsack panel stacks above the map, so a
+  # screen runs this many rows plus the panel's
   SCREEN_ROWS = 1 + Dungeon::VIEWPORT_HEIGHT + 4 + 1
 
   attr_reader :game
 
-  def initialize(godMode: false)
+  def initialize(godMode: false, level: 1)
     @godMode = godMode
-    @game = Dungeon.new(godMode: @godMode)
+    @level = level
+    @game = Dungeon.new(godMode: @godMode, level: @level)
     @pending = nil
     @note = nil
     @error = nil
@@ -2343,8 +2499,7 @@ class DosBox
     map = @game.cells.map do |row|
       row.map { |glyph, hungry| hungry ? "#{ESC}[1;33m#{oem(glyph)}#{ESC}[0m" : oem(glyph) }.join
     end
-    map = map.each_with_index.map { |row, i| panel[i] ? "#{row} #{panel[i]}" : row }
-    [status] + map + Array.new(4) { |i| @game.log[i].to_s } + [prompt]
+    [status] + panel + map + Array.new(4) { |i| @game.log[i].to_s } + [prompt]
   end
 
   # Handles one key, as read_key names it. Once the game is over, or has broken, only y (play again) and n or Esc
@@ -2403,7 +2558,8 @@ class DosBox
   # A graceful exit leaves the last screen up, to scroll away like any other output, and puts the colors, the
   # cursor, and the shell's prompt back below it; a game that broke says how, there
   def farewell
-    goodbye = "#{ESC}[0m#{ESC}[#{SCREEN_ROWS + 1};1H#{ESC}[?25h\n"
+    rows = (lines.size rescue SCREEN_ROWS)
+    goodbye = "#{ESC}[0m#{ESC}[#{rows + 1};1H#{ESC}[?25h\n"
     return goodbye unless @error
 
     "#{goodbye}The game broke: #{@error.class}: #{@error.message}\n#{@error.backtrace.to_a.first(5).map { |l| "  #{l}\n" }.join}"
@@ -2466,7 +2622,7 @@ class DosBox
     return @note if @note
     return "Then an arrow sends it that way, or . keeps it" if @game.log.last.to_s.end_with?("which way?")
 
-    "? for the keys"
+    @game.repeat_ready? ? ". repeats that key" : "? for the keys"
   end
 
   # How the game ended, for the play-again offer
@@ -2486,7 +2642,7 @@ class DosBox
   end
 
   def replay
-    @game = Dungeon.new(godMode: @godMode)
+    @game = Dungeon.new(godMode: @godMode, level: @level)
     @error = nil
     @pending = nil
   end
@@ -2543,16 +2699,26 @@ end
 USAGE = <<~TEXT
   Quail on the Run, a roguelike
 
-  Usage: ruby rogue.rb [--dos | --web [port] | --scarpe] [--god]
+  Usage: ruby rogue.rb [--dos | --web [port] | --scarpe] [--level N] [--god]
          ruby rogue.rb --help
 
     --dos         play right here in the console, like the original PC Rogue: ANSI driver commands, OEM glyphs,
                   and Rogue's keys (? lists them). This is the default, with no front end named
     --web [port]  play in a browser instead, at http://localhost:port/ (port 1-65535, default 4567)
     --scarpe      play in a desktop window, drawn by Scarpe
+    --level N     start at depth N (1-99), as though you'd already come down that far; New game starts there too
     --god         god mode: the player takes no damage
     -h, --help    show this help and exit
 TEXT
+
+# The depth --level asks to start at, 1 without it; anything but a whole number from 1 to 99 stops with the usage
+def cli_level
+  at = ARGV.index("--level") or return 1
+  level = Integer(ARGV[at + 1].to_s, exception: false)
+  return level if level&.between?(1, 99)
+
+  abort "Usage: ruby rogue.rb --level N, where N is a depth from 1 to 99 (got #{ARGV[at + 1].inspect})"
+end
 
 # Guarded so the tests can require this file for Dungeon without opening a window or a port.
 # Scarpe 0.5.0 has no Scarpe.app; requiring scarpe provides Shoes.app instead.
@@ -2562,7 +2728,7 @@ if $PROGRAM_NAME == __FILE__ && (ARGV & %w[--help -h]).any?
   puts USAGE
 elsif $PROGRAM_NAME == __FILE__ && (ARGV.include?("--dos") || (ARGV & %w[--web --scarpe]).empty?)
   # The console is the default: --dos, or no front end named at all
-  DosBox.new(godMode: GOD).play
+  DosBox.new(godMode: GOD, level: cli_level).play
 elsif $PROGRAM_NAME == __FILE__ && ARGV.include?("--web")
   # The port is whatever follows --web, defaulting to 4567; another flag such as --god there means no port given
   arg = ARGV[ARGV.index("--web") + 1]
@@ -2570,13 +2736,14 @@ elsif $PROGRAM_NAME == __FILE__ && ARGV.include?("--web")
   port = arg ? Integer(arg, exception: false) : 4567
   abort "Usage: ruby rogue.rb --web [port] [--god], where port is 1-65535 (got #{arg.inspect})" unless port&.between?(1, 65_535)
 
-  WebGame.new(godMode: GOD).serve(port)
+  WebGame.new(godMode: GOD, level: cli_level).serve(port)
 elsif $PROGRAM_NAME == __FILE__
 
+LEVEL = cli_level
 gem 'scarpe' # '0.1.0'
 require 'scarpe'
 Scarpe.app(title: "Scarpe Rogue") do # , width: 560, height: 640) do
-  @game = Dungeon.new(godMode: GOD)
+  @game = Dungeon.new(godMode: GOD, level: LEVEL)
 
   @status = stack(size: 1){}
   # Newlines become <br>, but runs of spaces still collapse, so blanks go in as non-breaking spaces
@@ -2590,6 +2757,7 @@ Scarpe.app(title: "Scarpe Rogue") do # , width: 560, height: 640) do
     PAD.zip(@arrows.to_a).each do |line, slot|
       slot&.clear do
         line.each do |label, dx, dy|
+          label = "again" if dx.zero? && dy.zero? && @game.repeat_ready? # after three of a key, rest repeats it
           button([dx, dy] == @game.facing ? "[#{label}]" : label, width: 60) do
             dx.zero? && dy.zero? ? @game.rest : @game.move(dx, dy)
             redraw.call
@@ -2723,7 +2891,7 @@ Scarpe.app(title: "Scarpe Rogue") do # , width: 560, height: 640) do
 
   flow do
     button("New game") do
-      @game = Dungeon.new(godMode: GOD)
+      @game = Dungeon.new(godMode: GOD, level: LEVEL)
       redraw.call
     end
   end

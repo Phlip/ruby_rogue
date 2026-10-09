@@ -63,8 +63,9 @@ the same everywhere.
 4. **Hold them to the light.** Candling an egg tells you whether it has legs, wings, and a beak, or is just
    yolk. Deeper nests hold more developed eggs.
 5. **Spring the cage.** From depth 5, every level has a cage room. Stepping on its plate drops bars, and
-   everything behind them is your haul. If a developed egg is in the haul, it hatches and **you win**. If none
-   is, the adventure is over.
+   everything behind them is your haul. If a developed egg is in the haul, it hatches and **you win**. If only
+   yolk eggs are, the adventure is over. With no egg at all, step off the plate and back on to lift the bars
+   and try again.
 
 You lose if your hit points run out.
 
@@ -73,6 +74,7 @@ You lose if your hit points run out.
 - **Rats**: they attack on sight.
 - **Squirrels**: curious. They come up and tap you, harmlessly, until you hit one; then it bites.
 - **Coyotes, goblins, orcs, trolls**: they leave you alone until you hit them.
+- **Trolls and Quails**: a living Quail horrifies a troll, which hunts it down anywhere on the level and eats it.
 - **Goblins** like sandwiches (they'll be friendly for a while) and some will take a coin and fight for you.
 - **Doors**: tap one to open it, but a locked one only rattles. A coin or a sandwich opens it too. Hit a door
   twice and it hits back.

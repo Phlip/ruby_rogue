@@ -975,7 +975,11 @@ class Dungeon
       @px, @py = nx, ny
       march
       pick_up
-      [@px, @py] == @cage&.dig(:plate) and return spring_trap
+      if [@px, @py] == @cage&.dig(:plate)
+        return spring_trap unless @cage[:state] == :sprung
+
+        lift_bars
+      end
       if (way = STAIRS[@map[@py][@px]])
         @stairs_question = way
         say "You want to go #{way}?"
@@ -1191,11 +1195,12 @@ class Dungeon
     (lx.is_a?(Range) ? lx.cover?(x) : lx == x) && (ly.is_a?(Range) ? ly.cover?(y) : ly == y)
   end
 
-  # Stepping onto the plate drops the bars along the line, ending the adventure: everything behind them, the
-  # player and their knapsack included, is the haul. Every developed egg in it hatches, and a chick is a win
+  # Stepping onto the plate drops the bars along the line: everything behind them, the player and their knapsack
+  # included, is the haul. A haul with no egg at all is only a practice run, so the adventure goes on behind the
+  # bars until the player steps off the plate and back on. Otherwise it ends: every developed egg hatches, and a
+  # chick is a win
   def spring_trap
     @cage[:state] = :sprung
-    @trapped = true
     caught = @monsters.select { |m| in_trap?(m.x, m.y) }
     floor = ->(items) { items.sum { |spot, n| in_trap?(*spot) ? n : 0 } }
     eggs = @knapsack[:eggs] + @eggs.select { |spot, _| in_trap?(*spot) }.values.flatten
@@ -1206,12 +1211,20 @@ class Dungeon
     haul << "#{coins} gold" if coins.positive?
     haul << "#{food} #{food == 1 ? "sandwich" : "sandwiches"}" if food.positive?
     say "The bars slam down behind you. Your haul: #{haul.empty? ? "nothing but yourself" : and_list(haul)}."
+    return say("Without an egg, step off the plate and back on to lift the bars.") if eggs.empty?
 
+    @trapped = true
     hatched = eggs.count(&:developed)
     @won = hatched.positive?
     return say("No egg in your haul hatches. The adventure is over.") unless @won
 
     say "#{hatched == 1 ? "An egg hatches" : "#{hatched} eggs hatch"}, and Quail chicks peep in the cage. You won!"
+  end
+
+  # Stepping back onto the plate of a cage sprung without an egg lifts the bars, setting the trap again
+  def lift_bars
+    @cage[:state] = :arrange_set
+    say "The bars lift, and the trap is set again."
   end
 
   # The chance a newly laid egg is developed: a third at HATCHERY_DEPTH, and a ninth more each level deeper,
@@ -1325,7 +1338,7 @@ class Dungeon
 
   # Walls and the edge of the map block the way
   def wall?(x, y)
-    return x.negative? || y.negative? || x >= VIEWPORT_WIDTH || y >= VIEWPORT_HEIGHT || @map[y][x] == "#"
+    return x.negative? || y.negative? || x >= VIEWPORT_WIDTH || y >= VIEWPORT_HEIGHT || @map[y][x] == "#" || bar?(x, y)
   end
 
   def monster_at(x, y) return @monsters.find { |m| m.x == x && m.y == y } end
@@ -1941,6 +1954,7 @@ class Dungeon
   def act(m)
     return if m.hp <= 0 || m.spurned || m.nesting
     return board_plate(m) if m.plate_bound
+    return if troll_hunt(m)
     # A neutral thingage stays put and never strikes; friends and the Quail follow, and only the aggressive fight
     return unless m.aggressive || friend?(m) || follower?(m) || curious?(m)
 
@@ -1977,6 +1991,30 @@ class Dungeon
       say "The #{m.name} steps on a plate and vanishes!" if (nx - @px).abs <= SIGHT && (ny - @py).abs <= SIGHT
       m.x, m.y = landing(RANDOM_PLATE)
     end
+  end
+
+  # A living Quail horrifies a troll, which leaves everything else to hunt down the nearest one on the level, wherever
+  # it is, finding its way round walls like the Quail does, and eats it. False when there's no Quail to hunt
+  def troll_hunt(m)
+    return false unless m.name == "troll" && !mist?(m)
+
+    quail = @monsters.select { |q| q.name == "Quail" && q.hp.positive? }.min_by { |q| (q.x - m.x).abs + (q.y - m.y).abs }
+    return false unless quail
+
+    seen = ->(x, y) { (x - @px).abs <= SIGHT && (y - @py).abs <= SIGHT }
+    if (quail.x - m.x).abs + (quail.y - m.y).abs == 1
+      dmg = blow(m)
+      quail.hp -= dmg
+      if quail.hp.positive?
+        say "The troll hits the Quail for #{dmg}." if seen.(quail.x, quail.y)
+      else
+        @monsters.delete(quail)
+        say "The troll eats the Quail!" if seen.(quail.x, quail.y)
+      end
+    elsif (nx, ny = path_step(m, [quail.x, quail.y])) && !monster_at(nx, ny) && [nx, ny] != [@px, @py]
+      m.x, m.y = nx, ny
+    end
+    true
   end
 
   # A Quail walks to the plate it saw the player ride, one action per square, steps onto it as an action of its

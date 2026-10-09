@@ -2671,16 +2671,41 @@ class DungeonTest < Minitest::Test
     spring
     assert_equal [15, 10], player
     assert_equal :sprung, cage[:state]
-    assert @game.over?
-    refute @game.won?
-    assert_equal "ADVENTURE OVER", @game.outcome
     assert_equal "|" * 12, @game.rows[14][10, 12], "bars all along the line"
     assert_includes @game.log, "The bars slam down behind you. Your haul: nothing but yourself."
-    assert_equal "No egg in your haul hatches. The adventure is over.", last_log
+  end
+
+  def test_springing_the_trap_without_an_egg_goes_on_behind_the_bars
+    by_the_plate
+    spring
+    refute @game.over?
+    assert_equal "", @game.outcome
+    assert_equal "Without an egg, step off the plate and back on to lift the bars.", last_log
+  end
+
+  def test_the_bars_block_the_way_until_lifted
+    by_the_plate
+    arrange_set :py, 13
+    arrange_set :cage, cage.merge(state: :sprung)
+    @game.move(0, 1)
+    assert_equal [15, 13], player
+  end
+
+  def test_stepping_back_onto_the_plate_lifts_the_bars_to_try_again
+    by_the_plate
+    spring
+    @game.move(0, 1)
+    @game.move(0, -1)
+    assert_equal :arrange_set, cage[:state]
+    assert_equal "The bars lift, and the trap is set again.", last_log
+    @game.move(0, 1)
+    @game.move(0, -1)
+    assert_equal :sprung, cage[:state], "and springs again"
   end
 
   def test_nothing_moves_once_the_trap_is_sprung
     by_the_plate
+    arrange_get(:knapsack)[:eggs] = [egg(false)]
     arrange_monster(15, 20, hp: 100)
     spring
     assert_equal [15, 20], [assert_get(:monsters).first.x, assert_get(:monsters).first.y], "springing ends it at once"
@@ -2727,6 +2752,37 @@ class DungeonTest < Minitest::Test
     refute @game.won?
     assert @game.over?
     assert_equal "No egg in your haul hatches. The adventure is over.", last_log
+  end
+
+  # --- trolls and Quails ---
+
+  def arrange_troll(x, y, hit: 100..100)
+    arrange_get(:monsters) << thing(x, y, "T", "troll", 100, hit, aggressive: false)
+  end
+
+  def test_a_troll_hunts_a_quail_around_a_wall
+    arrange_arena
+    arrange_get(:map)[5][9] = "#"
+    troll = arrange_troll(8, 5).last
+    arrange_quail(10, 5)
+    @game.rest
+    refute_equal [8, 5], [troll.x, troll.y], "it sets off round the wall"
+  end
+
+  def test_a_troll_eats_the_quail_it_catches
+    arrange_arena
+    arrange_troll(8, 5)
+    arrange_quail(9, 5)
+    @game.rest
+    assert_equal %w[troll], assert_get(:monsters).map(&:name)
+    assert_equal "The troll eats the Quail!", last_log
+  end
+
+  def test_a_troll_with_no_quail_minds_its_own_business
+    arrange_arena
+    troll = arrange_troll(8, 5).last
+    3.times { @game.rest }
+    assert_equal [8, 5], [troll.x, troll.y]
   end
 
   # --- eggs ---

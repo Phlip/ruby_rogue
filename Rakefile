@@ -14,9 +14,32 @@
 #   opens Claude Code in this folder. Words after claude become its first prompt, the same way ship's become
 #   the commit message, and the same quoting rules apply
 
-desc "Run every test in test_rogue.rb"
+SOUNDS = File.join(__dir__, "sounds")
+
+# Plays sounds/<name>.wav through whichever player this machine has, without waiting for it to finish
+def play(name)
+  file = File.join(SOUNDS, name.to_s.delete_suffix(".wav") + ".wav")
+  File.exist?(file) or return warn("No such sound: #{file}")
+  player = %w[paplay pw-play aplay].find { |p| system("command -v #{p} > /dev/null 2>&1") }
+  player or return warn("No sound player found (paplay, pw-play, or aplay)")
+  Process.detach(spawn(player, file, %i[out err] => File::NULL))
+end
+
+desc "Run every test in test_rogue.rb; a frog croaks if they pass, a kitten mews if they fail"
 task :test do
-  ruby "test_rogue.rb"
+  ruby "test_rogue.rb" do |ok, status|
+    play(ok ? "frog2" : "kitten")
+    ok or abort "The tests failed (exit status #{status.exitstatus})."
+  end
+  sh 'figlet tests passed'
+end
+
+desc "Play sounds from sounds/ by name, one after another, e.g. rake 'sound[car_horn chimp error]'; with no name, list them"
+task :sound do |_t, args|
+  names = args.extras.flat_map { |a| a.split(/[\s,]+/) }.reject(&:empty?) # spaces or commas between names
+  next puts(Dir.children(SOUNDS).grep(/\.wav\z/).sort.map { |f| f.delete_suffix(".wav") }) if names.empty?
+
+  names.each { |name| play(name)&.join } # each finishes before the next starts
 end
 
 desc "Run the tests; only if they all pass, commit with the rest of the command line as the message, and push"
@@ -26,6 +49,7 @@ task :ship do
   abort "Usage: rake ship your commit message here, no quotes needed" if message.empty?
 
   ruby "test_rogue.rb" do |ok, status|
+    play(ok ? 'frog' : 'dogs')
     ok or abort "The tests failed (exit status #{status.exitstatus}), so nothing was committed or pushed."
   end
 

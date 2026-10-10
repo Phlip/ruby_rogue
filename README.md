@@ -74,6 +74,9 @@ You lose if your hit points run out.
 - **Rats**: they attack on sight.
 - **Squirrels**: curious. They come up and tap you, harmlessly, until you hit one; then it bites.
 - **Coyotes, goblins, orcs, trolls**: they leave you alone until you hit them.
+- **Potions of sleep**: drink one, or throw it at a monster, and the drinker sleeps 3d4 rounds while everything
+  else carries on. Half of them go about disguised as a creature, and hurl themselves at you once you're within 3
+  squares.
 - **Floor traps**: unseen until someone treads on one. A potion of poison breaks underfoot for 2d2 damage and
   stays a trap (`,`). A wand of slowness (`/`) slows whoever treads on it for 2d2 rounds; you pick it up and
   zap it with `z` and an arrow. It holds 3 charges, refilled on every level you enter.
@@ -111,7 +114,7 @@ Press `?` in the game for the full list.
 | ----------------------------- | ---------------------------- |
 | `hjklyubn`, arrows, or keypad | move (walk into something to attack it) |
 | `.` or `5`                    | rest                         |
-| `f`                           | tap whatever you're facing   |
+| `f`                           | tap whatever you're facing; in a hallway or corner, push it a square |
 | `i`                           | inventory                    |
 | `w`                           | wield                        |
 | `a`                           | use an item                  |

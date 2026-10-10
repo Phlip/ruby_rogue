@@ -137,6 +137,8 @@ class Dungeon
       transitions: doorLikeTransitions },
     { glyph: "!", name: "healing potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
       transitions: doorLikeTransitions },
+    { glyph: "!", name: "sleep potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
+      transitions: doorLikeTransitions },
     { glyph: "!", name: "empty potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
       transitions: doorLikeTransitions },
     { glyph: "~", name: "sandwich",   na: 20, cr: 4, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 1,
@@ -261,9 +263,12 @@ class Dungeon
   # slowed counts down the rounds a potion of slowness lasts, and lagging marks the rounds it sits out.
   # weapon is the WEAPONS entry a cloaked weapon-thingage wields, under its cloak's glyph, name, and scores.
   # locked marks a door that tapping won't open, and machine is a sandwich's lock, its wrapping.
-  # plate_bound is the random plate a Quail saw the player ride, which it heads for until it steps on
+  # plate_bound is the random plate a Quail saw the player ride, which it heads for until it steps on.
+  # met lists who has met a Quail: :ego for the player, else a thingage's object_id. asleep counts down the rounds a
+  # potion of sleep keeps it from acting, and disguised_potion is the POTIONS slot of a potion posing as a creature
   Thingage = Struct.new(:x, :y, :glyph, :name, :hp, :hit, :str, :dex, :con, :int, :wis, :cha, :pacifist, :spurned, :greedy, :fed, :ally, :coins, :aggressive,
-                        :hasted, :gaseous, :farsighted, :nesting, :sugar, :starving, :slowed, :lagging, :weapon, :locked, :machine, :plate_bound)
+                        :hasted, :gaseous, :farsighted, :nesting, :sugar, :starving, :slowed, :lagging, :weapon, :locked, :machine, :plate_bound, :met, :asleep,
+                        :disguised_potion)
   ABILITIES = %i[str dex con int wis cha].freeze
 
   # The D&D ability modifier: 10 and 11 give +0, and every two points up or down moves it by one.
@@ -320,9 +325,9 @@ class Dungeon
     @strung_steps = 0
     @facing = [1, 0]
     @knapsack = { gold: 0, sandwiches: 0, potions: 0, speed_potions: 0, gas_potions: 0, slow_potions: 0, healing_potions: 0,
-                  empty_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0,
+                  sleep_potions: 0, empty_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0,
                   candles: 0, laced_potions: 0, laced_speed_potions: 0, laced_gas_potions: 0, laced_slow_potions: 0,
-                  laced_healing_potions: 0, laced_empty_potions: 0, eggs: [], weapons: [], shields: [], wands: [] }
+                  laced_healing_potions: 0, laced_sleep_potions: 0, laced_empty_potions: 0, eggs: [], weapons: [], shields: [], wands: [] }
     @ring = nil
     @hasted = 0
     @slowed = 0
@@ -444,6 +449,7 @@ class Dungeon
     gas_potions:     { row: "gas potion",     name: "potion of gaseous form", glyph: "~", packable: 0.5 },
     slow_potions:    { row: "slow potion",    name: "potion of slowness",     glyph: "!" },
     healing_potions: { row: "healing potion", name: "potion of healing",      glyph: "!" },
+    sleep_potions:   { row: "sleep potion",   name: "potion of sleep",        glyph: "!" },
     empty_potions:   { row: "empty potion",   name: "empty potion",           glyph: "!" },
   }.freeze
 
@@ -452,6 +458,13 @@ class Dungeon
   # drinker for GAS_ROUNDS. Healing restores the player to full, and a monster, which has no full, by HEAL_HP
   SPEED_ROUNDS = 30
   SLOW_ROUNDS = 20
+
+  # A potion of sleep puts its drinker, or whoever it's thrown at, to sleep for 3d4 rounds while everyone else
+  # carries on. Half the potions of sleep that spawn are disguised as a creature, the cloak a weapon would wear,
+  # and hurl themselves at the player once within DISGUISE_RANGE
+  DISGUISED_SLEEP_CHANCE = 0.5
+  DISGUISE_RANGE = 3
+  def self.d4x3 = rand(1..4) + rand(1..4) + rand(1..4)
   GAS_ROUNDS = 10
   HEAL_HP = 10
 
@@ -627,6 +640,9 @@ class Dungeon
     when :healing_potions
       @hp = @max_hp
       "You feel whole again!"
+    when :sleep_potions
+      @asleep = Dungeon.d4x3
+      "You fall asleep!"
     when :empty_potions
       "It's empty. Nothing happens."
     end
@@ -949,6 +965,10 @@ class Dungeon
         say "You tap the door, and it swings open."
       elsif m.name == "sandwich"
         unwrap(m, 1)
+      elsif tight_spot?(m) && pushable_to?(to = [x + @facing[0], y + @facing[1]])
+        m.x, m.y = to
+        say "You push the #{m.name}."
+        tread(m)
       else
         say "You tap the #{m.name}."
       end
@@ -957,6 +977,13 @@ class Dungeon
     end
     end_turn
   end
+
+  # A thingage is in a tight spot, as in a hallway or a corner, when walls close in on all but two of its sides at
+  # most, so a tap against it pushes it on a square instead
+  def tight_spot?(m) = [[1, 0], [-1, 0], [0, 1], [0, -1]].count { |dx, dy| !wall?(m.x + dx, m.y + dy) } <= 2
+
+  # Open floor, with no one on it, that a push can move a thingage onto
+  def pushable_to?(spot) = !wall?(*spot) && !monster_at(*spot) && spot != [@px, @py]
 
   # The stairs, by their glyph, and the way each goes. Stepping onto one asks whether to take it
   STAIRS = { ">" => "down", "<" => "up" }.freeze
@@ -1000,6 +1027,8 @@ class Dungeon
         say "Your blow passes right through the misty #{foe.name}."
       elsif (slot = PACKABLE[foe.name])
         pack(foe, slot) or return # a full knapsack says so, and costs no turn
+      elsif foe.name == "Quail" && first_meeting?(foe, :ego)
+        say "You tap the Quail. It looks you over."
       else
         attack(foe)
       end
@@ -1346,13 +1375,15 @@ class Dungeon
     @population[kind[:name]] += 1
     x, y = at || free_spot(room)
     weapon = WEAPONS.sample if kind[:name] == "weapon"
-    body = weapon ? cloak_for(@depth) : kind
-    pacifist = weapon ? false : kind[:pacifist].is_a?(Float) ? rand < kind[:pacifist] : kind[:pacifist]
+    disguised = :sleep_potions if kind[:name] == "sleep potion" && rand < DISGUISED_SLEEP_CHANCE
+    body = weapon || disguised ? cloak_for(@depth) : kind
+    pacifist = weapon || disguised ? false : kind[:pacifist].is_a?(Float) ? rand < kind[:pacifist] : kind[:pacifist]
     greedy = body[:greedy] && rand < body[:greedy]
     hp = [body[:hp] + @depth + Dungeon.modifier(body[:con]), 1].max
     @monsters << Thingage.new(x, y, body[:glyph], body[:name], hp, (weapon || body)[:hit], *body.values_at(*ABILITIES), pacifist, nil, greedy)
                          .tap { |t| t.aggressive = body[:aggressive] == true }
                          .tap { |t| t.weapon = weapon }
+                         .tap { |t| t.disguised_potion = disguised }
   end
 
   # The creatures a dormant weapon cloaks itself as
@@ -1392,6 +1423,7 @@ class Dungeon
     foe.aggressive = true unless foe.pacifist
     if foe.hp <= 0
       @monsters.delete(foe)
+      return say("The #{foe.name} shatters: it was a #{POTIONS[foe.disguised_potion][:name]} in disguise!") if foe.disguised_potion
       return seize(foe) if foe.weapon || WEAPONS.any? { |w| w[:name] == foe.name }
       return stow(foe) if SHIELDS.include?(foe.name) || PACKABLE.key?(foe.name)
 
@@ -1400,6 +1432,7 @@ class Dungeon
     elsif foe.pacifist && !foe.spurned
       foe.spurned = true
       say "You hit the #{foe.name} for #{dmg}.#{" It stops following you." if follower?(foe)}"
+      knock_back(foe, foe.x - @px, foe.y - @py) if foe.name == "Quail"
     elsif foe.pacifist && foe.name == "door"
       foe.pacifist = false
       foe.spurned = false
@@ -1407,7 +1440,44 @@ class Dungeon
       say "You hit the door for #{dmg}. It turns on you!"
     else
       say "You hit the #{foe.name} for #{dmg}.#{" It turns on you!" if provoked}"
+      knock_back(foe, foe.x - @px, foe.y - @py) if foe.name == "Quail"
     end
+  end
+
+  # A potion disguised as a creature, once the player is within DISGUISE_RANGE, drops the disguise and hurls itself
+  # at them, shattering. False when it isn't a disguised potion or the player is out of range
+  def hurl_self(m)
+    (slot = m.disguised_potion) or return false
+    return false if gaseous? || (m.x - @px).abs > DISGUISE_RANGE || (m.y - @py).abs > DISGUISE_RANGE
+
+    @monsters.delete(m)
+    say "The #{m.name} is a #{POTIONS[slot][:name]} in disguise! It hurls itself at you and shatters. #{take_effect(slot)}"
+    true
+  end
+
+  # Whether this is who's first meeting with a Quail, who being :ego or a thingage; it's remembered either way
+  def first_meeting?(quail, who)
+    id = who == :ego ? :ego : who.object_id
+    quail.met ||= []
+    return false if quail.met.include?(id)
+
+    quail.met << id
+    true
+  end
+
+  # A hit Quail is knocked back a square, away from whoever struck it, and any Quails lined up behind it are
+  # knocked back with it; a wall, or anyone else, at the end of the line holds them all in place
+  def knock_back(quail, dx, dy)
+    line = [quail]
+    while (behind = monster_at(line.last.x + dx, line.last.y + dy)) && behind.name == "Quail"
+      line << behind
+    end
+    pushable_to?([line.last.x + dx, line.last.y + dy]) or return
+
+    line.reverse_each { |q| q.x += dx; q.y += dy }
+    line.each { |q| tread(q) }
+    seen = (quail.x - @px).abs <= SIGHT && (quail.y - @py).abs <= SIGHT
+    say(line.size == 1 ? "The Quail is knocked back." : "The Quails are knocked back.") if seen
   end
 
   # Hands one of the offered item to whatever stands one step dx, dy away; giving takes a turn.
@@ -1547,6 +1617,7 @@ class Dungeon
     gas_potions:   "They turn to mist!",
     slow_potions:    "They slow to half your pace!",
     healing_potions: "They look healthier.",
+    sleep_potions:   "They fall asleep!",
     empty_potions:   "Nothing happens. It was empty.",
   }.freeze
 
@@ -1582,6 +1653,9 @@ class Dungeon
     when :healing_potions
       m.hp += HEAL_HP
       "It looks healthier."
+    when :sleep_potions
+      m.asleep = Dungeon.d4x3
+      "It falls asleep!"
     when :empty_potions
       "Nothing happens. It was empty."
     end
@@ -1961,6 +2035,18 @@ class Dungeon
       round_passes
       break if over?
     end
+    doze
+  end
+
+  # A sleeping player sleeps on, a round at a time, while everyone else carries on, then wakes
+  def doze
+    @asleep.to_i.positive? or return
+    while @asleep.positive? && !over?
+      @asleep -= 1
+      monsters_act
+      round_passes
+    end
+    say "You wake up." unless over?
   end
 
   def round_passes
@@ -1974,6 +2060,9 @@ class Dungeon
       m.hasted -= 1 if m.hasted.to_i.positive?
       m.slowed -= 1 if m.slowed.to_i.positive?
       m.gaseous -= 1 if m.gaseous.to_i.positive?
+      next unless m.asleep.to_i.positive? && (m.asleep -= 1).zero?
+
+      say "The #{m.name} wakes up." if (m.x - @px).abs <= SIGHT && (m.y - @py).abs <= SIGHT
     end
     hunger
   end
@@ -1982,6 +2071,7 @@ class Dungeon
   def monsters_act
     @monsters.dup.each do |m|
       next if m.hp <= 0 # slain by an ally earlier this turn
+      next if m.asleep.to_i.positive?
 
       if m.fed.to_i.positive?
         m.fed -= 1
@@ -2001,6 +2091,7 @@ class Dungeon
   def act(m)
     return if m.hp <= 0 || m.spurned || m.nesting
     return board_plate(m) if m.plate_bound
+    return if hurl_self(m)
     return if hunt_prey(m)
     return if lead_over_trap(m)
     # A neutral thingage stays put and never strikes; friends and the Quail follow, and only the aggressive fight
@@ -2119,7 +2210,7 @@ class Dungeon
   # runs to stand just behind the trap, the trap between them, so a target chasing it treads on the trap, and
   # waits there, never treading on one itself. False when there's no target or no trap to lead it over
   def lead_over_trap(m)
-    return false if mist?(m) || m.weapon
+    return false if mist?(m) || m.weapon || m.disguised_potion
     (tx, ty = lure_target(m)) or return false
     return false if (tx - m.x).abs > SIGHT || (ty - m.y).abs > SIGHT
     return false if (tx - m.x).abs + (ty - m.y).abs == 1 # caught: it fights, or flees, as it would anyway
@@ -2166,10 +2257,15 @@ class Dungeon
 
     seen = ->(x, y) { (x - @px).abs <= SIGHT && (y - @py).abs <= SIGHT }
     if (prey.x - m.x).abs + (prey.y - m.y).abs == 1
+      if prey.name == "Quail" && first_meeting?(prey, m)
+        say "The #{m.name} taps the Quail." if seen.(prey.x, prey.y)
+        return true
+      end
       dmg = blow(m)
       prey.hp -= dmg
       if prey.hp.positive?
         say "The #{m.name} hits the #{prey.name} for #{dmg}." if seen.(prey.x, prey.y)
+        knock_back(prey, prey.x - m.x, prey.y - m.y) if prey.name == "Quail"
       else
         @monsters.delete(prey)
         if seen.(prey.x, prey.y)
@@ -2238,7 +2334,7 @@ class Dungeon
 
   # A curious creature, not yet hit and no weapon in disguise, comes up to the player to tap them
   def curious?(m)
-    !m.aggressive && !m.weapon && CURIOUS.include?(m.name)
+    !m.aggressive && !m.weapon && !m.disguised_potion && CURIOUS.include?(m.name)
   end
 
   # The Quail trails the player whatever its mood, until a hit spurns it

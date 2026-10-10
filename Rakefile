@@ -20,9 +20,11 @@ SOUNDS = File.join(__dir__, "sounds")
 def play(name)
   file = File.join(SOUNDS, name.to_s.delete_suffix(".wav") + ".wav")
   File.exist?(file) or return warn("No such sound: #{file}")
-  player = %w[paplay pw-play aplay].find { |p| system("command -v #{p} > /dev/null 2>&1") }
-  player or return warn("No sound player found (paplay, pw-play, or aplay)")
-  Process.detach(spawn(player, file, %i[out err] => File::NULL))
+  # player = %w[paplay pw-play aplay].find { |p| system("command -v #{p} > /dev/null 2>&1") }
+  # player or return warn("No sound player found (paplay, pw-play, or aplay)")
+  player = 'aplay'
+  sh player, file
+  # Process.detach(spawn(player, file, %i[out err] => File::NULL))
 end
 
 desc "Run every test in test_rogue.rb; a frog croaks if they pass, a kitten mews if they fail"

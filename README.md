@@ -74,7 +74,14 @@ You lose if your hit points run out.
 - **Rats**: they attack on sight.
 - **Squirrels**: curious. They come up and tap you, harmlessly, until you hit one; then it bites.
 - **Coyotes, goblins, orcs, trolls**: they leave you alone until you hit them.
-- **Trolls and Quails**: a living Quail horrifies a troll, which hunts it down anywhere on the level and eats it.
+- **Floor traps**: unseen until someone treads on one. A potion of poison breaks underfoot for 2d2 damage and
+  stays a trap (`,`). A wand of slowness (`/`) slows whoever treads on it for 2d2 rounds; you pick it up and
+  zap it with `z` and an arrow. It holds 3 charges, refilled on every level you enter.
+- **Rats and Axebeaks** know where the unseen traps are. A rat runs behind one so you chase it over the trap;
+  an Axebeak does the same to a hunting coyote.
+- **Trolls and Quails, coyotes and Axebeaks**: a living Quail horrifies a troll, and an Axebeak is a coyote's
+  nemesis. Each hunts its prey down anywhere on the level and eats it, with a howl (`sounds/wolf.wav`) if you're
+  close enough to see.
 - **Goblins** like sandwiches (they'll be friendly for a while) and some will take a coin and fight for you.
 - **Doors**: tap one to open it, but a locked one only rattles. A coin or a sandwich opens it too. Hit a door
   twice and it hits back.

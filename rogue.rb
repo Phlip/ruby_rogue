@@ -243,14 +243,15 @@ class Dungeon
 
   #  make aggressive things attack the TODO weapon and the mobile wall
 
-  # Blood sugar starts full and drops by one each round, the player's from the start and a creature's from the
-  # round it wakes and first acts. At zero they're hungry, drawn in HUNGRY_COLOR, and lose a hit point every
+  # Blood sugar starts full and drops by one every SUGAR_ROUNDS rounds, the player's from the start and a
+  # creature's from the round it wakes and first acts. At zero they're hungry, drawn in HUNGRY_COLOR, and lose a hit point every
   # STARVE_ROUNDS rounds until a sandwich fills them up again
   VIEWPORT_WIDTH  = (48 * 1.3).to_i
   VIEWPORT_HEIGHT = (18 * 1.3).to_i
   SIGHT  = 6
   MAX_BLOOD_SUGAR = 100
   STARVE_ROUNDS = 150
+  SUGAR_ROUNDS = 10
   HUNGRY_COLOR = "#e8a33d"
 
   # fed counts down the turns a goblin stays friendly after a sandwich; an ally keeps the coins it pockets.
@@ -314,13 +315,14 @@ class Dungeon
     @hp = @max_hp
     @blood_sugar = MAX_BLOOD_SUGAR
     @starving = 0
+    @sugar_clock = 0
     @wielded = FISTS
     @strung_steps = 0
     @facing = [1, 0]
     @knapsack = { gold: 0, sandwiches: 0, potions: 0, speed_potions: 0, gas_potions: 0, slow_potions: 0, healing_potions: 0,
                   empty_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0,
                   candles: 0, laced_potions: 0, laced_speed_potions: 0, laced_gas_potions: 0, laced_slow_potions: 0,
-                  laced_healing_potions: 0, laced_empty_potions: 0, eggs: [], weapons: [], shields: [] }
+                  laced_healing_potions: 0, laced_empty_potions: 0, eggs: [], weapons: [], shields: [], wands: [] }
     @ring = nil
     @hasted = 0
     @slowed = 0
@@ -368,6 +370,18 @@ class Dungeon
   CAGE_PLATE = "_"
   RANDOM_PLATE = "ṯ"
   CAGE_ODDS = 5.0 / 3
+
+  # Floor traps lie unseen until someone treads on one. A potion of poison breaks underfoot for 2d2 damage and
+  # stays a trap, a broken potion on the floor. A wand of slowness slows whoever treads on it for 2d2 rounds, a
+  # charge each time; the player picks it up to zap later. A wand holds WAND_CHARGES, refilled on each level
+  # the player enters. Each level has a potion of poison on POISON_CHANCE of them, and a wand on WAND_CHANCE
+  POISON_CHANCE = 0.5
+  WAND_CHANCE = 0.3
+  WAND_CHARGES = 3
+  BROKEN_POTION = ","
+  WAND = "/"
+
+  def self.d2x2 = rand(1..2) + rand(1..2)
 
   # The chance a level has a random plate, a teleportation trap; it never has more than one, so fewer than one a
   # level on average
@@ -563,6 +577,12 @@ class Dungeon
     @knapsack[:shields].group_by { |s| s[:name] }.each_value do |kind|
       packed << [kind.size == 1 ? label(kind.first) : "#{kind.size} #{label(kind.first)}s", :shields]
     end
+    wands = @knapsack[:wands]
+    charges = wands.sum
+    unless wands.empty?
+      packed << ["#{wands.size == 1 ? "#{WAND} wand" : "#{wands.size} #{WAND} wands"} of slowness " \
+                 "(#{charges} #{charges == 1 ? "charge" : "charges"})", :wands]
+    end
     packed
   end
 
@@ -649,6 +669,17 @@ class Dungeon
 
     @offering = slot
     say "Throw the #{potion[:name]} which way?"
+  end
+
+  # Readies a wand of slowness to zap; the next arrow zaps it that way, and rest cancels it
+  def zap
+    over? and return
+    @throwable = nil
+    @knapsack[:wands].empty? and return say("You have no wand to zap.")
+    @knapsack[:wands].any?(&:positive?) or return say("Your wand of slowness has no charges left on this level.")
+
+    @offering = :wand
+    say "Zap the wand of slowness which way?"
   end
 
   # "3 eggs", and once candled, what the light showed, e.g. "3 eggs (1 developed, 1 yolk, 1 unknown)"
@@ -952,6 +983,7 @@ class Dungeon
     @facing = [dx, dy] unless dx.zero? && dy.zero?
     if (item = @offering)
       return fling_candle(item, dx, dy) if LACED.key?(item)
+      return zap_wand(dx, dy) if item == :wand
 
       return POTIONS.key?(item) ? throw_potion(item, dx, dy) : give(item, dx, dy)
     end
@@ -975,6 +1007,8 @@ class Dungeon
       @px, @py = nx, ny
       march
       pick_up
+      tread_player
+      over? and return
       if [@px, @py] == @cage&.dig(:plate)
         return spring_trap unless @cage[:state] == :sprung
 
@@ -1126,6 +1160,11 @@ class Dungeon
     @plates[free_spot(teleported)] = RANDOM_PLATE if teleported
     plated = (@rooms.drop(1) - [@cage_room]).sample if @cage_room
     @plates[free_spot(plated)] = CAGE_PLATE if plated
+    @traps = {}
+    poisoned = @rooms.drop(1).sample if rand < POISON_CHANCE
+    @traps[free_spot(poisoned)] = { kind: :poison, seen: false } if poisoned
+    wanded = @rooms.drop(1).sample if rand < WAND_CHANCE
+    @traps[free_spot(wanded)] = { kind: :wand, seen: false, charges: WAND_CHARGES } if wanded
     @rooms.drop(1).each do |room|
       rand(0..2).times { @treasure[free_spot(room)] = rand(5..20) * @depth }
       @sandwiches[free_spot(room)] = 1 if rand(3).zero?
@@ -1287,7 +1326,7 @@ class Dungeon
     loop do
       spot = [rand(room[:x]...room[:x] + room[:w]), rand(room[:y]...room[:y] + room[:h])]
       next if spot == [@px, @py] || STAIRS.key?(@map[spot[1]][spot[0]]) || spot == @cage&.dig(:plate)
-      next if @treasure.key?(spot) || @sandwiches.key?(spot) || @plates.key?(spot) || monster_at(*spot)
+      next if @treasure.key?(spot) || @sandwiches.key?(spot) || @plates.key?(spot) || @traps&.key?(spot) || monster_at(*spot)
 
       return spot
     end
@@ -1597,23 +1636,24 @@ class Dungeon
     glyph_at(x, y) == m.glyph
   end
 
-  # Each round the player's blood sugar, and every awake creature's, drops by one; at zero, every STARVE_ROUNDS
-  # rounds cost a hit point, which can starve them to death
+  # Every SUGAR_ROUNDS rounds the player's blood sugar, and every awake creature's, drops by one; at zero, every
+  # STARVE_ROUNDS rounds cost a hit point, which can starve them to death
   def hunger
+    drain = ((@sugar_clock = @sugar_clock.to_i + 1) % SUGAR_ROUNDS).zero?
     if hungry?
       if (@starving += 1) % STARVE_ROUNDS == 0 && !godMode?
         @hp -= 1
         say "You're starving and lose a hit point."
         say "You starve to death on depth #{@depth} with #{gold} gold." if @hp <= 0
       end
-    else
+    elsif drain
       @blood_sugar -= 1
     end
 
     @monsters.dup.each do |m|
       next unless m.sugar
       if m.sugar.positive?
-        m.sugar -= 1
+        m.sugar -= 1 if drain
         next
       end
       next unless ((m.starving = m.starving.to_i + 1) % STARVE_ROUNDS).zero?
@@ -1830,7 +1870,7 @@ class Dungeon
   # Everyone on the player's side in the stairs' room comes down with them, landing in the new level's first room
   # Everything that makes a level that level, kept in @levels by depth while the player is elsewhere
   LEVEL_STATE = %i[@map @seen @rooms @cage @cage_room @eggs @nest @treasure @sandwiches @monsters @detected
-                   @population @plates @upstairs @downstairs].freeze
+                   @population @plates @traps @upstairs @downstairs].freeze
 
   # Leaves the current level as it stands, minus whoever comes along, to be found again on coming back
   def remember_level(party)
@@ -1847,7 +1887,14 @@ class Dungeon
       build_level
     end
     @px, @py = (way == "up" ? @downstairs : @upstairs) || [@px, @py]
+    refill_wands
     reveal
+  end
+
+  # Every wand, in the knapsack or lying on the new level, holds WAND_CHARGES again
+  def refill_wands
+    @knapsack[:wands].map! { WAND_CHARGES }
+    @traps&.each_value { |t| t[:charges] = WAND_CHARGES if t[:kind] == :wand }
   end
 
   # Only reaching a new deepest level toughens the player, so climbing up and down again earns nothing. A level
@@ -1954,7 +2001,8 @@ class Dungeon
   def act(m)
     return if m.hp <= 0 || m.spurned || m.nesting
     return board_plate(m) if m.plate_bound
-    return if troll_hunt(m)
+    return if hunt_prey(m)
+    return if lead_over_trap(m)
     # A neutral thingage stays put and never strikes; friends and the Quail follow, and only the aggressive fight
     return unless m.aggressive || friend?(m) || follower?(m) || curious?(m)
 
@@ -1986,6 +2034,7 @@ class Dungeon
       return if wall?(nx, ny) || monster_at(nx, ny) || [nx, ny] == [@px, @py]
 
       m.x, m.y = nx, ny
+      tread(m) or return
       return unless @plates[[nx, ny]] == RANDOM_PLATE
 
       say "The #{m.name} steps on a plate and vanishes!" if (nx - @px).abs <= SIGHT && (ny - @py).abs <= SIGHT
@@ -1993,26 +2042,144 @@ class Dungeon
     end
   end
 
-  # A living Quail horrifies a troll, which leaves everything else to hunt down the nearest one on the level, wherever
-  # it is, finding its way round walls like the Quail does, and eats it. False when there's no Quail to hunt
-  def troll_hunt(m)
-    return false unless m.name == "troll" && !mist?(m)
+  # The player treads on a trap where they stand: poison hurts, and a wand slows them, then goes in the knapsack
+  def tread_player
+    (trap = @traps&.[]([@px, @py])) or return
+    trap[:seen] = true
+    if trap[:kind] == :poison
+      dmg = Dungeon.d2x2
+      return say("You step on a potion of poison and it breaks, but you take no damage.") if godMode?
 
-    quail = @monsters.select { |q| q.name == "Quail" && q.hp.positive? }.min_by { |q| (q.x - m.x).abs + (q.y - m.y).abs }
-    return false unless quail
+      @hp -= dmg
+      say "You step on a potion of poison and it breaks. You take #{dmg} damage."
+      say("You die on depth #{@depth} with #{gold} gold.") if over?
+    else
+      if trap[:charges].positive?
+        trap[:charges] -= 1
+        @slowed += Dungeon.d2x2
+        say "You step on a wand of slowness, and it zaps you. Everything else speeds up!"
+      end
+      @traps.delete([@px, @py])
+      @knapsack[:wands] << trap[:charges]
+      say "You pick up the wand of slowness (#{trap[:charges]} #{trap[:charges] == 1 ? "charge" : "charges"} left)."
+    end
+  end
+
+  # A monster treads on a trap where it stands: poison hurts it, and a wand with a charge left slows it. False
+  # when the poison kills it
+  def tread(m)
+    (trap = @traps&.[]([m.x, m.y])) or return true
+    seen = (m.x - @px).abs <= SIGHT && (m.y - @py).abs <= SIGHT
+    trap[:seen] ||= seen
+    if trap[:kind] == :poison
+      dmg = Dungeon.d2x2
+      m.hp -= dmg
+      unless m.hp.positive?
+        @monsters.delete(m)
+        say "The #{m.name} steps on a potion of poison, and it kills the #{m.name}!" if seen
+        return false
+      end
+      say "The #{m.name} steps on a potion of poison and takes #{dmg} damage." if seen
+    elsif trap[:charges].positive?
+      trap[:charges] -= 1
+      m.slowed = m.slowed.to_i + Dungeon.d2x2
+      say "The #{m.name} steps on a wand of slowness and slows down!" if seen
+    end
+    true
+  end
+
+  # Zaps a charge that way: the first thingage within THROW_RANGE slows for 2d2 rounds. Zapping takes a turn
+  def zap_wand(dx, dy)
+    @offering = nil
+    at = @knapsack[:wands].index(&:positive?) or return say("Your wand of slowness has no charges left on this level.")
+    @knapsack[:wands][at] -= 1
+    target = (1..THROW_RANGE).lazy.map { |i| [@px + dx * i, @py + dy * i] }
+                             .take_while { |x, y| !wall?(x, y) }.map { |x, y| monster_at(x, y) }.find(&:itself)
+    if target
+      target.slowed = target.slowed.to_i + Dungeon.d2x2
+      say "You zap the wand of slowness. The #{target.name} slows down!"
+    else
+      say "You zap the wand of slowness, and it fizzles out."
+    end
+    end_turn
+  end
+
+  # Who a rat or an Axebeak leads: a rat leads the player; an Axebeak leads the nearest coyote, or the player once
+  # it's been provoked
+  def lure_target(m)
+    case m.name
+    when "rat" then m.aggressive ? [@px, @py] : nil
+    when "Axebeak"
+      coyote = @monsters.select { |c| c.name == "coyote" && c.hp.positive? }.min_by { |c| (c.x - m.x).abs + (c.y - m.y).abs }
+      coyote ? [coyote.x, coyote.y] : (m.aggressive ? [@px, @py] : nil)
+    end
+  end
+
+  # A rat or an Axebeak knows where the unseen traps lie. With its target in sight and an unseen trap near it, it
+  # runs to stand just behind the trap, the trap between them, so a target chasing it treads on the trap, and
+  # waits there, never treading on one itself. False when there's no target or no trap to lead it over
+  def lead_over_trap(m)
+    return false if mist?(m) || m.weapon
+    (tx, ty = lure_target(m)) or return false
+    return false if (tx - m.x).abs > SIGHT || (ty - m.y).abs > SIGHT
+    return false if (tx - m.x).abs + (ty - m.y).abs == 1 # caught: it fights, or flees, as it would anyway
+
+    lures = (@traps || {}).filter_map do |(x, y), trap|
+      next if trap[:seen] || (x - m.x).abs > SIGHT || (y - m.y).abs > SIGHT
+
+      dx, dy = x - tx, y - ty
+      step = dx.abs >= dy.abs ? [dx <=> 0, 0] : [0, dy <=> 0]
+      next if step == [0, 0]
+
+      spot = [x + step[0], y + step[1]]
+      spot unless wall?(*spot) || @traps.key?(spot) || spot == [tx, ty]
+    end
+    (lure = lures.min_by { |x, y| (x - m.x).abs + (y - m.y).abs }) or return false
+    return true if [m.x, m.y] == lure # in place: wait for the target
+
+    if (nx, ny = path_step(m, lure, wary: true)) && !monster_at(nx, ny) && [nx, ny] != [@px, @py]
+      m.x, m.y = nx, ny
+    end
+    true
+  end
+
+  # Each hunter's prey: a living Quail horrifies a troll, and coyotes and Axebeaks are each other's nemesis
+  PREY = { "troll" => "Quail", "coyote" => "Axebeak" }.freeze
+
+  # The sound a hunter makes eating its prey, from the sounds folder
+  EATING_SOUND = "wolf"
+
+  # Plays a named sound, when a front end has said how; nil, as in the tests, keeps the game silent
+  class << self
+    attr_accessor :sound_player
+  end
+
+  def sound(name) = Dungeon.sound_player&.call(name)
+
+  # A hunter leaves everything else to hunt down the nearest of its prey on the level, wherever it is, finding its
+  # way round walls like the Quail does, and eats it. False when there's no prey to hunt
+  def hunt_prey(m)
+    (kind = PREY[m.name]) && !mist?(m) or return false
+
+    prey = @monsters.select { |q| q.name == kind && q.hp.positive? }.min_by { |q| (q.x - m.x).abs + (q.y - m.y).abs }
+    return false unless prey
 
     seen = ->(x, y) { (x - @px).abs <= SIGHT && (y - @py).abs <= SIGHT }
-    if (quail.x - m.x).abs + (quail.y - m.y).abs == 1
+    if (prey.x - m.x).abs + (prey.y - m.y).abs == 1
       dmg = blow(m)
-      quail.hp -= dmg
-      if quail.hp.positive?
-        say "The troll hits the Quail for #{dmg}." if seen.(quail.x, quail.y)
+      prey.hp -= dmg
+      if prey.hp.positive?
+        say "The #{m.name} hits the #{prey.name} for #{dmg}." if seen.(prey.x, prey.y)
       else
-        @monsters.delete(quail)
-        say "The troll eats the Quail!" if seen.(quail.x, quail.y)
+        @monsters.delete(prey)
+        if seen.(prey.x, prey.y)
+          say "The #{m.name} eats the #{prey.name}!"
+          sound EATING_SOUND
+        end
       end
-    elsif (nx, ny = path_step(m, [quail.x, quail.y])) && !monster_at(nx, ny) && [nx, ny] != [@px, @py]
+    elsif (nx, ny = path_step(m, [prey.x, prey.y])) && !monster_at(nx, ny) && [nx, ny] != [@px, @py]
       m.x, m.y = nx, ny
+      tread(m)
     end
     true
   end
@@ -2032,12 +2199,13 @@ class Dungeon
     return if monster_at(nx, ny) || [nx, ny] == [@px, @py]
 
     m.x, m.y = nx, ny
+    tread(m)
   end
 
   # The first square of the shortest walk from m to beside the player, around walls and other thingages, or nil
   # when no walk gets there. Everything else steps straight at the player and gets stuck behind corners; only
   # the Quail is clever enough to find its way round. Given a goal square instead, the walk ends on it
-  def path_step(m, goal = nil)
+  def path_step(m, goal = nil, wary: false)
     start = [m.x, m.y]
     first = { start => nil } # each square reached, mapped to the first step taken toward it
     queue = [start]
@@ -2046,6 +2214,7 @@ class Dungeon
       [[1, 0], [-1, 0], [0, 1], [0, -1]].each do |dx, dy|
         nxt = [spot[0] + dx, spot[1] + dy]
         next if first.key?(nxt) || wall?(*nxt)
+        next if wary && @traps&.key?(nxt)
         return first[spot] || nxt if nxt == goal
         next if goal && nxt == [@px, @py]
         return first[spot] if nxt == [@px, @py]
@@ -2123,6 +2292,7 @@ class Dungeon
     elsif @treasure.key?([x, y]) then "$"
     elsif @sandwiches.key?([x, y]) then "%"
     elsif @plates.key?([x, y]) then @plates[[x, y]]
+    elsif @traps&.dig([x, y], :seen) then @traps[[x, y]][:kind] == :poison ? BROKEN_POTION : WAND
     elsif [x, y] == @cage&.dig(:plate) then "o"
     else @map[y][x]
     end
@@ -2259,6 +2429,7 @@ class WebGame
       when "/move" then @game.move(params["dx"].to_i.clamp(-1, 1), params["dy"].to_i.clamp(-1, 1))
       when "/rest" then @game.rest
       when "/tap" then @game.tap
+      when "/zap" then @game.zap
       when "/give_coin" then @game.give_coin
       when "/choose"
         slot = @game.contents.map(&:last).find { |s| s.to_s == params["item"] } or return [404, {}, "Not found"]
@@ -2423,6 +2594,7 @@ class WebGame
               <div class="pad">#{buttons.join}</div>
               <div class="controls">
                 <form method="post" action="/tap"><button data-keys="f" style="width: auto">#{h @game.tap_label} (f)</button></form>
+                <form method="post" action="/zap"><button data-keys="z" style="width: auto">Zap wand (z)</button></form>
                 <form method="post" action="/throw_chosen"><button data-keys="x" style="width: auto">#{h @game.throw_label} (x)</button></form>
                 <form method="post" action="/give_chosen"><button data-keys="g" style="width: auto">#{h @game.give_label} (g)</button></form>
               </div>
@@ -2499,6 +2671,7 @@ class DosBox
     "%: give sandwich",
     "t: throw the gift",
     "f: tap",
+    "z: zap the wand",
     "s: select an item",
     "x: throw selected",
     "g: give selected",
@@ -2568,6 +2741,7 @@ class DosBox
     when "w" then @game.wield
     when "t" then @game.hurl
     when "f" then @game.tap
+    when "z" then @game.zap
     when "x" then @game.throw_chosen
     when "g" then @game.give_chosen
     when "$" then @game.give_coin
@@ -2719,6 +2893,7 @@ class DosBox
       elsif Dungeon::RINGS.key?(slot) then @game.wear(slot)
       elsif Dungeon::LACED.key?(slot) then @game.fling(slot, :throw)
       elsif slot == :eggs then @game.candle
+      elsif slot == :wands then @game.zap
       elsif slot == :candles then @note = "A candle needs a potion poured into it first: P."
       elsif slot == :shields then @note = "There's nothing to do with a shield yet."
       elsif slot.is_a?(Symbol) then @game.offer(slot)
@@ -2773,6 +2948,16 @@ end
 # Guarded so the tests can require this file for Dungeon without opening a window or a port.
 # Scarpe 0.5.0 has no Scarpe.app; requiring scarpe provides Shoes.app instead.
 GOD = ARGV.include?("--god")
+
+# The front ends play the game's sounds, sounds/<name>.wav, through whichever player this machine has
+if $PROGRAM_NAME == __FILE__
+  sound_file = ->(name) { File.join(__dir__, "sounds", "#{name}.wav") }
+  sound_app = %w[paplay pw-play aplay].find { |p| system("command -v #{p} > /dev/null 2>&1") }
+  Dungeon.sound_player = lambda do |name|
+    sound_app && File.exist?(sound_file.(name)) and
+      Process.detach(spawn(sound_app, sound_file.(name), %i[out err] => File::NULL))
+  end
+end
 
 if $PROGRAM_NAME == __FILE__ && (ARGV & %w[--help -h]).any?
   puts USAGE
@@ -2886,6 +3071,7 @@ Scarpe.app(title: "Scarpe Rogue") do # , width: 560, height: 640) do
           elsif Dungeon::SCROLLS.key?(slot) then @game.read(slot)
           elsif Dungeon::RINGS.key?(slot) then @game.wear(slot)
           elsif slot == :eggs then @game.candle
+          elsif slot == :wands then @game.zap
           elsif slot.is_a?(Symbol) then @game.offer(slot)
           else @game.wield(slot)
           end

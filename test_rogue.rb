@@ -60,6 +60,7 @@ class DungeonTest < Minitest::Test
     arrange_set :treasure, {}
     arrange_set :sandwiches, {}
     arrange_set :plates, {}
+    arrange_set :traps, {}
     arrange_set :population, Hash.new(0)
     arrange_set :detected, []
     arrange_set :px, px
@@ -105,7 +106,7 @@ class DungeonTest < Minitest::Test
     assert_equal Dungeon::HERO_AC, @game.ac
     assert_equal Dungeon::MAX_BLOOD_SUGAR, @game.blood_sugar
     assert_equal "fists", @game.weapon
-    assert_equal({ gold: 0, sandwiches: 0, potions: 0, speed_potions: 0, gas_potions: 0, slow_potions: 0, healing_potions: 0, empty_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0, candles: 0, laced_potions: 0, laced_speed_potions: 0, laced_gas_potions: 0, laced_slow_potions: 0, laced_healing_potions: 0, laced_empty_potions: 0, eggs: [], weapons: [], shields: [] }, @game.knapsack)
+    assert_equal({ gold: 0, sandwiches: 0, potions: 0, speed_potions: 0, gas_potions: 0, slow_potions: 0, healing_potions: 0, empty_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0, candles: 0, laced_potions: 0, laced_speed_potions: 0, laced_gas_potions: 0, laced_slow_potions: 0, laced_healing_potions: 0, laced_empty_potions: 0, eggs: [], weapons: [], shields: [], wands: [] }, @game.knapsack)
     assert_equal 1, @game.depth
     assert_equal 1, @game.log.size
     refute @game.over?
@@ -142,9 +143,13 @@ class DungeonTest < Minitest::Test
 
   def rounds(n) = n.times { @game.send(:end_turn) }
 
-  def test_blood_sugar_drops_one_a_round
+  def test_blood_sugar_drops_one_every_sugar_rounds
     arrange_arena
-    3.times { @game.rest }
+    (Dungeon::SUGAR_ROUNDS - 1).times { @game.rest }
+    assert_equal Dungeon::MAX_BLOOD_SUGAR, @game.blood_sugar, "not yet"
+    @game.rest
+    assert_equal Dungeon::MAX_BLOOD_SUGAR - 1, @game.blood_sugar
+    (2 * Dungeon::SUGAR_ROUNDS).times { @game.rest }
     assert_equal Dungeon::MAX_BLOOD_SUGAR - 3, @game.blood_sugar
   end
 
@@ -252,7 +257,7 @@ class DungeonTest < Minitest::Test
     @game.tap
     refute_includes assert_get(:monsters), food, "that sandwich is gone"
     assert_instance_of Dungeon::DoorLock::LockState, wrapping(food), "the edge back to the lock"
-    assert_includes 11..21, @game.blood_sugar, "10, plus 2d6, less the round the tap took"
+    assert_includes 11..22, @game.blood_sugar, "10, plus 2d6, less any drop in the round the tap took"
     assert(@game.log.any? { |l| l.match?(/\AYou eat the sandwich\. Your blood sugar rises by \d+, to \d+\.\z/) })
   end
 
@@ -296,7 +301,7 @@ class DungeonTest < Minitest::Test
     arrange_arena
     awake = arrange_monster(8, 5, hp: 100, hit: 0..0).last          # aggressive, so it acts at once
     asleep = arrange_monster(9, 9, hp: 100, aggressive: false).last # neutral, so it never stirs
-    3.times { @game.rest }
+    (3 * Dungeon::SUGAR_ROUNDS).times { @game.rest }
     assert_equal Dungeon::MAX_BLOOD_SUGAR - 3, awake.sugar
     assert_nil asleep.sugar, "still asleep, still full"
   end
@@ -324,7 +329,7 @@ class DungeonTest < Minitest::Test
     quail = arrange_quail(6, 5).last.tap { |q| q.sugar = 0; q.starving = 100 }
     give(:sandwiches, 1, 0)
     assert_equal "You give the Quail a sandwich. It eats it.", last_log
-    assert_equal Dungeon::MAX_BLOOD_SUGAR - 1, quail.sugar, "full, less the round the gift took"
+    assert_equal Dungeon::MAX_BLOOD_SUGAR, quail.sugar, "full, one round being too few to drain any"
     assert_equal 0, quail.starving
   end
 
@@ -1244,7 +1249,7 @@ class DungeonTest < Minitest::Test
     arrange_get(:treasure)[[6, 5]] = 15
     arrange_get(:sandwiches)[[6, 5]] = 1
     @game.move(1, 0)
-    assert_equal({ gold: 15, sandwiches: 1, potions: 0, speed_potions: 0, gas_potions: 0, slow_potions: 0, healing_potions: 0, empty_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0, candles: 0, laced_potions: 0, laced_speed_potions: 0, laced_gas_potions: 0, laced_slow_potions: 0, laced_healing_potions: 0, laced_empty_potions: 0, eggs: [], weapons: [], shields: [] }, @game.knapsack)
+    assert_equal({ gold: 15, sandwiches: 1, potions: 0, speed_potions: 0, gas_potions: 0, slow_potions: 0, healing_potions: 0, empty_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0, candles: 0, laced_potions: 0, laced_speed_potions: 0, laced_gas_potions: 0, laced_slow_potions: 0, laced_healing_potions: 0, laced_empty_potions: 0, eggs: [], weapons: [], shields: [], wands: [] }, @game.knapsack)
     assert_equal "You pack a sandwich into your knapsack.", last_log
   end
 
@@ -2754,6 +2759,98 @@ class DungeonTest < Minitest::Test
     assert_equal "No egg in your haul hatches. The adventure is over.", last_log
   end
 
+  # --- floor traps ---
+
+  def poison_at(x, y) = arrange_get(:traps)[[x, y]] = { kind: :poison, seen: false }
+  def wand_at(x, y, charges: 3) = arrange_get(:traps)[[x, y]] = { kind: :wand, seen: false, charges: charges }
+
+  def test_an_unseen_trap_looks_like_floor
+    arrange_arena
+    poison_at(7, 5)
+    assert_equal ".", @game.rows[5][7]
+  end
+
+  def test_stepping_on_a_potion_of_poison_hurts_and_leaves_it_broken
+    arrange_arena
+    poison_at(6, 5)
+    @game.move(1, 0)
+    assert_includes (16..18), @game.hp, "2d2 damage"
+    assert_equal :poison, assert_get(:traps)[[6, 5]][:kind], "still a trap"
+    @game.move(1, 0)
+    assert_equal ",", @game.rows[5][6], "a broken potion on the floor"
+  end
+
+  def test_a_monster_stepping_on_poison_takes_damage
+    arrange_arena
+    poison_at(7, 5)
+    goblin = arrange_monster(8, 5, hp: 100).last
+    @game.rest
+    assert_equal [7, 5], [goblin.x, goblin.y]
+    assert_includes (96..98), goblin.hp
+  end
+
+  def test_stepping_on_a_wand_slows_you_and_you_pick_it_up
+    arrange_arena
+    wand_at(6, 5)
+    @game.move(1, 0)
+    assert_includes @game.log, "You step on a wand of slowness, and it zaps you. Everything else speeds up!"
+    assert_equal [2], assert_get(:knapsack)[:wands]
+    assert_nil assert_get(:traps)[[6, 5]]
+  end
+
+  def test_zapping_the_wand_slows_the_first_thingage_that_way
+    arrange_arena
+    arrange_get(:knapsack)[:wands] << 3
+    goblin = arrange_monster(9, 5, hp: 100, aggressive: false).last
+    @game.zap
+    @game.move(1, 0)
+    assert_includes (1..4), goblin.slowed.to_i, "2d2 rounds, less the one that passed"
+    assert_equal [2], assert_get(:knapsack)[:wands]
+    assert_equal [5, 5], player, "zapping doesn't move you"
+  end
+
+  def test_an_empty_wand_cannot_zap
+    arrange_arena
+    arrange_get(:knapsack)[:wands] << 0
+    @game.zap
+    assert_equal "Your wand of slowness has no charges left on this level.", last_log
+  end
+
+  def test_wands_refill_on_each_level
+    arrange_get(:knapsack)[:wands] << 0
+    @game.send(:descend)
+    assert_equal [3], assert_get(:knapsack)[:wands]
+  end
+
+  def test_a_rat_runs_behind_an_unseen_trap_and_waits
+    arrange_arena
+    poison_at(8, 5)
+    rat = add_rat(10, 5).last
+    3.times { @game.rest }
+    assert_equal [9, 5], [rat.x, rat.y], "the trap lies between you"
+    assert_equal 20, @game.hp
+  end
+
+  def test_a_rat_never_treads_on_the_trap_it_leads_over
+    arrange_arena
+    poison_at(7, 5)
+    rat = add_rat(6, 6).last
+    4.times { @game.rest }
+    assert_equal [8, 5], [rat.x, rat.y]
+    assert_equal false, assert_get(:traps)[[7, 5]][:seen]
+  end
+
+  def test_an_axebeak_leads_a_coyote_onto_a_trap
+    arrange_arena(px: 2, py: 2)
+    poison_at(12, 5)
+    beak = thing(14, 5, "A", "Axebeak", 100, 0..0, aggressive: false)
+    coyote = thing(9, 5, "C", "coyote", 100, 0..0, aggressive: false)
+    arrange_get(:monsters).push(beak, coyote)
+    6.times { @game.rest }
+    assert_equal [13, 5], [beak.x, beak.y], "behind the trap from the coyote"
+    assert coyote.hp < 100, "the coyote treads on the poison chasing it"
+  end
+
   # --- trolls and Quails ---
 
   def arrange_troll(x, y, hit: 100..100)
@@ -2776,6 +2873,32 @@ class DungeonTest < Minitest::Test
     @game.rest
     assert_equal %w[troll], assert_get(:monsters).map(&:name)
     assert_equal "The troll eats the Quail!", last_log
+  end
+
+  def test_a_troll_eating_a_quail_howls
+    played = []
+    Dungeon.sound_player = ->(name) { played << name }
+    arrange_arena
+    arrange_troll(8, 5)
+    arrange_quail(9, 5)
+    @game.rest
+    assert_equal %w[wolf], played
+  ensure
+    Dungeon.sound_player = nil
+  end
+
+  def test_a_coyote_hunts_and_eats_an_axebeak
+    played = []
+    Dungeon.sound_player = ->(name) { played << name }
+    arrange_arena
+    arrange_get(:monsters) << thing(8, 5, "C", "coyote", 100, 100..100, aggressive: false)
+    arrange_get(:monsters) << thing(9, 5, "A", "Axebeak", 1, 0..0, aggressive: false)
+    @game.rest
+    assert_equal %w[coyote], assert_get(:monsters).map(&:name)
+    assert_equal "The coyote eats the Axebeak!", last_log
+    assert_equal %w[wolf], played
+  ensure
+    Dungeon.sound_player = nil
   end
 
   def test_a_troll_with_no_quail_minds_its_own_business
@@ -4258,6 +4381,7 @@ class WebGameTest < Minitest::Test
     game.instance_variable_set(:@map, Array.new(Dungeon::VIEWPORT_HEIGHT) { Array.new(Dungeon::VIEWPORT_WIDTH, ".") })
     game.instance_variable_set(:@monsters, [])
     game.instance_variable_set(:@treasure, {})
+    game.instance_variable_set(:@traps, {})
     game.instance_variable_set(:@px, 5)
     game.instance_variable_set(:@py, 5)
   end
@@ -4678,7 +4802,7 @@ class DosBoxTest < Minitest::Test
     srand(1234)
     @dos = DosBox.new
     { map: Array.new(H) { Array.new(W, ".") }, seen: Array.new(H) { Array.new(W, true) }, monsters: [], treasure: {},
-      sandwiches: {}, plates: {}, eggs: {}, detected: [], cage: nil, nest: nil, px: 5, py: 5 }.each { |name, value| arrange_set(name, value) }
+      sandwiches: {}, plates: {}, traps: {}, eggs: {}, detected: [], cage: nil, nest: nil, px: 5, py: 5 }.each { |name, value| arrange_set(name, value) }
   end
 
   def game = @dos.game

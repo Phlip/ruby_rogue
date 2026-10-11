@@ -3,6 +3,63 @@
 require 'minitest/autorun'
 require_relative 'rogue'
 
+# Sounds you can hear while the tests run. Minitest shuffles its test classes, so this one is pulled to the front:
+# its sounds play in the background, and keep playing while every other test runs. QUIET=1 skips them
+class SoundTest < Minitest::Test
+  def setup
+    skip "QUIET is set" if ENV["QUIET"]
+    @played = []
+    speakers = Dungeon.speakers
+    Dungeon.sound_player = ->(name) { @played << name; speakers.(name) }
+  end
+
+  def teardown
+    Dungeon.sound_player = nil
+  end
+
+  def test_a_troll_brings_about_the_demise_of_a_quail
+    game = Dungeon.new
+    game.instance_variable_set(:@map, Array.new(Dungeon::VIEWPORT_HEIGHT) { |y| Array.new(Dungeon::VIEWPORT_WIDTH) { |x| x.zero? || y.zero? ? "#" : "." } })
+    game.instance_variable_set(:@traps, {})
+    game.instance_variable_set(:@px, 5)
+    game.instance_variable_set(:@py, 5)
+    quail = Dungeon::Thingage.new(9, 5, "Q", "Quail", 1, 0..0, 10, 10, 10, 10, 10, 10, true).tap { |q| q.spurned = true }
+    troll = Dungeon::Thingage.new(8, 5, "T", "troll", 100, 100..100, 16, 10, 18, 10, 10, 10, false)
+    game.instance_variable_set(:@monsters, [troll, quail])
+
+    Dungeon.sound_player.("frog2") # the Quail peeps, unaware
+    game.rest                      # the troll taps it, the first time they meet
+    Dungeon.sound_player.("kitten") # a small, worried noise
+    game.rest                      # and eats it
+    Dungeon.sound_player.("bell")  # toll for the Quail
+
+    assert_equal %w[troll], game.instance_variable_get(:@monsters).map(&:name)
+    assert_equal %w[frog2 kitten wolf bell], @played
+  end
+
+  def test_the_menagerie_plays_one_after_another_in_the_background
+    names = %w[cowbell bat_chirp dogs car_horn]
+    player = Dungeon.sound_player
+    player.(names.first)
+    # A thread spaces out the rest, so they sound in turn while the other tests carry on
+    Thread.new { names.drop(1).each { |name| sleep 1.5; player.(name) } }
+    assert_equal [names.first], @played
+  end
+end
+
+# Run SoundTest before every other test class, whatever order Minitest shuffles them into
+class << Minitest::Runnable
+  alias_method :shuffled_runnables, :runnables
+  def runnables
+    list = shuffled_runnables
+    def list.shuffle(**options)
+      first, rest = partition { |r| r == SoundTest }
+      first + rest.shuffle(**options)
+    end
+    list
+  end
+end
+
 module Things
   # The THINGAGES row a thingage of this name spawns from; a name with no row of its own is a weapon's look
   def row_for(name)

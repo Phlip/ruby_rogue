@@ -3045,15 +3045,17 @@ end
 # Scarpe 0.5.0 has no Scarpe.app; requiring scarpe provides Shoes.app instead.
 GOD = ARGV.include?("--god")
 
-# The front ends play the game's sounds, sounds/<name>.wav, through whichever player this machine has
-if $PROGRAM_NAME == __FILE__
-  sound_file = ->(name) { File.join(__dir__, "sounds", "#{name}.wav") }
+# Plays sounds/<name>.wav through whichever player this machine has, without waiting for it to finish
+def Dungeon.speakers
   sound_app = %w[paplay pw-play aplay].find { |p| system("command -v #{p} > /dev/null 2>&1") }
-  Dungeon.sound_player = lambda do |name|
-    sound_app && File.exist?(sound_file.(name)) and
-      Process.detach(spawn(sound_app, sound_file.(name), %i[out err] => File::NULL))
+  lambda do |name|
+    file = File.join(__dir__, "sounds", "#{name}.wav")
+    sound_app && File.exist?(file) and Process.detach(spawn(sound_app, file, %i[out err] => File::NULL))
   end
 end
+
+# The front ends play the game's sounds out loud
+Dungeon.sound_player = Dungeon.speakers if $PROGRAM_NAME == __FILE__
 
 if $PROGRAM_NAME == __FILE__ && (ARGV & %w[--help -h]).any?
   puts USAGE

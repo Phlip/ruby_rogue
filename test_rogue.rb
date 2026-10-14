@@ -919,13 +919,76 @@ class DungeonTest < Minitest::Test
     assert_equal [8, 5], [assert_get(:monsters).first.x, assert_get(:monsters).first.y]
   end
 
-  def test_hitting_a_wall_spurns_it_but_never_makes_it_aggressive
+  def test_hitting_a_wall_once_spurns_it_but_does_not_make_it_aggressive
     arrange_arena
     arrange_get(:monsters) << thing(6, 5, "#", "wall", 100, 0..0, pacifist: true, aggressive: false)
     @game.move(1, 0)
     wall = arrange_get(:monsters).first
     refute wall.aggressive
     assert_match(/\AYou hit the wall for \d\.\z/, @game.log.find { |line| line.start_with?("You hit") })
+  end
+
+  # A wall beside the player, hit twice so its state is enraged
+  def arrange_enraged_wall
+    arrange_arena
+    wall = thing(6, 5, "#", "wall", 100, 0..0, pacifist: true, aggressive: false)
+    arrange_get(:monsters) << wall
+    2.times { @game.move(1, 0) }
+    wall
+  end
+
+  def wall_state(wall) = @game.send(:state_machine, wall).state
+
+  def test_hitting_a_wall_twice_enrages_it
+    wall = arrange_enraged_wall
+    assert_instance_of Dungeon::DoorLock::EnragedState, wall_state(wall)
+    assert wall.aggressive
+    assert_equal :ego, wall.pursuit_target
+    assert(@game.log.any? { |line| line == "You hit the wall for #{line[/\d+/]}. It turns on you!" })
+    assert_equal [6, 5], [wall.x, wall.y], "angry, it still never leaves its spot"
+  end
+
+  def test_a_coin_walks_an_enraged_wall_back_to_spurned
+    wall = arrange_enraged_wall
+    arrange_get(:knapsack)[:gold] = 1
+    @game.send(:give, :gold, 1, 0)
+    assert_instance_of Dungeon::DoorLock::QuietState, wall_state(wall)
+    assert wall.pacifist
+    assert wall.spurned
+    refute wall.aggressive
+    refute wall.ally, "a second coin would win it over"
+    assert_equal "You give the wall a coin. It pockets it and calms down, though it's still sore.", @game.log.reverse.find { |l| l.start_with?("You give") }
+  end
+
+  def test_an_enraged_wall_throws_a_sandwich_back_soiled_but_edible
+    wall = arrange_enraged_wall
+    arrange_get(:knapsack)[:sandwiches] = 1
+    def @game.rand(*args) = args.empty? ? 0.0 : Kernel.rand(*args)
+    @game.send(:give, :sandwiches, 1, 0)
+    assert_equal 0, arrange_get(:knapsack)[:sandwiches]
+    assert_equal 1, arrange_get(:sandwiches)[[5, 5]], "it lands at the player's feet"
+    assert_instance_of Dungeon::DoorLock::EnragedState, wall_state(wall), "still angry"
+  end
+
+  def test_an_enraged_wall_sometimes_ruins_the_sandwich_it_throws_back
+    arrange_enraged_wall
+    arrange_get(:knapsack)[:sandwiches] = 1
+    def @game.rand(*args) = args.empty? ? 0.99 : Kernel.rand(*args)
+    @game.send(:give, :sandwiches, 1, 0)
+    assert_equal 0, arrange_get(:knapsack)[:sandwiches]
+    assert_empty arrange_get(:sandwiches)
+    assert_match(/splats, ruined/, @game.log.reverse.find { |l| l.start_with?("You give") })
+  end
+
+  def test_an_enraged_door_takes_a_coin_to_calm_down_instead_of_opening
+    arrange_arena
+    door = thing(6, 5, "#", "door", 100, 0..0, pacifist: true)
+    arrange_get(:monsters) << door
+    2.times { @game.move(1, 0) }
+    arrange_get(:knapsack)[:gold] = 1
+    @game.send(:give, :gold, 1, 0)
+    assert_includes arrange_get(:monsters), door, "still in the hallway"
+    assert_instance_of Dungeon::DoorLock::QuietState, wall_state(door)
   end
 
   # The player at 5, 3 with a wall down column 7 from the top to row 5, so anything at 8, 3 must go
@@ -3047,6 +3110,30 @@ class DungeonTest < Minitest::Test
     Dungeon.sound_player = nil
   end
 
+  def test_the_alarms_sound_as_hit_points_run_out
+    played = []
+    Dungeon.sound_player = ->(name) { played << name }
+    arrange_arena
+    arrange_set :hp, 4
+    arrange_monster(6, 5, hit: 2..2) # each rest heals 1 and each blow takes 2
+    sounds = 4.times.map { played.clear; @game.rest; played.dup }
+    assert_equal [%w[error error error], %w[error error], %w[bat_chirp], %w[error]], sounds
+  ensure
+    Dungeon.sound_player = nil
+  end
+
+  def test_a_blow_past_several_alarms_sounds_only_the_last
+    played = []
+    Dungeon.sound_player = ->(name) { played << name }
+    arrange_arena
+    arrange_set :hp, 5
+    arrange_monster(6, 5, hit: 5..5) # resting to 6, then down to 1
+    @game.rest
+    assert_equal %w[bat_chirp], played
+  ensure
+    Dungeon.sound_player = nil
+  end
+
   def test_a_coyote_hunts_and_eats_an_axebeak
     played = []
     Dungeon.sound_player = ->(name) { played << name }
@@ -3066,6 +3153,124 @@ class DungeonTest < Minitest::Test
     troll = arrange_troll(8, 5).last
     3.times { @game.rest }
     assert_equal [8, 5], [troll.x, troll.y]
+  end
+
+  def state_of(hunter) = @game.send(:state_machine, hunter).state
+
+  def test_a_quiet_troll_that_sees_a_quail_is_enraged_and_after_it
+    arrange_arena
+    troll = arrange_troll(8, 5).last
+    quail = arrange_quail(10, 5).last
+    @game.rest
+    assert_instance_of Dungeon::DoorLock::EnragedState, state_of(troll)
+    assert_same quail, troll.pursuit_target
+  end
+
+  def test_a_troll_too_far_to_see_a_quail_stays_quiet
+    arrange_arena
+    troll = arrange_troll(3, 3).last
+    arrange_quail(3 + Dungeon::SIGHT + 1, 3)
+    @game.rest
+    assert_instance_of Dungeon::DoorLock::QuietState, state_of(troll)
+    assert_equal [3, 3], [troll.x, troll.y]
+  end
+
+  def test_a_tapped_quiet_troll_turns_to_the_player_but_does_not_engage
+    arrange_arena
+    arrange_set :facing, [1, 0]
+    troll = arrange_troll(6, 5).last
+    @game.tap
+    assert_instance_of Dungeon::DoorLock::QuietState, state_of(troll)
+    assert_equal :ego, troll.pursuit_target
+    @game.rest
+    assert_equal [6, 5], [troll.x, troll.y]
+    assert_equal 20, arrange_get(:hp), "it never strikes"
+  end
+
+  def test_a_pushed_troll_is_enraged_and_after_the_player
+    arrange_hallway
+    troll = arrange_troll(6, 5).last
+    @game.tap
+    assert_includes @game.log, "You push the troll."
+    assert_instance_of Dungeon::DoorLock::EnragedState, state_of(troll)
+    assert_equal :ego, troll.pursuit_target
+    assert_equal [6, 5], [troll.x, troll.y], "pushed to 7, 5, it steps straight back at the player"
+  end
+
+  def test_a_troll_chasing_a_quail_turns_on_the_player_who_hits_it
+    arrange_arena(px: 7)
+    troll = arrange_troll(8, 5, hit: 3..3).last
+    quail = arrange_quail(11, 5).last.tap { |q| q.spurned = true }
+    @game.send(:state_machine, troll).transit(Dungeon::DoorLock::StateEvent::SEE_PREY, @game, troll, quail)
+    @game.move(1, 0)
+    assert_instance_of Dungeon::DoorLock::EnragedState, state_of(troll)
+    assert_equal :ego, troll.pursuit_target, "it swaps the Quail for the player"
+    assert_equal [8, 5], [troll.x, troll.y], "it stays to fight"
+    assert_operator arrange_get(:hp), :<, 20
+    assert_includes arrange_get(:monsters), quail
+  end
+
+  def test_a_troll_that_ate_its_quail_calms_down
+    arrange_arena
+    troll = arrange_troll(8, 5).last
+    arrange_quail(9, 5).last.spurned = true
+    3.times { @game.rest } # it taps the Quail, eats it, then calms
+    assert_instance_of Dungeon::DoorLock::QuietState, state_of(troll)
+    assert_nil troll.pursuit_target
+  end
+
+  def test_a_quiet_coyote_that_sees_an_axebeak_is_enraged_and_after_it
+    arrange_arena
+    coyote = thing(8, 5, "C", "coyote", 100, 0..0, aggressive: false)
+    beak = thing(11, 5, "A", "Axebeak", 100, 0..0, aggressive: false, spurned: true)
+    arrange_get(:monsters).push(coyote, beak)
+    @game.rest
+    assert_instance_of Dungeon::DoorLock::EnragedState, state_of(coyote)
+    assert_same beak, coyote.pursuit_target
+  end
+
+  def test_a_coyote_too_far_to_see_an_axebeak_stays_quiet
+    arrange_arena
+    coyote = thing(3, 3, "C", "coyote", 100, 0..0, aggressive: false)
+    arrange_get(:monsters).push(coyote, thing(3 + Dungeon::SIGHT + 1, 3, "A", "Axebeak", 100, 0..0, aggressive: false, spurned: true))
+    @game.rest
+    assert_instance_of Dungeon::DoorLock::QuietState, state_of(coyote)
+    assert_equal [3, 3], [coyote.x, coyote.y]
+  end
+
+  def test_a_coyote_chasing_an_axebeak_turns_on_the_player_who_hits_it
+    arrange_arena(px: 7)
+    coyote = thing(8, 5, "C", "coyote", 100, 1..1, aggressive: false)
+    beak = thing(11, 5, "A", "Axebeak", 100, 0..0, aggressive: false, spurned: true)
+    arrange_get(:monsters).push(coyote, beak)
+    @game.send(:state_machine, coyote).transit(Dungeon::DoorLock::StateEvent::SEE_PREY, @game, coyote, beak)
+    @game.move(1, 0)
+    assert_instance_of Dungeon::DoorLock::EnragedState, state_of(coyote)
+    assert_equal :ego, coyote.pursuit_target, "it swaps the Axebeak for the player"
+    assert_operator arrange_get(:hp), :<, 20
+  end
+
+  def test_a_tapped_quiet_coyote_turns_to_the_player_but_does_not_engage
+    arrange_arena
+    arrange_set :facing, [1, 0]
+    coyote = thing(6, 5, "C", "coyote", 100, 1..1, aggressive: false)
+    arrange_get(:monsters) << coyote
+    @game.tap
+    assert_instance_of Dungeon::DoorLock::QuietState, state_of(coyote)
+    assert_equal :ego, coyote.pursuit_target
+    assert_equal 20, arrange_get(:hp)
+  end
+
+  def test_the_state_table_has_its_seven_edges
+    ev = Dungeon::DoorLock::StateEvent
+    quiet, enraged = Dungeon::DoorLock::QuietState, Dungeon::DoorLock::EnragedState
+    assert_equal({ [quiet,   ev::TAP]       => quiet,
+                   [quiet,   ev::PUSH]      => enraged,
+                   [quiet,   ev::HIT]       => enraged,
+                   [quiet,   ev::SEE_PREY]  => enraged,
+                   [enraged, ev::PUSH]      => enraged,
+                   [enraged, ev::HIT]       => enraged,
+                   [enraged, ev::CALM]      => quiet }, Dungeon::DoorLock::STATE_TRANSITIONS)
   end
 
   # --- eggs ---

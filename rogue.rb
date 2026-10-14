@@ -58,20 +58,60 @@ class Dungeon
       [OpenState,      LockEvent::KEY]        => LockState,
     }.freeze
 
-    # Starts locked, and moves along its table: the old state's on_exit, then the new state's on_entry, each
-    # handed the transit's context. An event its state has no row for changes nothing, not even which state
-    # object it holds
+    # What moves along the state of a hunter, a troll or a coyote, or of the # furniture, a wall or a door: what
+    # the player, or prey a hunter sees, does to one
+    module StateEvent
+      TAP      = :tap
+      PUSH     = :push
+      HIT      = :hit
+      SEE_PREY = :see_prey
+      CALM     = :calm # a hunter's prey is gone, or the player paid off a piece of furniture
+    end
+
+    # Each state's on_entry is handed the game, the creature, and who it pursues now: a hunter's prey, :ego for
+    # the player, or nil. A quiet one only remembers who that is; an enraged one goes after them
+    class QuietState < State
+      def on_entry(_game, hunter, target)
+        hunter.aggressive = false
+        hunter.pursuit_target = target
+      end
+    end
+
+    class EnragedState < State
+      def on_entry(_game, hunter, target)
+        hunter.aggressive = true
+        hunter.pursuit_target = target
+      end
+    end
+
+    # A tapped quiet creature turns to face the player but won't engage; pushed or hit, one in any state turns on
+    # the player, giving up any prey it chased; a quiet hunter that sees its prey goes straight for it, and
+    # calming walks an enraged one back to quiet
+    STATE_TRANSITIONS = {
+      [QuietState,   StateEvent::TAP]      => QuietState,
+      [QuietState,   StateEvent::PUSH]     => EnragedState,
+      [QuietState,   StateEvent::HIT]      => EnragedState,
+      [QuietState,   StateEvent::SEE_PREY] => EnragedState,
+      [EnragedState, StateEvent::PUSH]     => EnragedState,
+      [EnragedState, StateEvent::HIT]      => EnragedState,
+      [EnragedState, StateEvent::CALM]     => QuietState,
+    }.freeze
+
+    # Starts in its initial state, locked unless told otherwise, and moves along its table: the old state's
+    # on_exit, then the new state's on_entry, each handed the transit's context. A row back to the same state
+    # leaves and re-enters it. An event its state has no row for changes nothing, not even which state object
+    # it holds
     class Machine
       attr_reader :state
 
-      def initialize(transitions = TRANSITIONS)
+      def initialize(transitions = TRANSITIONS, initial = LockState)
         @transitions = transitions
-        @state = LockState.new
+        @state = initial.new
       end
 
       def transit(event, *context)
         target = @transitions[[@state.class, event]]
-        return unless target && target != @state.class
+        return unless target
 
         @state.on_exit(*context)
         @state = target.new
@@ -265,10 +305,12 @@ class Dungeon
   # locked marks a door that tapping won't open, and machine is a sandwich's lock, its wrapping.
   # plate_bound is the random plate a Quail saw the player ride, which it heads for until it steps on.
   # met lists who has met a Quail: :ego for the player, else a thingage's object_id. asleep counts down the rounds a
-  # potion of sleep keeps it from acting, and disguised_potion is the POTIONS slot of a potion posing as a creature
+  # potion of sleep keeps it from acting, and disguised_potion is the POTIONS slot of a potion posing as a creature.
+  # state is the STATE_TRANSITIONS machine of a hunter or a piece of furniture, kept apart from machine, a door's
+  # lock. pursuit_target is who its state has it after: a hunter's prey, :ego for the player, or nil
   Thingage = Struct.new(:x, :y, :glyph, :name, :hp, :hit, :str, :dex, :con, :int, :wis, :cha, :pacifist, :spurned, :greedy, :fed, :ally, :coins, :aggressive,
                         :hasted, :gaseous, :farsighted, :nesting, :sugar, :starving, :slowed, :lagging, :weapon, :locked, :machine, :plate_bound, :met, :asleep,
-                        :disguised_potion)
+                        :disguised_potion, :pursuit_target, :state)
   ABILITIES = %i[str dex con int wis cha].freeze
 
   # The D&D ability modifier: 10 and 11 give +0, and every two points up or down moves it by one.
@@ -340,9 +382,13 @@ class Dungeon
     @levels = {}
     @max_hp += 2 * (level - 1)
     @hp = @max_hp
-    @log = ["You descend into the dark#{" to depth #{level}" if level > 1}. Find the stairs (>)."]
+    @log = ["#{"#{PREFACE} " if level == 1}You descend into the dark#{" to depth #{level}" if level > 1}. Find the stairs (>)."]
     return build_level()
   end
+
+  # How a new game opens, ahead of the first line of the log
+  PREFACE = "A mad scientist has framed you for the demise of a large flightless quail species, and blackmailed you " \
+            "to return a viable family of the endangered, useless critters, which seem to lack a survival instinct."
 
   # The game ends when the player dies, or springs the cage's trap on themselves and whatever else is inside;
   # it's a win if an egg in that haul hatches
@@ -968,9 +1014,11 @@ class Dungeon
       elsif tight_spot?(m) && pushable_to?(to = [x + @facing[0], y + @facing[1]])
         m.x, m.y = to
         say "You push the #{m.name}."
+        provoke_hunter(m, DoorLock::StateEvent::PUSH)
         tread(m)
       else
         say "You tap the #{m.name}."
+        provoke_hunter(m, DoorLock::StateEvent::TAP)
       end
     else
       return # tapping a wall or empty air is a bad keystroke: it just disappears, no message and no turn
@@ -1413,7 +1461,8 @@ class Dungeon
 
   def monster_at(x, y) return @monsters.find { |m| m.x == x && m.y == y } end
 
-  # The first hit on a pacifist also spurns it; the second on a door makes it give up its pacifism and fight
+  # The first hit on a pacifist also spurns it; the second on a piece of furniture enrages it, giving up its
+  # pacifism to fight
   def attack(foe)
     dmg = rand(weapon_hit)
     return unwrap(foe, dmg) if foe.name == "sandwich"
@@ -1421,6 +1470,7 @@ class Dungeon
     foe.hp -= dmg
     provoked = !foe.pacifist && !foe.aggressive
     foe.aggressive = true unless foe.pacifist
+    provoke_hunter(foe, DoorLock::StateEvent::HIT) if foe.hp.positive?
     if foe.hp <= 0
       @monsters.delete(foe)
       return say("The #{foe.name} shatters: it was a #{POTIONS[foe.disguised_potion][:name]} in disguise!") if foe.disguised_potion
@@ -1433,11 +1483,11 @@ class Dungeon
       foe.spurned = true
       say "You hit the #{foe.name} for #{dmg}.#{" It stops following you." if follower?(foe)}"
       knock_back(foe, foe.x - @px, foe.y - @py) if foe.name == "Quail"
-    elsif foe.pacifist && foe.name == "door"
+    elsif foe.pacifist && FURNITURE.include?(foe.name)
       foe.pacifist = false
       foe.spurned = false
-      foe.aggressive = true
-      say "You hit the door for #{dmg}. It turns on you!"
+      state_machine(foe).transit(DoorLock::StateEvent::HIT, self, foe, :ego)
+      say "You hit the #{foe.name} for #{dmg}. It turns on you!"
     else
       say "You hit the #{foe.name} for #{dmg}.#{" It turns on you!" if provoked}"
       knock_back(foe, foe.x - @px, foe.y - @py) if foe.name == "Quail"
@@ -1666,9 +1716,12 @@ class Dungeon
   # pacifist, an ally, or a greedy goblin pockets a coin for good and becomes an
   # ally hoping for more, and a nesting Quail leaves its eggs to follow you; a rat pockets a coin and disengages,
   # staying put and leaving you be; a door takes either
-  # and swings open, gone from the hallway. Anyone else just keeps it
+  # and swings open, gone from the hallway. Enraged furniture takes a coin to calm down, and throws a sandwich
+  # back. Anyone else just keeps it
   def receive(taker, item)
     @knapsack[item] -= 1
+    return appease(taker, item) if FURNITURE.include?(taker.name) && state_machine(taker).state.is_a?(DoorLock::EnragedState)
+
     if taker.name == "door"
       @monsters.delete(taker)
       "#{item == :gold ? "pockets" : "eats"} it and swings open"
@@ -1696,6 +1749,28 @@ class Dungeon
 
   def eater?(m) = EATERS.include?(m.name)
 
+  # The # kinds, a wall and a door, whose states a hit enrages and a coin walks back
+  FURNITURE = THINGAGES.select { |k| k[:glyph] == "#" }.map { |k| k[:name] }.freeze
+
+  # The chance a sandwich enraged furniture throws back lands still fit to eat
+  SOILED_EDIBLE_CHANCE = 0.5
+
+  # Enraged furniture, given a coin, calms back to quiet and spurned, a pacifist again that a second coin can
+  # win over. Given a sandwich, it throws it back: sometimes it lands at the player's feet, soiled but edible,
+  # and sometimes it's ruined
+  def appease(taker, item)
+    if item == :gold
+      state_machine(taker).transit(DoorLock::StateEvent::CALM, self, taker, nil)
+      taker.pacifist = true
+      taker.spurned = true
+      return "pockets it and calms down, though it's still sore"
+    end
+    return "throws it back at you, and it splats, ruined" unless rand < SOILED_EDIBLE_CHANCE
+
+    @sandwiches[[@px, @py]] = @sandwiches.fetch([@px, @py], 0) + 1
+    "throws it back at you, and it lands at your feet, soiled but still edible"
+  end
+
   # A sandwich fills a creature's blood sugar back up; one still asleep is full anyway
   def refill(m)
     m.sugar &&= MAX_BLOOD_SUGAR
@@ -1716,7 +1791,7 @@ class Dungeon
     drain = ((@sugar_clock = @sugar_clock.to_i + 1) % SUGAR_ROUNDS).zero?
     if hungry?
       if (@starving += 1) % STARVE_ROUNDS == 0 && !godMode?
-        @hp -= 1
+        hurt(1)
         say "You're starving and lose a hit point."
         say "You starve to death on depth #{@depth} with #{gold} gold." if @hp <= 0
       end
@@ -2113,12 +2188,12 @@ class Dungeon
       with = " with its #{m.weapon[:name]}" if m.weapon
       return say("The #{m.name} hits you#{with} for #{dmg}, but you take no damage.") if godMode?
 
-      @hp -= dmg
+      hurt(dmg)
       say "The #{m.name} hits you#{with} for #{dmg}."
       say("You die on depth #{@depth} with #{gold} gold.") if over?
     else
       return if gaseous? && !friend?(m) && !follower?(m) # nothing hostile bothers chasing mist
-      return if m.name == "door" # an angry door strikes from its hallway but never leaves it
+      return if FURNITURE.include?(m.name) # angry furniture strikes from where it stands but never leaves it
 
       step = dx.abs >= dy.abs ? [dx <=> 0, 0] : [0, dy <=> 0]
       nx, ny = (follower?(m) && path_step(m)) || [m.x + step[0], m.y + step[1]]
@@ -2141,7 +2216,7 @@ class Dungeon
       dmg = Dungeon.d2x2
       return say("You step on a potion of poison and it breaks, but you take no damage.") if godMode?
 
-      @hp -= dmg
+      hurt(dmg)
       say "You step on a potion of poison and it breaks. You take #{dmg} damage."
       say("You die on depth #{@depth} with #{gold} gold.") if over?
     else
@@ -2237,6 +2312,18 @@ class Dungeon
   # Each hunter's prey: a living Quail horrifies a troll, and coyotes and Axebeaks are each other's nemesis
   PREY = { "troll" => "Quail", "coyote" => "Axebeak" }.freeze
 
+  # The alarms as the player's hit points run out, each sound of a list playing at once: three overlapping errors
+  # at 3, two at 2, a bat at 1, and one error at 0
+  HP_ALARMS = { 3 => %w[error error error], 2 => %w[error error], 1 => %w[bat_chirp], 0 => %w[error] }.freeze
+
+  # The player loses n hit points, sounding the alarm for the lowest count they fall to, if it has one; a blow
+  # that falls past several sounds only the last, and dying below zero sounds as 0
+  def hurt(n)
+    @hp -= n
+    (n.positive? && (alarm = HP_ALARMS[[@hp, 0].max])) or return
+    alarm.each { |name| sound name }
+  end
+
   # The sound a hunter makes eating its prey, from the sounds folder
   EATING_SOUND = "wolf"
 
@@ -2247,12 +2334,36 @@ class Dungeon
 
   def sound(name) = Dungeon.sound_player&.call(name)
 
-  # A hunter leaves everything else to hunt down the nearest of its prey on the level, wherever it is, finding its
-  # way round walls like the Quail does, and eats it. False when there's no prey to hunt
-  def hunt_prey(m)
-    (kind = PREY[m.name]) && !mist?(m) or return false
+  # A hunter's or a piece of furniture's state, starting quiet
+  def state_machine(m)
+    m.state ||= DoorLock::Machine.new(DoorLock::STATE_TRANSITIONS, DoorLock::QuietState)
+  end
 
-    prey = @monsters.select { |q| q.name == kind && q.hp.positive? }.min_by { |q| (q.x - m.x).abs + (q.y - m.y).abs }
+  # What the player does to a hunter moves its state along, pointing it at the player
+  def provoke_hunter(m, event)
+    state_machine(m).transit(event, self, m, :ego) if PREY.key?(m.name)
+  end
+
+  # The prey a hunter is after, if any. A hunter whose prey is gone calms down, and a quiet one that sees its
+  # kind of prey, within SIGHT of it, goes for the nearest; a hunter after the player hunts no prey at all
+  def hunted(m)
+    machine = state_machine(m)
+    prey = m.pursuit_target
+    machine.transit(DoorLock::StateEvent::CALM, self, m, nil) if prey.is_a?(Thingage) && !(prey.hp.positive? && @monsters.include?(prey))
+    if machine.state.is_a?(DoorLock::QuietState)
+      near = ->(q) { (q.x - m.x).abs <= SIGHT && (q.y - m.y).abs <= SIGHT }
+      seen = @monsters.select { |q| q.name == PREY[m.name] && q.hp.positive? && near.(q) }
+      (prey = seen.min_by { |q| (q.x - m.x).abs + (q.y - m.y).abs }) and machine.transit(DoorLock::StateEvent::SEE_PREY, self, m, prey)
+    end
+    m.pursuit_target if m.pursuit_target.is_a?(Thingage)
+  end
+
+  # A hunter leaves everything else to hunt down the prey its state has it after, finding its way round walls like
+  # the Quail does, and eats it. False when there's no prey to hunt
+  def hunt_prey(m)
+    PREY.key?(m.name) && !mist?(m) or return false
+
+    prey = hunted(m)
     return false unless prey
 
     seen = ->(x, y) { (x - @px).abs <= SIGHT && (y - @py).abs <= SIGHT }

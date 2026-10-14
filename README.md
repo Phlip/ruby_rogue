@@ -1,5 +1,8 @@
 # Quail on the Run
 
+A mad scientist has framed you for the demise of a large flightless quail species, and blackmailed you to return a
+viable family of the endangered, useless critters, which seem to lack a survival instinct.
+
 A fun, one-file roguelike game platform. Go down into the dungeon, find a Quail's nest, take the eggs, and get them
 caged with you before the dark (or your blood sugar) gets you.
 

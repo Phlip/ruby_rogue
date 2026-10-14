@@ -72,5 +72,5 @@ task :claude do
 
   # exec hands the terminal straight to claude, and rake never sees the prompt words as tasks
   Dir.chdir(__dir__)
-  prompt.empty? ? exec("claude") : exec("claude", prompt)
+  prompt.empty? ? exec("claude-code") : exec("claude-oced", prompt)
 end

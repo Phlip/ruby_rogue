@@ -286,8 +286,9 @@ class Dungeon
   #  make aggressive things attack the TODO weapon and the mobile wall
 
   # Blood sugar starts full and drops by one every SUGAR_ROUNDS rounds, the player's from the start and a
-  # creature's from the round it wakes and first acts. At zero they're hungry, drawn in HUNGRY_COLOR, and lose a hit point every
-  # STARVE_ROUNDS rounds until a sandwich fills them up again
+  # creature's from the round it wakes and first acts. At zero they're hungry, drawn in HUNGRY_COLOR. Running out
+  # kills the player outright, unless they're a god; a creature loses a hit point every STARVE_ROUNDS rounds
+  # until a sandwich fills it up again
   VIEWPORT_WIDTH  = (48 * 1.3).to_i
   VIEWPORT_HEIGHT = (18 * 1.3).to_i
   SIGHT  = 6
@@ -349,11 +350,11 @@ class Dungeon
   # The hero's armor class: the Ego row's. Nothing reads it in combat yet
   HERO_AC = PLAYER[:ac]
 
-  attr_reader :hp, :max_hp, :ac, :abilities, :blood_sugar, :knapsack, :depth, :log, :wielded, :ring
+  attr_reader :hp, :max_hp, :ac, :abilities, :blood_sugar, :knapsack, :depth, :log, :wielded, :ring, :xp, :hero_level
 
   # In god mode the player takes no damage; everything else still can. Like a monster's from its row, the
   # player's hit points are the Ego row's plus its con modifier, though never fewer than 1. A game can start at a
-  # deeper level, as though the player had already come down that far, max hit points and all
+  # deeper level, though the player is no tougher for it; only experience raises their level
   def initialize(godMode: false, level: 1)
     @godMode = godMode
     @abilities = PLAYER.slice(*ABILITIES).freeze
@@ -361,7 +362,6 @@ class Dungeon
     @ac = HERO_AC
     @hp = @max_hp
     @blood_sugar = MAX_BLOOD_SUGAR
-    @starving = 0
     @sugar_clock = 0
     @wielded = FISTS
     @strung_steps = 0
@@ -378,17 +378,20 @@ class Dungeon
     @won = false
     @trapped = false
     @depth = level
-    @deepest = level
     @levels = {}
-    @max_hp += 2 * (level - 1)
-    @hp = @max_hp
-    @log = ["#{"#{PREFACE} " if level == 1}You descend into the dark#{" to depth #{level}" if level > 1}. Find the stairs (>)."]
-    return build_level()
+    @xp = 0
+    @hero_level = 1
+    @log = (level == 1 ? PREFACE : []) + ["You descend into the dark#{" to depth #{level}" if level > 1}. Find the stairs (>)."]
+    build_level
+    take_stock
   end
 
-  # How a new game opens, ahead of the first line of the log
-  PREFACE = "A mad scientist has framed you for the demise of a large flightless quail species, and blackmailed you " \
-            "to return a viable family of the endangered, useless critters, which seem to lack a survival instinct."
+  # How a new game opens, ahead of the first line of the log: one log line each, wrapped by hand to fit 80 columns
+  PREFACE = [
+    "A mad scientist has framed you for the demise of a large flightless quail",
+    "species, and blackmailed you to return a viable family of the endangered,",
+    "useless critters, which seem to lack a survival instinct.",
+  ].freeze
 
   # The game ends when the player dies, or springs the cage's trap on themselves and whatever else is inside;
   # it's a win if an egg in that haul hatches
@@ -1139,7 +1142,6 @@ class Dungeon
   def feed(food)
     gain = rand(1..6) + rand(1..6)
     @blood_sugar = [@blood_sugar + gain, MAX_BLOOD_SUGAR].min
-    @starving = 0
     food ? @monsters.delete(food) : @knapsack[:sandwiches] -= 1
     say "You eat the sandwich. Your blood sugar rises by #{gain}, to #{@blood_sugar}."
   end
@@ -1786,18 +1788,10 @@ class Dungeon
   end
 
   # Every SUGAR_ROUNDS rounds the player's blood sugar, and every awake creature's, drops by one; at zero, every
-  # STARVE_ROUNDS rounds cost a hit point, which can starve them to death
+  # STARVE_ROUNDS rounds cost a creature a hit point, which can starve it to death
   def hunger
     drain = ((@sugar_clock = @sugar_clock.to_i + 1) % SUGAR_ROUNDS).zero?
-    if hungry?
-      if (@starving += 1) % STARVE_ROUNDS == 0 && !godMode?
-        hurt(1)
-        say "You're starving and lose a hit point."
-        say "You starve to death on depth #{@depth} with #{gold} gold." if @hp <= 0
-      end
-    elsif drain
-      @blood_sugar -= 1
-    end
+    sugar_drops if drain && @blood_sugar.positive?
 
     @monsters.dup.each do |m|
       next unless m.sugar
@@ -1813,6 +1807,17 @@ class Dungeon
       @monsters.delete(m)
       say "The #{m.name} starves to death."
     end
+  end
+
+  # The player's blood sugar drops a point, sounding the same alarms as hit points do at 3, 2, 1, and 0.
+  # Running out kills them, unless they're a god
+  def sugar_drops
+    @blood_sugar -= 1
+    alarm(@blood_sugar)
+    return unless hungry? && !godMode?
+
+    @hp = 0
+    say "You run out of blood sugar and die on depth #{@depth} with #{gold} gold."
   end
 
   # One step marched. With a ranged weapon strung in hand, it wears the string, which past STRUNG_STEPS may snap
@@ -2038,25 +2043,20 @@ class Dungeon
     @px, @py = (way == "up" ? @downstairs : @upstairs) || [@px, @py]
     refill_wands
     reveal
+    take_stock
   end
 
-  # Every wand, in the knapsack or lying on the new level, holds WAND_CHARGES again
+  # Every wand, in the knapsack or lying on the level, holds WAND_CHARGES again
   def refill_wands
     @knapsack[:wands].map! { WAND_CHARGES }
     @traps&.each_value { |t| t[:charges] = WAND_CHARGES if t[:kind] == :wand }
   end
 
-  # Only reaching a new deepest level toughens the player, so climbing up and down again earns nothing. A level
-  # already visited is the one the player left
+  # A level already visited is the one the player left
   def descend
     party = side_in_room
     remember_level(party)
     @depth += 1
-    if @depth > @deepest
-      @deepest = @depth
-      @max_hp += 2
-      @hp = [@hp + 5, @max_hp].min
-    end
     say "You take the stairs down to depth #{@depth}."
     enter_level("down")
     bring_along(party, @rooms.first, "down")
@@ -2103,7 +2103,8 @@ class Dungeon
   # everyone else act, and a slowed one gets one for two rounds, so everyone else acts twice; each round that
   # passes wears down the timed potions
   def end_turn
-    return if hasted? && (@quick = !@quick) # the first of a hasted pair: the dungeon waits
+    earn_xp
+    return take_stock if hasted? && (@quick = !@quick) # the first of a hasted pair: the dungeon waits
 
     (slowed? ? 2 : 1).times do
       monsters_act
@@ -2111,6 +2112,44 @@ class Dungeon
       break if over?
     end
     doze
+    take_stock
+  end
+
+  # Notes who's agitated nearby, for the player's next move to earn XP by calming or defeating them
+  def take_stock = @agitated = [@depth, agitated_nearby]
+
+  # The experience each nearby obstacle earns the player, calmed or defeated, and how much more each level takes
+  XP_PER_CALMING = 10
+  XP_PER_LEVEL = 50
+
+  # Whether a thingage is agitated: out to fight the player, not spurned, paid off, fed, asleep, or defeated
+  def agitated?(m)
+    m.hp.positive? && m.aggressive && !m.pacifist && !m.spurned && !friend?(m) && !m.asleep.to_i.positive?
+  end
+
+  # The agitated thingages within SIGHT of the player
+  def agitated_nearby
+    @monsters.select { |m| agitated?(m) && (m.x - @px).abs <= SIGHT && (m.y - @py).abs <= SIGHT }
+  end
+
+  # What the player just did earns XP_PER_CALMING for each agitated thingage that was nearby at the last
+  # take_stock, on this same level, and is now passive or gone. Every XP_PER_LEVEL raises the hero a level, and
+  # recharges every wand
+  def earn_xp
+    depth, was = @agitated
+    @agitated = nil
+    depth == @depth or return
+
+    calmed = was.count { |m| !@monsters.include?(m) || !agitated?(m) }
+    calmed.positive? or return
+
+    @xp += calmed * XP_PER_CALMING
+    while @xp >= @hero_level * XP_PER_LEVEL
+      @hero_level += 1
+      refill_wands
+      say(rand < 0.5 ? "Welcome to level #{@hero_level}!" :
+                       "Welcome to level #{@hero_level}; your new proficiency bonus is #{@hero_level / 2}.")
+    end
   end
 
   # A sleeping player sleeps on, a round at a time, while everyone else carries on, then wakes
@@ -2312,16 +2351,18 @@ class Dungeon
   # Each hunter's prey: a living Quail horrifies a troll, and coyotes and Axebeaks are each other's nemesis
   PREY = { "troll" => "Quail", "coyote" => "Axebeak" }.freeze
 
-  # The alarms as the player's hit points run out, each sound of a list playing at once: three overlapping errors
-  # at 3, two at 2, a bat at 1, and one error at 0
-  HP_ALARMS = { 3 => %w[error error error], 2 => %w[error error], 1 => %w[bat_chirp], 0 => %w[error] }.freeze
+  # The alarms as the player's hit points or blood sugar run out, each sound of a list playing at once: three
+  # overlapping errors at 3, two at 2, a bat at 1, and one error at 0
+  ALARMS = { 3 => %w[error error error], 2 => %w[error error], 1 => %w[bat_chirp], 0 => %w[error] }.freeze
 
-  # The player loses n hit points, sounding the alarm for the lowest count they fall to, if it has one; a blow
-  # that falls past several sounds only the last, and dying below zero sounds as 0
+  # Sounds the alarm for a count, if it has one
+  def alarm(count) = ALARMS.fetch(count, []).each { |name| sound name }
+
+  # The player loses n hit points, sounding the alarm for the lowest count they fall to; a blow that falls past
+  # several sounds only the last, and dying below zero sounds as 0
   def hurt(n)
     @hp -= n
-    (n.positive? && (alarm = HP_ALARMS[[@hp, 0].max])) or return
-    alarm.each { |name| sound name }
+    alarm([@hp, 0].max) if n.positive?
   end
 
   # The sound a hunter makes eating its prey, from the sounds folder
@@ -3138,7 +3179,7 @@ USAGE = <<~TEXT
                   and Rogue's keys (? lists them). This is the default, with no front end named
     --web [port]  play in a browser instead, at http://localhost:port/ (port 1-65535, default 4567)
     --scarpe      play in a desktop window, drawn by Scarpe
-    --level N     start at depth N (1-99), as though you'd already come down that far; New game starts there too
+    --level N     start at depth N (1-99), a cheat that also turns on god mode; New game starts there too
     --god         god mode: the player takes no damage
     -h, --help    show this help and exit
 TEXT
@@ -3154,7 +3195,8 @@ end
 
 # Guarded so the tests can require this file for Dungeon without opening a window or a port.
 # Scarpe 0.5.0 has no Scarpe.app; requiring scarpe provides Shoes.app instead.
-GOD = ARGV.include?("--god")
+# Starting deeper with --level is a cheat, so it plays in god mode too
+GOD = (ARGV & %w[--god --level]).any?
 
 # Plays sounds/<name>.wav through whichever player this machine has, without waiting for it to finish
 def Dungeon.speakers

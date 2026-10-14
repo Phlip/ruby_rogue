@@ -146,16 +146,12 @@ class DungeonTest < Minitest::Test
   def test_a_game_can_start_deeper
     game = Dungeon.new(level: 5)
     assert_equal 5, game.depth
-    assert_equal Dungeon.new.max_hp + 8, game.max_hp, "as though it had come down four new levels, 2 each"
+    assert_equal Dungeon.new.max_hp, game.max_hp, "starting deep makes the player no tougher"
     assert_equal game.max_hp, game.hp, "at full health"
     refute_nil game.instance_variable_get(:@cage), "depth 5 has its cage room"
     assert_equal "You descend into the dark to depth 5. Find the stairs (>).", game.log.last
   end
 
-  def test_a_deeper_start_counts_as_the_deepest_yet
-    game = Dungeon.new(level: 4)
-    assert_equal 4, game.instance_variable_get(:@deepest)
-  end
 
   def test_new_game_starts_with_full_health_and_no_gold
     assert_equal 15, @game.hp
@@ -165,7 +161,8 @@ class DungeonTest < Minitest::Test
     assert_equal "fists", @game.weapon
     assert_equal({ gold: 0, sandwiches: 0, potions: 0, speed_potions: 0, gas_potions: 0, slow_potions: 0, healing_potions: 0, sleep_potions: 0, empty_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0, candles: 0, laced_potions: 0, laced_speed_potions: 0, laced_gas_potions: 0, laced_slow_potions: 0, laced_healing_potions: 0, laced_sleep_potions: 0, laced_empty_potions: 0, eggs: [], weapons: [], shields: [], wands: [] }, @game.knapsack)
     assert_equal 1, @game.depth
-    assert_equal 1, @game.log.size
+    assert_equal Dungeon::PREFACE + ["You descend into the dark. Find the stairs (>)."], @game.log
+    assert(@game.log.all? { |line| line.size <= 80 }, "each line fits the console")
     refute @game.over?
   end
 
@@ -210,41 +207,40 @@ class DungeonTest < Minitest::Test
     assert_equal Dungeon::MAX_BLOOD_SUGAR - 3, @game.blood_sugar
   end
 
-  def test_at_zero_you_lose_a_hit_point_every_150_rounds
+  def test_running_out_of_blood_sugar_kills_you
     arrange_arena
-    arrange_set :blood_sugar, 0
-    rounds(149)
-    assert_equal 20, @game.hp
-    rounds(1)
-    assert_equal 19, @game.hp
-    assert_equal "You're starving and lose a hit point.", last_log
-    rounds(150)
-    assert_equal 18, @game.hp
+    arrange_set :blood_sugar, 1
+    rounds(Dungeon::SUGAR_ROUNDS)
     assert_equal 0, @game.blood_sugar
-  end
-
-  def test_you_can_starve_to_death
-    arrange_arena
-    arrange_set :blood_sugar, 0
-    arrange_set :starving, 149
-    arrange_set :hp, 1
-    rounds(1)
     assert @game.over?
-    assert_equal "You starve to death on depth 1 with 0 gold.", last_log
+    assert_equal "You run out of blood sugar and die on depth 1 with 0 gold.", last_log
   end
 
   def test_god_mode_never_starves
     @game = Dungeon.new(godMode: true)
     arrange_arena
-    arrange_set :blood_sugar, 0
-    rounds(150)
+    arrange_set :blood_sugar, 1
+    rounds(Dungeon::SUGAR_ROUNDS + 2 * Dungeon::STARVE_ROUNDS)
+    assert_equal 0, @game.blood_sugar
     assert_equal 20, @game.hp
+    refute @game.over?
+  end
+
+  def test_the_alarms_sound_as_blood_sugar_runs_out
+    played = []
+    Dungeon.sound_player = ->(name) { played << name }
+    @game = Dungeon.new(godMode: true) # to hear the last alarm without the game ending first
+    arrange_arena
+    arrange_set :blood_sugar, 4
+    sounds = 4.times.map { played.clear; rounds(Dungeon::SUGAR_ROUNDS); played.dup }
+    assert_equal [%w[error error error], %w[error error], %w[bat_chirp], %w[error]], sounds
+  ensure
+    Dungeon.sound_player = nil
   end
 
   def test_resting_on_an_offered_sandwich_eats_it
     arrange_arena
     arrange_set :blood_sugar, 0
-    arrange_set :starving, 140
     arrange_get(:knapsack)[:sandwiches] = 2
     @game.offer(:sandwiches)
     assert_equal "Give a sandwich which way? Rest to eat it yourself.", last_log
@@ -252,8 +248,6 @@ class DungeonTest < Minitest::Test
     assert_equal 1, @game.sandwiches
     assert_includes 2..12, @game.blood_sugar, "2d6 on top of nothing"
     assert_match(/\AYou eat the sandwich\. Your blood sugar rises by (\d+), to \1\.\z/, last_log)
-    rounds(10)
-    assert_equal 20, @game.hp, "the starving count starts over"
   end
 
   # --- a sandwich's lock is its wrapping ---
@@ -1420,8 +1414,8 @@ class DungeonTest < Minitest::Test
 
     take_the_stairs_east
     assert_equal 2, @game.depth
-    assert_equal 22, @game.max_hp
-    assert_equal 15, @game.hp
+    assert_equal 20, @game.max_hp, "a new depth makes the player no tougher"
+    assert_equal 10, @game.hp, "nor heals them"
     refute_same old_map, assert_get(:map)
     assert_equal "You take the stairs down to depth 2.", last_log
   end
@@ -1467,12 +1461,6 @@ class DungeonTest < Minitest::Test
     assert_equal "You take the stairs down to depth 2.", last_log
   end
 
-  def test_stair_healing_is_capped_at_max
-    arrange_arena
-    arrange_get(:map)[5][6] = ">"
-    take_the_stairs_east
-    assert_equal @game.max_hp, @game.hp
-  end
 
   # --- resting ---
 
@@ -3134,6 +3122,84 @@ class DungeonTest < Minitest::Test
     Dungeon.sound_player = nil
   end
 
+  # --- experience ---
+
+  def test_defeating_a_nearby_agitated_foe_earns_xp
+    arrange_arena
+    arrange_monster(6, 5, hp: 1, hit: 0..0)
+    @game.send(:take_stock)
+    @game.move(1, 0)
+    assert_empty assert_get(:monsters)
+    assert_equal Dungeon::XP_PER_CALMING, @game.xp
+  end
+
+  def test_calming_enraged_furniture_with_a_coin_earns_xp
+    arrange_enraged_wall
+    xp = @game.xp
+    arrange_get(:knapsack)[:gold] = 1
+    @game.send(:give, :gold, 1, 0)
+    assert_equal xp + Dungeon::XP_PER_CALMING, @game.xp
+  end
+
+  def test_paying_off_a_rat_earns_xp
+    arrange_arena
+    arrange_get(:monsters) << thing(6, 5, "R", "rat", 100, 0..0, aggressive: true)
+    @game.send(:take_stock)
+    arrange_get(:knapsack)[:gold] = 1
+    @game.send(:give, :gold, 1, 0)
+    assert_equal Dungeon::XP_PER_CALMING, @game.xp
+  end
+
+  def test_a_foe_that_was_never_agitated_earns_nothing
+    arrange_arena
+    arrange_monster(6, 5, hp: 1, aggressive: false)
+    @game.send(:take_stock)
+    @game.move(1, 0)
+    assert_empty assert_get(:monsters)
+    assert_equal 0, @game.xp
+  end
+
+  def test_a_faraway_foe_earns_nothing
+    arrange_arena(px: 2, py: 2)
+    foe = arrange_monster(2 + Dungeon::SIGHT + 2, 2, hit: 0..0).last
+    @game.send(:take_stock)
+    arrange_get(:monsters).delete(foe)
+    @game.rest
+    assert_equal 0, @game.xp
+  end
+
+  def test_fifty_xp_raises_the_hero_a_level
+    arrange_arena
+    arrange_set :xp, Dungeon::XP_PER_LEVEL - Dungeon::XP_PER_CALMING
+    arrange_monster(6, 5, hp: 1, hit: 0..0)
+    @game.send(:take_stock)
+    @game.move(1, 0)
+    assert_equal 2, @game.hero_level
+    assert_includes ["Welcome to level 2!", "Welcome to level 2; your new proficiency bonus is 1."],
+                    @game.log.find { |l| l.start_with?("Welcome") }
+  end
+
+  def test_levelling_up_recharges_the_wands
+    arrange_arena
+    arrange_set :xp, Dungeon::XP_PER_LEVEL - Dungeon::XP_PER_CALMING
+    arrange_get(:knapsack)[:wands] = [0, 1]
+    arrange_monster(6, 5, hp: 1, hit: 0..0)
+    @game.send(:take_stock)
+    @game.move(1, 0)
+    assert_equal [Dungeon::WAND_CHARGES] * 2, @game.knapsack[:wands]
+  end
+
+  def test_each_welcome_has_its_proficiency_bonus
+    arrange_arena
+    arrange_set :hero_level, 4
+    arrange_set :xp, 4 * Dungeon::XP_PER_LEVEL - Dungeon::XP_PER_CALMING
+    def @game.rand(*args) = args.empty? ? 0.99 : Kernel.rand(*args)
+    arrange_monster(6, 5, hp: 1, hit: 0..0)
+    @game.send(:take_stock)
+    @game.move(1, 0)
+    assert_includes @game.log, "Welcome to level 5; your new proficiency bonus is 2."
+  end
+
   def test_a_coyote_hunts_and_eats_an_axebeak
     played = []
     Dungeon.sound_player = ->(name) { played << name }
@@ -3756,7 +3822,6 @@ class DungeonTest < Minitest::Test
     stairs_room
     arrange_get(:map)[5][6] = "<"
     arrange_set :depth, 3
-    arrange_set :deepest, 3
   end
 
   def test_levels_below_the_first_start_the_player_on_the_way_up
@@ -3836,20 +3901,6 @@ class DungeonTest < Minitest::Test
     assert_equal 2, @game.depth
     refute_nil assert_get(:map)
     assert_equal assert_get(:downstairs), player
-  end
-
-  def test_going_down_again_earns_nothing_until_you_pass_your_deepest
-    stairs_room
-    arrange_set :depth, 2
-    arrange_set :deepest, 3
-    take_the_stairs_east
-    assert_equal 3, @game.depth
-    assert_equal 20, @game.max_hp, "depth 3 has been reached before"
-
-    stairs_room
-    take_the_stairs_east
-    assert_equal 4, @game.depth
-    assert_equal 22, @game.max_hp, "depth 4 is new"
   end
 
   def test_half_the_levels_have_one_teleport_plate

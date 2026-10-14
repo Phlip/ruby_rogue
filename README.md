@@ -50,7 +50,7 @@ which needs the `scarpe` gem.
 | -------------------------------- | ----------------------------------------------------------------------------------------------- |
 | `ruby rogue.rb` or `--dos`       | Right in your terminal, styled after the original PC Rogue: ANSI screen, code page 437 glyphs, Rogue's keys |
 | `ruby rogue.rb --web [port]`     | In a browser at `http://localhost:4567/` (or the port you give, 1–65535)                         |
-| add `--level N`                  | Start at depth N (1–99), as though you'd already come down that far; New game starts there too   |
+| add `--level N`                  | Start at depth N (1–99). It's a cheat, so it also turns on god mode; New game starts there too   |
 | add `--god`                      | God mode: you take no damage, everything else still can                                          |
 | `ruby rogue.rb --help`           | Lists all of the above                                                                          |
 
@@ -59,7 +59,7 @@ the same everywhere.
 
 ## How to win
 
-1. **Go down.** Find the stairs (`>`) on each level. A new deepest level raises your max HP.
+1. **Go down.** Find the stairs (`>`) on each level. Going deeper doesn't make you tougher; experience does.
 2. **Find a Quail.** From depth 6 there's always at least one. From depth 8, one of them nests in a room of its
    own with one to three eggs.
 3. **Take the eggs.** Walk onto the nest to gather them. The nesting Quail stirs and follows its eggs.
@@ -86,11 +86,14 @@ You lose if your hit points run out.
 - **Rats and Axebeaks** know where the unseen traps are. A rat runs behind one so you chase it over the trap;
   an Axebeak does the same to a hunting coyote.
 - **Trolls and Quails, coyotes and Axebeaks**: a living Quail horrifies a troll, and an Axebeak is a coyote's
-  nemesis. Each hunts its prey down anywhere on the level and eats it, with a howl (`sounds/wolf.wav`) if you're
-  close enough to see.
+  nemesis. A quiet hunter that sees its prey is enraged and hunts it down and eats it, with a howl
+  (`sounds/wolf.wav`) if you're close enough to see. Hit or push a hunter and it drops its prey to come after
+  you. Tap a quiet one and it marks you, but leaves you be.
 - **Goblins** like sandwiches (they'll be friendly for a while) and some will take a coin and fight for you.
-- **Doors**: tap one to open it, but a locked one only rattles. A coin or a sandwich opens it too. Hit a door
-  twice and it hits back.
+- **Doors and walls** (`#`): tap a door to open it, but a locked one only rattles. A coin or a sandwich opens it
+  too. Hit a door or a wall twice and it's enraged, hitting back from where it stands. An enraged one throws a
+  sandwich back at you: sometimes it lands at your feet still edible, and sometimes it's ruined. A coin calms
+  it back down, and a second coin wins it over as before.
 - **The Quail** (`Q`): a pacifist that follows you without striking. Hit it and it sulks and stays put. Kill it
   and it explodes into sandwiches. Its cousin the **Axebeak** (`A`) is just as tough but no pacifist, so think
   twice before you hit it.
@@ -99,8 +102,13 @@ You lose if your hit points run out.
 
 ## Staying alive
 
-- **Blood sugar** drops one point every round. At zero you're hungry: you're drawn in amber and lose HP every so
-  often. Eat a sandwich (`~`).
+- **Alarms**: as your hit points or blood sugar run down, three error sounds go off at once at 3, two at 2, a
+  bat chirps at 1, and an error sounds at 0.
+- **Experience**: each nearby foe you calm down or defeat while it's out to get you is worth 10 XP. Every 50 XP
+  takes you up a level, with a new proficiency bonus of half your level, and recharges your wands.
+
+- **Blood sugar** drops one point every ten rounds. Run out and you die, unless you're in god mode, so eat a
+  sandwich (`~`) before then.
 - **The knapsack** holds 60 pounds. Gold is light, swords are not, and an egg weighs half a pound.
 - **Potions**: sight, speed, slowness, gaseous form, healing. Drink one, throw it at someone nearby, or pour it
   into a candle. A laced candle can be thrown or kicked and bursts over a 20-by-20-foot area.
@@ -138,4 +146,5 @@ rake claude                  # open Claude Code here; words after it become the 
 `rogue.rb` holds the game (`Dungeon`) and its front ends (`DosBox` and `WebGame`). Every kind of creature and 
 item is one row of `Dungeon::THINGAGES`: its glyph, D&D-style ability scores, challenge rating 
 (the first depth it turns up on), and how peaceful it is. Doors, sandwiches, and the other locked 
-things share a small state machine, `Dungeon::DoorLock`.
+things share a small state machine, `Dungeon::DoorLock`. The quiet and enraged states of hunters and of
+the `#` furniture are one more table there, `STATE_TRANSITIONS`.

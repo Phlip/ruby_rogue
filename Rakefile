@@ -50,9 +50,12 @@ task :sound do |_t, args|
   end # each finishes before the next starts
 end
 
+task :banner do
+  print "Now running all tests..."
+end
+
 desc "Run the tests; only if they all pass, commit with the rest of the command line as the message, and push"
-task ship: :test do
-  puts "Now calling all tests..."
+task ship: [:banner, :test] do
   words = Rake.application.top_level_tasks
   message = words.drop((words.index("ship") || words.size) + 1).join(" ")
   abort "Usage: rake ship your commit message here, no quotes needed" if message.empty?

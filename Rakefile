@@ -51,7 +51,7 @@ task :sound do |_t, args|
 end
 
 task :banner do
-  print "Now running all tests..."
+  puts "Now running all tests..."
 end
 
 desc "Run the tests; only if they all pass, commit with the rest of the command line as the message, and push"

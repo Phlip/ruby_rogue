@@ -51,7 +51,14 @@ task :sound do |_t, args|
 end
 
 task :banner do
-  `figlet "Testing..."`
+  print ' _____         _   _
+|_   _|__  ___| |_(_)_ __   __ _
+  | |/ _ \/ __| __| | \'_ \ / _\` |
+  | |  __/\__ \ |_| | | | | (_| |_ _ _
+  |_|\___||___/\__|_|_| |_|\__, (_|_|_)
+                           |___/
+'
+
 end
 
 desc "Run the tests; only if they all pass, commit with the rest of the command line as the message, and push"

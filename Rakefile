@@ -51,15 +51,16 @@ task :sound do |_t, args|
 end
 
 desc "Run the tests; only if they all pass, commit with the rest of the command line as the message, and push"
-task :ship do
+task ship: :test do
+  puts "Now calling all tests..."
   words = Rake.application.top_level_tasks
   message = words.drop((words.index("ship") || words.size) + 1).join(" ")
   abort "Usage: rake ship your commit message here, no quotes needed" if message.empty?
 
-  ruby "test_rogue.rb" do |ok, status|
-    play(ok ? 'frog' : 'dogs')
-    ok or abort "The tests failed (exit status #{status.exitstatus}), so nothing was committed or pushed."
-  end
+  # ruby "test_rogue.rb" do |ok, status|
+  #   play(ok ? 'frog' : 'dogs')
+  #   ok or abort "The tests failed (exit status #{status.exitstatus}), so nothing was committed or pushed."
+  # end
 
   sh "git", "add", "--all", "--", ".", ":(exclude).idea"
   if system("git", "diff", "--cached", "--quiet")

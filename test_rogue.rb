@@ -1,7 +1,13 @@
 # Run with: ruby test_scarpe_rogue.rb
 
 require 'minitest/autorun'
+require 'tmpdir'
+require 'stringio'
 require_relative 'rogue'
+
+# The tests hang their plaques on a wall of their own, never the real one
+Plaque.wall = File.join(Dir.tmpdir, "test_wall_of_fallen_heroes_#{Process.pid}.xml")
+Minitest.after_run { File.delete(Plaque.wall) if File.exist?(Plaque.wall) }
 
 # Sounds you can hear while the tests run. Minitest shuffles its test classes, so this one is pulled to the front:
 # its sounds play in the background, and keep playing while every other test runs. QUIET=1 skips them
@@ -159,7 +165,7 @@ class DungeonTest < Minitest::Test
     assert_equal Dungeon::HERO_AC, @game.ac
     assert_equal Dungeon::MAX_BLOOD_SUGAR, @game.blood_sugar
     assert_equal "fists", @game.weapon
-    assert_equal({ gold: 0, sandwiches: 0, potions: 0, speed_potions: 0, gas_potions: 0, slow_potions: 0, healing_potions: 0, sleep_potions: 0, empty_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0, candles: 0, laced_potions: 0, laced_speed_potions: 0, laced_gas_potions: 0, laced_slow_potions: 0, laced_healing_potions: 0, laced_sleep_potions: 0, laced_empty_potions: 0, eggs: [], weapons: [], shields: [], wands: [] }, @game.knapsack)
+    assert_equal({ gold: 0, sandwiches: 0, potions: 0, speed_potions: 0, gas_potions: 0, slow_potions: 0, healing_potions: 0, sleep_potions: 0, glue_potions: 0, slip_potions: 0, empty_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0, candles: 0, laced_potions: 0, laced_speed_potions: 0, laced_gas_potions: 0, laced_slow_potions: 0, laced_healing_potions: 0, laced_sleep_potions: 0, laced_glue_potions: 0, laced_slip_potions: 0, laced_empty_potions: 0, eggs: [], weapons: [], shields: [], wands: [], slip_wands: [] }, @game.knapsack)
     assert_equal 1, @game.depth
     assert_equal Dungeon::PREFACE + ["You descend into the dark. Find the stairs (>)."], @game.log
     assert(@game.log.all? { |line| line.size <= 80 }, "each line fits the console")
@@ -1390,7 +1396,7 @@ class DungeonTest < Minitest::Test
     arrange_get(:treasure)[[6, 5]] = 15
     arrange_get(:sandwiches)[[6, 5]] = 1
     @game.move(1, 0)
-    assert_equal({ gold: 15, sandwiches: 1, potions: 0, speed_potions: 0, gas_potions: 0, slow_potions: 0, healing_potions: 0, sleep_potions: 0, empty_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0, candles: 0, laced_potions: 0, laced_speed_potions: 0, laced_gas_potions: 0, laced_slow_potions: 0, laced_healing_potions: 0, laced_sleep_potions: 0, laced_empty_potions: 0, eggs: [], weapons: [], shields: [], wands: [] }, @game.knapsack)
+    assert_equal({ gold: 15, sandwiches: 1, potions: 0, speed_potions: 0, gas_potions: 0, slow_potions: 0, healing_potions: 0, sleep_potions: 0, glue_potions: 0, slip_potions: 0, empty_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0, candles: 0, laced_potions: 0, laced_speed_potions: 0, laced_gas_potions: 0, laced_slow_potions: 0, laced_healing_potions: 0, laced_sleep_potions: 0, laced_glue_potions: 0, laced_slip_potions: 0, laced_empty_potions: 0, eggs: [], weapons: [], shields: [], wands: [], slip_wands: [] }, @game.knapsack)
     assert_equal "You pack a sandwich into your knapsack.", last_log
   end
 
@@ -2202,21 +2208,21 @@ class DungeonTest < Minitest::Test
     assert_equal [8, 5], goblin_at
   end
 
-  def test_speed_lasts_thirty_rounds
+  def test_speed_lasts_ten_rounds
     arrange_arena
     arrange_get(:knapsack)[:speed_potions] = 1
     @game.quaff(:speed_potions)
-    58.times { @game.rest }
-    assert @game.hasted?, "29 rounds gone after 59 actions"
+    18.times { @game.rest }
+    assert @game.hasted?, "9 rounds gone after 19 actions"
     @game.rest
-    refute @game.hasted?, "the 30th round passes on the 60th action"
+    refute @game.hasted?, "the 10th round passes on the 20th action"
     assert_equal "You slow back down.", last_log
   end
 
   def test_speed_shows_in_the_effects
     arrange_get(:knapsack)[:speed_potions] = 1
     @game.quaff(:speed_potions)
-    assert_equal "Hasted 30", @game.effects
+    assert_equal "Hasted 10", @game.effects
   end
 
   def test_quaffing_a_missing_potion_takes_no_turn
@@ -2683,6 +2689,159 @@ class DungeonTest < Minitest::Test
 
   def spring = @game.move(0, -1)
 
+  # --- the wall of fallen heroes ---
+
+  # A sprung cage holding a developed egg, a Quail, two Dodos, and a wall, so the game is won and over
+  def caged_haul
+    by_the_plate
+    arrange_get(:knapsack)[:eggs] = [egg(true)]
+    arrange_get(:monsters).push(thing(12, 12, "Q", "Quail", 28, 0..0, pacifist: true, spurned: true),
+                                thing(18, 12, "D", "Dodo", 6, 1..2, pacifist: true, spurned: true),
+                                thing(19, 12, "D", "Dodo", 6, 1..2, pacifist: true, spurned: true),
+                                thing(20, 12, "#", "wall", 3, 0..0, pacifist: true))
+    spring
+  end
+
+  def plaque = REXML::Document.new(@game.plaque_xml)
+  def plaque_text(path) = REXML::XPath.first(plaque, path)&.text
+
+  def test_the_plaque_counts_the_eggs_quails_and_other_critters_in_the_cage
+    caged_haul
+    assert @game.plaque?
+    assert_equal "1", plaque_text("/plaque/eggs")
+    assert_equal "1", plaque_text("/plaque/quails")
+    assert_equal({ "Dodo" => "2" }, REXML::XPath.match(plaque, "/plaque/critter").to_h { |c| [c.attributes["name"], c.text] },
+                 "the wall is no critter")
+  end
+
+  def test_the_plaque_carries_the_hero_s_name
+    caged_haul
+    @game.hero_name = "Johnson"
+    assert_equal "Johnson", plaque_text("/plaque/name")
+  end
+
+  def test_a_hero_with_no_name_is_unknown_on_the_plaque
+    caged_haul
+    assert_includes Plaque.text(@game.plaque_xml), "Here lies an unknown hero"
+  end
+
+  def test_the_wall_keeps_every_plaque_and_offers_the_last_name
+    File.delete(Plaque.wall) if File.exist?(Plaque.wall)
+    assert_nil Plaque.last_name, "an empty wall offers no name"
+    caged_haul
+    %w[Johnson Greta].each do |name|
+      @game.hero_name = name
+      Plaque.record(@game.plaque_xml)
+    end
+    wall = REXML::Document.new(File.read(Plaque.wall))
+    assert_equal %w[Johnson Greta], REXML::XPath.match(wall, "/wall/plaque/name").map(&:text)
+    assert_equal "Greta", Plaque.last_name
+  ensure
+    File.delete(Plaque.wall) if File.exist?(Plaque.wall)
+  end
+
+  def test_a_name_is_cleaned_and_cut_to_fit
+    assert_equal "Johnson", Plaque.clean_name("  Johnson\r\n")
+    assert_equal "a" * Plaque::NAME_LENGTH, Plaque.clean_name("a" * 50)
+    assert_equal "", Plaque.clean_name(nil)
+  end
+
+  def test_a_cage_never_sprung_leaves_an_empty_plaque
+    arrange_arena
+    arrange_set :hp, 0
+    assert @game.plaque?
+    assert_equal %w[0 0], [plaque_text("/plaque/eggs"), plaque_text("/plaque/quails")]
+    assert_empty REXML::XPath.match(plaque, "/plaque/critter")
+  end
+
+  def test_no_plaque_until_the_game_is_over
+    arrange_arena
+    refute @game.plaque?
+  end
+
+  def test_no_plaque_for_a_god
+    @game = Dungeon.new(godMode: true)
+    arrange_arena
+    arrange_set :hp, 0
+    refute @game.plaque?
+  end
+
+  def test_no_plaque_for_a_game_started_deep
+    @game = Dungeon.new(level: 3)
+    arrange_arena
+    arrange_set :hp, 0
+    refute @game.plaque?
+  end
+
+  def test_plain_text_needs_no_stylesheet
+    caged_haul
+    @game.hero_name = "Johnson"
+    text = Plaque.text(@game.plaque_xml)
+    assert_equal ["WALL OF FALLEN HEROES", "Here lies Johnson", "In the cage when the end came:",
+                  "  Eggs .......................... 1", "  Quails ........................ 1",
+                  "  Dodo .......................... 2"], text.lines.map(&:chomp)
+  end
+
+  def test_the_console_shows_the_plaque_above_the_play_again_prompt
+    caged_haul
+    dos = DosBox.new
+    dos.instance_variable_set(:@game, @game)
+    Plaque.instance_variable_set(:@processor, nil) # the plain text fallback, whatever this machine has
+    lines = dos.lines
+    plaque = Plaque.text(@game.plaque_xml).lines.map(&:chomp)
+    assert_equal plaque, lines[-1 - plaque.size...-1]
+    assert_match(/Play again\? \(y\/n\)\z/, lines.last)
+  ensure
+    Plaque.remove_instance_variable(:@processor)
+  end
+
+  def test_the_console_asks_a_name_offering_the_last_one
+    dos = DosBox.new
+    dos.instance_variable_set(:@name, "Johnson")
+    out = capture_io { assert_equal "Johnson", dos.ask_name(StringIO.new("\n")) }.first
+    assert_includes out, "What is your name, hero? ['Johnson']: "
+    capture_io { assert_equal "Greta", dos.ask_name(StringIO.new("Greta\n")) }
+    out = capture_io { dos.ask_name(StringIO.new("\n")) }.first
+    assert_includes out, "['Greta']", "the next game offers the new name"
+  end
+
+  def test_playing_again_keeps_the_name
+    dos = DosBox.new
+    dos.instance_variable_set(:@name, "Johnson")
+    dos.send(:replay)
+    assert_equal "Johnson", dos.game.hero_name
+  end
+
+  def test_a_finished_console_game_hangs_its_plaque_on_the_wall
+    File.delete(Plaque.wall) if File.exist?(Plaque.wall)
+    caged_haul
+    @game.hero_name = "Johnson"
+    dos = DosBox.new
+    dos.instance_variable_set(:@game, @game)
+    2.times { dos.lines } # redrawn twice, hung once
+    assert_equal 1, REXML::XPath.match(REXML::Document.new(File.read(Plaque.wall)), "/wall/plaque").size
+    assert_equal "Johnson", Plaque.last_name
+  ensure
+    File.delete(Plaque.wall) if File.exist?(Plaque.wall)
+  end
+
+  def test_the_console_shows_no_plaque_mid_game
+    dos = DosBox.new
+    refute(dos.lines.any? { |l| l.include?("WALL OF FALLEN HEROES") })
+  end
+
+  def test_the_stylesheet_fluffs_the_plaque_into_xhtml_ascii_art
+    skip "no XSLT processor: install the nokogiri gem or xsltproc" unless Plaque.processor
+    caged_haul
+    xhtml = Plaque.xhtml(@game.plaque_xml)
+    assert_includes xhtml, Plaque::XHTML
+    art = Plaque.ascii(@game.plaque_xml)
+    assert_includes art, "WALL OF FALLEN HEROES"
+    assert_match(/\|    Dodo \.+ 2    \|/, art)
+    assert_match(/\|    Quails \.+ 1    \|/, art)
+    assert(art.lines.all? { |line| line.chomp.size == 43 }, "the right edge lines up")
+  end
+
   def test_levels_from_depth_five_have_a_cage_room
     levels_at(5) do |seed|
       room = arrange_get(:cage_room)
@@ -2817,10 +2976,74 @@ class DungeonTest < Minitest::Test
 
   def test_springing_the_trap_without_an_egg_goes_on_behind_the_bars
     by_the_plate
+    arrange_quail(12, 12)
     spring
     refute @game.over?
     assert_equal "", @game.outcome
     assert_equal "Without an egg, step off the plate and back on to lift the bars.", last_log
+  end
+
+  def test_springing_the_trap_without_a_quail_goes_on_behind_the_bars
+    by_the_plate
+    arrange_get(:knapsack)[:eggs] = [egg(true)]
+    spring
+    refute @game.over?
+    refute @game.won?
+    assert_equal "Without a Quail, step off the plate and back on to lift the bars.", last_log
+  end
+
+  def test_an_empty_cage_lacks_both
+    by_the_plate
+    spring
+    assert_equal "Without an egg and a Quail, step off the plate and back on to lift the bars.", last_log
+  end
+
+  def test_a_troll_in_the_cage_keeps_the_plate_from_springing
+    by_the_plate
+    arrange_get(:knapsack)[:eggs] = [egg(true)]
+    arrange_quail(12, 12)
+    arrange_troll(20, 12, hit: 0..0)
+    spring
+    assert_equal :arrange_set, cage[:state]
+    refute @game.over?
+    assert_includes @game.log, "The plate won't budge with a troll loose in the cage. Deal with it, then step back on."
+  end
+
+  def test_a_troll_outside_the_cage_is_no_threat
+    by_the_plate
+    arrange_get(:knapsack)[:eggs] = [egg(true)]
+    arrange_quail(12, 12)
+    arrange_troll(15, 20, hit: 0..0)
+    spring
+    assert @game.won?
+  end
+
+  def test_a_quiet_coyote_in_the_cage_is_no_threat_but_an_enraged_one_is
+    by_the_plate
+    arrange_get(:knapsack)[:eggs] = [egg(true)]
+    arrange_quail(12, 12)
+    coyote = thing(20, 12, "C", "coyote", 100, 0..0, aggressive: false)
+    arrange_get(:monsters) << coyote
+    assert_nil @game.send(:cage_threat)
+    @game.send(:state_machine, coyote).transit(Dungeon::DoorLock::StateEvent::HIT, @game, coyote, :ego)
+    assert_same coyote, @game.send(:cage_threat)
+  end
+
+  def test_a_neutralized_troll_lets_the_plate_spring
+    by_the_plate
+    arrange_get(:knapsack)[:eggs] = [egg(true)]
+    arrange_quail(12, 12)
+    arrange_troll(20, 12, hit: 0..0).last.asleep = 10
+    spring
+    assert @game.won?
+  end
+
+  def test_a_dead_quail_is_no_quail
+    by_the_plate
+    arrange_get(:knapsack)[:eggs] = [egg(true)]
+    arrange_quail(12, 12).last.hp = 0
+    spring
+    refute @game.over?
   end
 
   def test_the_bars_block_the_way_until_lifted
@@ -2847,6 +3070,7 @@ class DungeonTest < Minitest::Test
     by_the_plate
     arrange_get(:knapsack)[:eggs] = [egg(false)]
     arrange_monster(15, 20, hp: 100)
+    arrange_quail(12, 12) # after the goblin, which the assertions read as the first monster
     spring
     assert_equal [15, 20], [assert_get(:monsters).first.x, assert_get(:monsters).first.y], "springing ends it at once"
     @game.move(1, 0)
@@ -2869,25 +3093,28 @@ class DungeonTest < Minitest::Test
   def test_a_developed_egg_in_your_knapsack_hatches_and_wins
     by_the_plate
     arrange_get(:knapsack)[:eggs] = [egg(true), egg(false)]
+    arrange_quail(12, 12)
     spring
     assert @game.won?
     assert_equal "YOU WON", @game.outcome
-    assert_includes @game.log, "The bars slam down behind you. Your haul: 2 eggs."
+    assert_includes @game.log, "The bars slam down behind you. Your haul: a Quail and 2 eggs."
     assert_equal "An egg hatches, and Quail chicks peep in the cage. You won!", last_log
   end
 
   def test_eggs_lying_in_the_cage_hatch_too_but_not_those_outside
     by_the_plate
     arrange_set :eggs, { [12, 11] => [egg(true), egg(true)], [15, 20] => [egg(true)] }
+    arrange_quail(12, 12)
     spring
     assert @game.won?
-    assert_includes @game.log, "The bars slam down behind you. Your haul: 2 eggs."
+    assert_includes @game.log, "The bars slam down behind you. Your haul: a Quail and 2 eggs."
     assert_equal "2 eggs hatch, and Quail chicks peep in the cage. You won!", last_log
   end
 
   def test_yolk_eggs_never_hatch
     by_the_plate
     arrange_get(:knapsack)[:eggs] = [egg(false), egg(false, candled: true)]
+    arrange_quail(12, 12)
     spring
     refute @game.won?
     assert @game.over?
@@ -2936,7 +3163,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_tap_pushes_a_thingage_in_a_tight_spot
     arrange_hallway
-    goblin = arrange_monster(6, 5, hp: 100, aggressive: false).last
+    goblin = arrange_monster(6, 5, hp: 100, int: 0, aggressive: false).last # no brain, so it won't flee on
     @game.tap
     assert_equal [7, 5], [goblin.x, goblin.y]
     assert_equal "You push the goblin.", last_log
@@ -2958,6 +3185,55 @@ class DungeonTest < Minitest::Test
     @game.tap
     assert_equal [6, 5], [goblin.x, goblin.y]
     assert_equal "You tap the goblin.", last_log
+  end
+
+  def test_hitting_a_creature_in_a_hall_makes_it_flee_out_of_it
+    arrange_hallway
+    goblin = arrange_monster(6, 5, hp: 100, hit: 0..0, aggressive: false).last
+    @game.move(1, 0)
+    assert_match(/\AYou hit the goblin for \d\.\z/, @game.log[-2], "no turning on you while it flees")
+    assert_equal "The goblin panics and flees!", @game.log[-1]
+    assert_equal [7, 5], [goblin.x, goblin.y], "it steps away on its turn"
+    3.times { @game.rest }
+    assert_equal [10, 5], [goblin.x, goblin.y], "out of the hall"
+    assert @game.send(:fleeing?, goblin), "until its next turn finds it clear"
+    @game.rest
+    assert_instance_of Dungeon::DoorLock::EnragedState, @game.send(:state_machine, goblin).state
+  end
+
+  def test_hitting_a_creature_in_the_open_does_not_scare_it
+    arrange_arena
+    goblin = arrange_monster(6, 5, hp: 100, hit: 0..0, aggressive: false).last
+    @game.move(1, 0)
+    refute @game.send(:fleeing?, goblin)
+  end
+
+  def test_a_brainless_thing_hit_in_a_hall_does_not_flee
+    arrange_hallway
+    wall = thing(6, 5, "#", "wall", 100, 0..0, pacifist: true)
+    arrange_get(:monsters) << wall
+    @game.move(1, 0)
+    refute @game.send(:fleeing?, wall)
+    assert_equal [6, 5], [wall.x, wall.y]
+  end
+
+  def test_a_cornered_creature_with_nowhere_further_stays_put
+    arrange_hallway
+    arrange_get(:map)[5][7] = "#" # a dead end right behind it
+    goblin = arrange_monster(6, 5, hp: 100, hit: 0..0, aggressive: false).last
+    @game.move(1, 0)
+    @game.rest
+    assert_equal [6, 5], [goblin.x, goblin.y]
+    assert @game.send(:fleeing?, goblin)
+  end
+
+  def test_a_fleeing_foe_is_no_longer_agitated
+    arrange_hallway
+    goblin = arrange_monster(6, 5, hp: 100, hit: 0..0).last # already out to get you
+    @game.send(:take_stock)
+    @game.move(1, 0)
+    assert_equal Dungeon::XP_PER_CALMING, @game.xp, "scaring it off counts as calming it"
+    assert @game.send(:fleeing?, goblin)
   end
 
   def test_a_push_onto_poison_hurts
@@ -3122,6 +3398,130 @@ class DungeonTest < Minitest::Test
     Dungeon.sound_player = nil
   end
 
+  # --- the Dodo ---
+
+  def arrange_dodo(x, y) = arrange_get(:monsters) << thing(x, y, "D", "Dodo", 6, 1..2, pacifist: true)
+
+  def test_a_dodo_is_a_d
+    assert_equal "D", kind("Dodo")[:glyph]
+  end
+
+  def test_a_dodo_pecks_a_troll_off_its_quail_and_gets_eaten
+    arrange_arena
+    dodo = arrange_dodo(9, 5).last
+    troll = arrange_troll(8, 5).last
+    quail = arrange_quail(12, 5).last.tap { |q| q.spurned = true }
+    @game.send(:state_machine, troll).transit(Dungeon::DoorLock::StateEvent::SEE_PREY, @game, troll, quail)
+    @game.rest
+    refute_includes assert_get(:monsters), dodo, "the troll turned on the Dodo and ate it"
+    assert_includes @game.log, "The troll eats the Dodo!"
+    assert_includes assert_get(:monsters), quail
+  end
+
+  def test_a_pecked_troll_chases_the_dodo
+    arrange_arena
+    troll = arrange_troll(8, 5, hit: 0..0).last
+    dodo = arrange_dodo(9, 5).last
+    quail = arrange_quail(12, 5).last.tap { |q| q.spurned = true }
+    arrange_get(:monsters).rotate! # the Dodo acts first
+    @game.send(:state_machine, troll).transit(Dungeon::DoorLock::StateEvent::SEE_PREY, @game, troll, quail)
+    @game.rest
+    assert_same dodo, troll.pursuit_target
+  end
+
+  def test_a_dodo_walks_onto_a_trap
+    arrange_arena
+    dodo = arrange_dodo(6, 5).last
+    poison_at(8, 5)
+    2.times { @game.rest }
+    assert_equal [8, 5], [dodo.x, dodo.y]
+    assert_operator dodo.hp, :<, 6
+  end
+
+  def test_a_dodo_with_nothing_to_do_walks_up_to_the_player
+    arrange_arena
+    dodo = arrange_dodo(9, 5).last
+    4.times { @game.rest }
+    assert_equal [6, 5], [dodo.x, dodo.y]
+    assert_equal 20, arrange_get(:hp), "it never strikes the player"
+  end
+
+  def dodo_egg(developed = false) = Dungeon::Egg.new(developed, false, true)
+
+  def test_a_dodo_drops_an_egg_where_it_stands_and_wanders_off
+    arrange_arena
+    dodo = arrange_dodo(9, 5).last
+    def @game.rand(*args) = args.empty? ? 0.0 : Kernel.rand(*args) # lays every time, developed every time
+    @game.rest
+    assert_equal({ [9, 5] => [dodo_egg(true)] }, assert_get(:eggs))
+    assert_equal [8, 5], [dodo.x, dodo.y], "and doesn't stay to guard it"
+    assert_includes @game.log, "The Dodo lays an egg and wanders off."
+  end
+
+  def test_a_dodo_does_not_lay_on_another_egg
+    arrange_arena
+    arrange_dodo(6, 5) # beside the player, so it stays put
+    arrange_set :eggs, { [6, 5] => [egg] }
+    def @game.rand(*args) = args.empty? ? 0.0 : Kernel.rand(*args)
+    @game.rest
+    assert_equal({ [6, 5] => [egg] }, assert_get(:eggs))
+  end
+
+  def test_candling_shows_a_dodo_s_egg
+    arrange_arena
+    arrange_get(:knapsack)[:eggs] = [egg(true), dodo_egg(true)]
+    @game.candle
+    assert_includes @game.log, "One is a Dodo's."
+    assert_equal "2 eggs (2 developed, 1 Dodo)", @game.send(:egg_count, @game.knapsack[:eggs])
+  end
+
+  def test_gathering_a_dodo_s_dropped_egg_is_not_from_a_nest
+    arrange_arena
+    arrange_set :eggs, { [6, 5] => [dodo_egg] }
+    @game.move(1, 0)
+    assert_includes @game.log, "You gather a Dodo egg."
+  end
+
+  def test_gathering_names_whose_eggs_they_are
+    arrange_arena
+    arrange_set :eggs, { [6, 5] => [egg, egg(true), dodo_egg] }
+    @game.move(1, 0)
+    assert_includes @game.log, "You gather 2 Quail eggs and a Dodo egg from the nest."
+  end
+
+  def test_about_a_quarter_of_nest_eggs_are_dodo_eggs
+    arrange_set :depth, 8
+    laid = Array.new(900) { @game.send(:lay_egg) }
+    assert_in_delta 225, laid.count(&:dodo), 50
+  end
+
+  def test_a_dodo_chick_is_no_win
+    by_the_plate
+    arrange_get(:knapsack)[:eggs] = [dodo_egg(true)]
+    arrange_quail(12, 12)
+    spring
+    assert @game.over?
+    refute @game.won?
+    assert_includes @game.log, "An egg hatches, but only Dodo chicks peep in the cage. The adventure is over."
+  end
+
+  def test_quail_chicks_win_with_dodo_chicks_among_them
+    by_the_plate
+    arrange_get(:knapsack)[:eggs] = [egg(true), dodo_egg(true)]
+    arrange_quail(12, 12)
+    spring
+    assert_includes @game.log, "An egg hatches, and Quail chicks peep in the cage, with Dodo chicks among them. You won!"
+  end
+
+  def test_hitting_a_dodo_only_spurns_it
+    arrange_arena
+    dodo = arrange_dodo(6, 5).last.tap { |d| d.hp = 100 }
+    @game.move(1, 0)
+    assert dodo.spurned
+    refute dodo.aggressive
+    assert_equal 0, @game.xp, "it was never agitated"
+  end
+
   # --- experience ---
 
   def test_defeating_a_nearby_agitated_foe_earns_xp
@@ -3253,14 +3653,25 @@ class DungeonTest < Minitest::Test
     assert_equal 20, arrange_get(:hp), "it never strikes"
   end
 
-  def test_a_pushed_troll_is_enraged_and_after_the_player
+  def test_a_troll_pushed_in_a_hall_flees_then_turns_on_the_player
     arrange_hallway
-    troll = arrange_troll(6, 5).last
+    troll = arrange_troll(6, 5, hit: 0..0).last
     @game.tap
     assert_includes @game.log, "You push the troll."
+    assert_instance_of Dungeon::DoorLock::FleeingState, state_of(troll)
+    assert_equal [8, 5], [troll.x, troll.y], "pushed to 7, 5, it flees a step further"
+    3.times { @game.rest } # to 9, 5, then 10, 5 out of the hall, then safe
+    assert_equal [10, 5], [troll.x, troll.y]
     assert_instance_of Dungeon::DoorLock::EnragedState, state_of(troll)
     assert_equal :ego, troll.pursuit_target
-    assert_equal [6, 5], [troll.x, troll.y], "pushed to 7, 5, it steps straight back at the player"
+  end
+
+  def test_a_brainless_troll_pushed_in_a_hall_is_just_enraged
+    arrange_hallway
+    troll = thing(6, 5, "T", "troll", 100, 0..0, int: 0, aggressive: false)
+    arrange_get(:monsters) << troll
+    @game.tap
+    assert_instance_of Dungeon::DoorLock::EnragedState, state_of(troll)
   end
 
   def test_a_troll_chasing_a_quail_turns_on_the_player_who_hits_it
@@ -3327,16 +3738,20 @@ class DungeonTest < Minitest::Test
     assert_equal 20, arrange_get(:hp)
   end
 
-  def test_the_state_table_has_its_seven_edges
+  def test_the_state_table_has_its_eleven_edges
     ev = Dungeon::DoorLock::StateEvent
-    quiet, enraged = Dungeon::DoorLock::QuietState, Dungeon::DoorLock::EnragedState
+    quiet, enraged, fleeing = Dungeon::DoorLock::QuietState, Dungeon::DoorLock::EnragedState, Dungeon::DoorLock::FleeingState
     assert_equal({ [quiet,   ev::TAP]       => quiet,
                    [quiet,   ev::PUSH]      => enraged,
                    [quiet,   ev::HIT]       => enraged,
                    [quiet,   ev::SEE_PREY]  => enraged,
                    [enraged, ev::PUSH]      => enraged,
                    [enraged, ev::HIT]       => enraged,
-                   [enraged, ev::CALM]      => quiet }, Dungeon::DoorLock::STATE_TRANSITIONS)
+                   [enraged, ev::CALM]      => quiet,
+                   [quiet,   ev::FLEE]      => fleeing,
+                   [enraged, ev::FLEE]      => fleeing,
+                   [fleeing, ev::FLEE]      => fleeing,
+                   [fleeing, ev::SAFE]      => enraged }, Dungeon::DoorLock::STATE_TRANSITIONS)
   end
 
   # --- eggs ---
@@ -3428,7 +3843,7 @@ class DungeonTest < Minitest::Test
     @game.move(1, 0)
     assert_equal [egg, egg(true)], @game.knapsack[:eggs]
     refute q.nesting
-    assert_includes @game.log, "You gather 2 eggs from the nest."
+    assert_includes @game.log, "You gather 2 Quail eggs from the nest."
     assert_equal "The nesting Quail stirs and follows its eggs!", last_log
     assert_equal [8, 5], [q.x, q.y], "now it follows"
   end
@@ -3643,6 +4058,383 @@ class DungeonTest < Minitest::Test
     assert_equal 5 + Dungeon::HEAL_HP, assert_get(:monsters).first.hp
   end
 
+  # --- potions of glue ---
+
+  def glue_at(x, y) = arrange_get(:traps)[[x, y]] = { kind: :glue, seen: true }
+
+  def test_walking_into_a_glue_potion_packs_it
+    arrange_arena
+    add_new_potion(6, 5, "glue potion")
+    @game.move(1, 0)
+    assert_equal 1, @game.knapsack[:glue_potions]
+    assert_equal "You pack a potion of glue into your knapsack.", last_log
+  end
+
+  def test_quaffing_a_potion_of_glue_slows_you
+    arrange_arena
+    arrange_get(:knapsack)[:glue_potions] = 1
+    @game.quaff(:glue_potions)
+    assert_equal "Slowed #{Dungeon::SLOW_ROUNDS - 2}", @game.effects, "two rounds passed"
+    assert_equal "You quaff the potion of glue. Your limbs go gummy. Everything else speeds up to twice your pace!",
+                 @game.log.find { |l| l.start_with?("You quaff") }
+  end
+
+  def test_a_potion_of_glue_shattering_on_the_floor_glues_one_to_three_squares
+    20.times do
+      arrange_arena
+      throw_at(:glue_potions, 0, 1)
+      glued = assert_get(:traps).select { |_, t| t[:kind] == :glue }
+      assert_includes Dungeon::SPLASH_SPOTS, glued.size
+      assert glued.all? { |_, t| t[:seen] }, "everyone sees the glue"
+      assert_equal "You throw the potion of glue and it shatters, gluing #{glued.size} #{glued.size == 1 ? "square" : "squares"} of floor.",
+                   last_log
+    end
+  end
+
+  def test_glue_never_covers_another_trap
+    arrange_arena
+    arrange_monster(7, 5, hp: 100, hit: 0..0, aggressive: false)
+    poisoned = [[6, 5], [8, 5], [7, 4], [7, 6]]
+    poisoned.each { |x, y| poison_at(x, y) }
+    throw_at(:glue_potions, 1, 0)
+    assert_equal [:poison] * 4, poisoned.map { |spot| assert_get(:traps)[spot][:kind] }
+    assert_equal :glue, assert_get(:traps)[[7, 5]][:kind], "only the catcher's square is glued"
+  end
+
+  def test_glue_shows_on_the_map
+    arrange_arena
+    glue_at(7, 5)
+    assert_equal Dungeon::GLUE, @game.send(:glyph_at, 7, 5)
+  end
+
+  def test_a_thrown_potion_of_glue_sticks_its_catcher_and_glues_its_floor
+    arrange_arena
+    arrange_monster(7, 5, hp: 100, hit: 0..0)
+    throw_at(:glue_potions, 1, 0)
+    goblin = assert_get(:monsters).first
+    assert_equal [7, 5], [goblin.x, goblin.y], "stuck, it can't step toward you"
+    assert_operator goblin.stuck, :>=, 1
+    assert_equal :glue, assert_get(:traps)[[7, 5]][:kind]
+    assert_includes @game.log, "You throw the potion of glue at the goblin. It's stuck fast!"
+  end
+
+  def test_stepping_in_glue_sticks_you_for_2d2_rounds
+    arrange_arena
+    glue_at(6, 5)
+    @game.move(1, 0)
+    assert_equal [6, 5], [assert_get(:px), assert_get(:py)]
+    assert_includes @game.log, "You step in glue and stick fast!"
+    stuck = arrange_get(:stuck)
+    assert_includes 1..3, stuck, "2d2, less the round that passed"
+    @game.move(1, 0)
+    assert_equal [6, 5], [assert_get(:px), assert_get(:py)], "stuck in place"
+    assert_includes @game.log, "You're stuck in the glue."
+  end
+
+  def test_you_pull_free_of_the_glue
+    arrange_arena
+    arrange_set :stuck, 1
+    @game.rest
+    refute @game.stuck?
+    assert_includes @game.log, "You pull free of the glue."
+    @game.move(1, 0)
+    assert_equal [6, 5], [assert_get(:px), assert_get(:py)]
+  end
+
+  def test_stuck_you_can_still_fight
+    arrange_arena
+    arrange_set :stuck, 3
+    arrange_monster(6, 5, hp: 100, hit: 0..0)
+    @game.move(1, 0)
+    assert_operator assert_get(:monsters).first.hp, :<, 100
+  end
+
+  def test_the_banner_shows_how_long_you_are_stuck
+    arrange_arena
+    arrange_set :stuck, 3
+    assert_equal "Stuck 3", @game.effects
+  end
+
+  def test_a_monster_stepping_in_glue_sticks_fast
+    arrange_arena
+    arrange_monster(8, 5, hp: 100, hit: 0..0)
+    glue_at(7, 5)
+    @game.rest
+    goblin = assert_get(:monsters).first
+    assert_equal [7, 5], [goblin.x, goblin.y]
+    assert_includes @game.log, "The goblin steps in glue and sticks fast!"
+    @game.rest
+    assert_equal [7, 5], [goblin.x, goblin.y], "stuck in place"
+  end
+
+  def test_a_stuck_monster_still_strikes_from_where_it_stands
+    arrange_arena
+    arrange_monster(6, 5, hit: 3..3).last.stuck = 3
+    @game.rest
+    assert_equal 17, @game.hp
+  end
+
+  def test_a_burst_of_glue_sticks_everyone_near
+    arrange_arena
+    near = bystander(9, 5)
+    arrange_get(:knapsack)[:laced_glue_potions] = 1
+    @game.fling(:laced_glue_potions, :throw)
+    @game.move(1, 0)
+    assert_operator near.stuck, :>=, 1
+    assert_equal "They're stuck fast!", last_log
+  end
+
+  # --- slipperiness ---
+
+  def slippery_at(x, y, slip_in: 3) = arrange_get(:traps)[[x, y]] = { kind: :slippery, seen: true, slip_in: slip_in }
+
+  def slip_wand_at(x, y, charges: Dungeon::WAND_CHARGES) = arrange_get(:traps)[[x, y]] = { kind: :slip_wand, seen: false, charges: charges }
+
+  def test_walking_into_a_slip_potion_packs_it
+    arrange_arena
+    add_new_potion(6, 5, "slip potion")
+    @game.move(1, 0)
+    assert_equal 1, @game.knapsack[:slip_potions]
+    assert_equal "You pack a potion of slipperiness into your knapsack.", last_log
+  end
+
+  def test_quaffing_a_potion_of_slipperiness_frees_you_from_glue
+    arrange_arena
+    arrange_set :stuck, 3
+    arrange_get(:knapsack)[:slip_potions] = 1
+    @game.quaff(:slip_potions)
+    refute @game.stuck?
+    assert_includes @game.log, "You quaff the potion of slipperiness. You slip free of the glue! " \
+                               "You feel slick all over, and everything else slows to half your pace!"
+  end
+
+  def test_quaffing_a_potion_of_slipperiness_hastes_you
+    arrange_arena
+    arrange_get(:knapsack)[:slip_potions] = 1
+    @game.quaff(:slip_potions)
+    assert @game.hasted?
+    assert_equal "Hasted #{Dungeon::SLIP_HASTE_ROUNDS}", @game.effects, "the first of a hasted pair: no round has passed"
+    assert_equal "You quaff the potion of slipperiness. You feel slick all over, and everything else slows to half your pace!",
+                 last_log
+  end
+
+  def test_slipperiness_cures_the_slowness_glue_gave_you
+    arrange_arena
+    arrange_get(:knapsack)[:glue_potions] = 1
+    arrange_get(:knapsack)[:slip_potions] = 1
+    @game.quaff(:glue_potions)
+    assert @game.slowed?
+    @game.quaff(:slip_potions)
+    refute @game.slowed?
+    refute @game.hasted?, "a cure, not a haste"
+    assert_includes @game.log, "You quaff the potion of slipperiness. Your limbs loosen, and you're back to your own pace."
+  end
+
+  def test_glue_drunk_while_hasted_ends_the_haste_and_burns_for_d6
+    20.times do
+      arrange_arena
+      arrange_set :hasted, Dungeon::SPEED_ROUNDS
+      arrange_get(:knapsack)[:glue_potions] = 1
+      @game.quaff(:glue_potions)
+      refute @game.hasted?
+      refute @game.slowed?, "it ends the haste instead of slowing"
+      assert_includes 14..19, @game.hp, "d6 damage from 20"
+      assert_includes @game.log, "You quaff the potion of glue. The glue gums up your speed, and you slow back down. " \
+                                 "It burns going down for #{20 - @game.hp} damage."
+    end
+  end
+
+  def test_glue_drunk_while_hasted_never_leaves_you_under_3_hit_points
+    20.times do
+      arrange_arena
+      arrange_set :hp, 5
+      arrange_set :hasted, Dungeon::SPEED_ROUNDS
+      arrange_get(:knapsack)[:glue_potions] = 1
+      @game.quaff(:glue_potions)
+      assert_includes 3..4, @game.hp
+      refute @game.over?
+    end
+  end
+
+  def test_glue_drunk_while_hasted_at_3_hit_points_does_no_damage
+    arrange_arena
+    arrange_set :hp, 3
+    arrange_set :hasted, Dungeon::SPEED_ROUNDS
+    arrange_get(:knapsack)[:glue_potions] = 1
+    @game.quaff(:glue_potions)
+    assert_equal 3, @game.hp
+    assert_includes @game.log, "You quaff the potion of glue. The glue gums up your speed, and you slow back down. " \
+                               "It burns going down, but you take no damage."
+  end
+
+  def test_a_thrown_potion_of_slipperiness_frees_a_stuck_catcher
+    arrange_arena
+    arrange_monster(7, 5, hp: 100, hit: 0..0, aggressive: false).last.stuck = 3
+    throw_at(:slip_potions, 1, 0)
+    assert_equal 0, assert_get(:monsters).first.stuck
+    assert_includes @game.log, "You throw the potion of slipperiness at the goblin. It slips free of the glue!"
+  end
+
+  def test_a_potion_of_slipperiness_shattering_on_the_floor_slicks_one_to_three_squares
+    20.times do
+      arrange_arena
+      throw_at(:slip_potions, 0, 1)
+      slick = assert_get(:traps).select { |_, t| t[:kind] == :slippery }
+      assert_includes Dungeon::SPLASH_SPOTS, slick.size
+      assert slick.all? { |_, t| t[:seen] && (1..3).cover?(t[:slip_in]) }, "seen by all, and slipping within d3 rounds"
+      assert_match(/\AYou throw the potion of slipperiness and it shatters, slicking \d squares? of floor\.\z/, last_log)
+    end
+  end
+
+  def test_slippery_floor_shows_on_the_map
+    arrange_arena
+    slippery_at(7, 5)
+    assert_equal Dungeon::SLIPPERY, @game.send(:glyph_at, 7, 5)
+  end
+
+  def test_slipperiness_landing_on_glue_cleans_it_and_frees_whoever_was_stuck
+    arrange_arena
+    goblin = arrange_monster(7, 5, hp: 100, hit: 0..0, aggressive: false).last
+    goblin.stuck = 3
+    [[6, 5], [7, 5], [8, 5], [7, 4], [7, 6]].each { |x, y| glue_at(x, y) }
+    throw_at(:slip_potions, 1, 0)
+    refute assert_get(:traps).key?([7, 5]), "glue and slipperiness cancel, leaving clean floor"
+    refute assert_get(:traps).values.any? { |t| t[:kind] == :slippery }, "every square it landed on was glue"
+    assert_equal 0, goblin.stuck
+    assert_match(/\AIt shatters, cleaning \d squares? of glue\.\z/, last_log)
+  end
+
+  def test_glue_landing_on_slippery_floor_cleans_it
+    arrange_arena
+    arrange_monster(7, 5, hp: 100, hit: 0..0, aggressive: false)
+    [[6, 5], [7, 5], [8, 5], [7, 4], [7, 6]].each { |x, y| slippery_at(x, y) }
+    throw_at(:glue_potions, 1, 0)
+    refute assert_get(:traps).key?([7, 5])
+    refute assert_get(:traps).values.any? { |t| t[:kind] == :glue }
+    assert_equal 0, assert_get(:monsters).first.stuck, "the glue cancelled under it, so it isn't stuck"
+  end
+
+  def test_the_splash_words_tell_what_was_covered_and_what_cleaned
+    assert_equal "gluing 1 square of floor", @game.send(:splash_words, :glue, 1, 0)
+    assert_equal "slicking 2 squares of floor and cleaning 1 square of glue", @game.send(:splash_words, :slippery, 2, 1)
+    assert_equal "cleaning 3 squares of slippery floor", @game.send(:splash_words, :glue, 0, 3)
+  end
+
+  def test_you_slip_off_slippery_floor_when_its_time_comes
+    arrange_arena
+    slippery_at(5, 5, slip_in: 1)
+    @game.rest
+    refute_equal [5, 5], [assert_get(:px), assert_get(:py)]
+    assert_equal 1, (assert_get(:px) - 5).abs + (assert_get(:py) - 5).abs, "pushed a square"
+    assert_includes @game.log, "You slip and slide off the slippery floor!"
+  end
+
+  def test_you_keep_your_footing_until_the_slip_comes
+    arrange_arena
+    slippery_at(5, 5, slip_in: 2)
+    @game.rest
+    assert_equal [5, 5], [assert_get(:px), assert_get(:py)]
+    @game.rest
+    refute_equal [5, 5], [assert_get(:px), assert_get(:py)]
+  end
+
+  def test_slipping_waits_d3_rounds_between_slips
+    arrange_arena
+    trap = slippery_at(9, 9, slip_in: 1)
+    @game.rest
+    assert_includes 1..3, trap[:slip_in], "a fresh d3 after the slip"
+  end
+
+  def test_you_slip_off_onto_floor_that_is_not_slippery
+    arrange_arena
+    slippery_at(5, 5, slip_in: 1)
+    slippery_at(4, 5)
+    slippery_at(5, 4)
+    slippery_at(5, 6)
+    @game.rest
+    assert_equal [6, 5], [assert_get(:px), assert_get(:py)]
+  end
+
+  def test_with_nowhere_to_slip_you_keep_your_footing
+    arrange_arena(px: 1, py: 1)
+    slippery_at(1, 1, slip_in: 1)
+    slippery_at(2, 1)
+    slippery_at(1, 2)
+    @game.rest
+    assert_equal [1, 1], [assert_get(:px), assert_get(:py)]
+  end
+
+  def test_a_monster_slips_off_slippery_floor
+    arrange_arena
+    goblin = arrange_monster(8, 8, hp: 100, hit: 0..0, aggressive: false).last
+    slippery_at(8, 8, slip_in: 1)
+    @game.rest
+    assert_equal 1, (goblin.x - 8).abs + (goblin.y - 8).abs
+    assert_includes @game.log, "The goblin slips and slides off the slippery floor!"
+  end
+
+  def test_slipping_onto_a_trap_springs_it
+    arrange_arena
+    slippery_at(5, 5, slip_in: 1)
+    [[4, 5], [5, 4], [5, 6]].each { |x, y| slippery_at(x, y) }
+    glue_at(6, 5)
+    @game.rest
+    assert_equal [6, 5], [assert_get(:px), assert_get(:py)]
+    assert @game.stuck?
+  end
+
+  def test_stepping_on_a_wand_of_slipperiness_slicks_the_floor_and_packs_it
+    arrange_arena
+    slip_wand_at(6, 5)
+    @game.move(1, 0)
+    assert_equal [Dungeon::WAND_CHARGES - 1], @game.knapsack[:slip_wands]
+    assert assert_get(:traps).values.any? { |t| t[:kind] == :slippery }
+    assert_includes @game.log, "You pick up the wand of slipperiness (2 charges left)."
+  end
+
+  def test_a_monster_stepping_on_a_wand_of_slipperiness_slicks_the_floor_round_it
+    arrange_arena
+    arrange_monster(8, 5, hp: 100, hit: 0..0)
+    slip_wand_at(7, 5)
+    @game.rest
+    assert_equal Dungeon::WAND_CHARGES - 1, assert_get(:traps)[[7, 5]][:charges], "the wand stays, a charge spent"
+    assert assert_get(:traps).values.any? { |t| t[:kind] == :slippery }
+  end
+
+  def test_zapping_a_wand_of_slipperiness_slicks_the_floor_where_it_stops
+    arrange_arena
+    arrange_monster(8, 5, hp: 100, hit: 0..0, aggressive: false)
+    arrange_get(:knapsack)[:slip_wands] << 3
+    @game.zap(:slip_wands)
+    assert_equal "Zap the wand of slipperiness which way?", last_log
+    @game.move(1, 0)
+    assert_equal [2], @game.knapsack[:slip_wands]
+    assert_equal :slippery, assert_get(:traps)[[8, 5]][:kind], "where the goblin stands"
+    assert_match(/\AYou zap the wand of slipperiness, slicking \d squares? of floor\.\z/,
+                 @game.log.find { |l| l.start_with?("You zap") })
+  end
+
+  def test_zap_picks_whichever_wand_has_a_charge
+    arrange_arena
+    arrange_get(:knapsack)[:wands] << 0
+    arrange_get(:knapsack)[:slip_wands] << 1
+    @game.zap
+    assert_equal "Zap the wand of slipperiness which way?", last_log
+  end
+
+  def test_the_knapsack_lists_wands_of_slipperiness
+    arrange_arena
+    arrange_get(:knapsack)[:slip_wands] << 2
+    assert_includes @game.contents, ["#{Dungeon::WAND} wand of slipperiness (2 charges)", :slip_wands]
+  end
+
+  def test_a_new_level_recharges_wands_of_slipperiness
+    arrange_arena
+    arrange_get(:knapsack)[:slip_wands] << 0
+    @game.send(:refill_wands)
+    assert_equal [Dungeon::WAND_CHARGES], @game.knapsack[:slip_wands]
+  end
+
   def test_a_burst_of_slowness_slows_everyone_near
     arrange_arena
     near = bystander(9, 5)
@@ -3666,6 +4458,51 @@ class DungeonTest < Minitest::Test
     assert_equal "You defeat the shield and pack it into your knapsack.", last_log
     assert_includes @game.contents, ["༻ shield", :shields]
     assert_equal 6, @game.load
+  end
+
+  # A shield that's grumpy at the player, with hit points to spare
+  def grumpy_shield(x, y) = arrange_get(:monsters) << thing(x, y, "༻", "shield", 100, 0..0, pacifist: false, aggressive: true)
+
+  def test_a_coin_wins_a_grumpy_shield_to_your_side
+    arrange_arena
+    shield = grumpy_shield(6, 5).last
+    arrange_get(:knapsack)[:gold] = 1
+    @game.send(:give, :gold, 1, 0)
+    assert shield.ally
+    refute shield.aggressive
+    assert_includes @game.log, "You give the shield a coin. It pockets it and comes over to your side."
+  end
+
+  def test_hitting_a_shield_on_your_side_captures_it
+    arrange_arena
+    shield = grumpy_shield(6, 5).last
+    arrange_get(:knapsack)[:gold] = 1
+    @game.send(:give, :gold, 1, 0)
+    assert_equal [6, 5], [shield.x, shield.y], "an ally beside you stays put"
+    @game.move(1, 0)
+    refute_includes assert_get(:monsters), shield
+    assert_equal [{ name: "shield", glyph: "༻" }], @game.knapsack[:shields]
+    assert_includes @game.log, "You capture the shield and pack it into your knapsack."
+  end
+
+  def test_a_captured_weapon_goes_in_the_knapsack_even_empty_handed
+    arrange_arena
+    dagger = Dungeon::WEAPONS.find { |w| w[:name] == "dagger" }
+    goblin = arrange_monster(6, 5, hp: 100, hit: 0..0).last.tap { |g| g.weapon = dagger }
+    goblin.ally = true
+    @game.move(1, 0)
+    refute_includes assert_get(:monsters), goblin
+    assert_equal "fists", @game.weapon
+    assert_equal ["dagger"], @game.knapsack[:weapons].map { |w| w[:name] }
+    assert_equal "You capture the goblin and pack its dagger into your knapsack.", last_log
+  end
+
+  def test_a_coin_to_a_grumpy_goblin_with_nothing_useful_is_just_kept
+    arrange_arena
+    goblin = arrange_monster(6, 5, hp: 100, hit: 0..0).last
+    arrange_get(:knapsack)[:gold] = 1
+    @game.send(:give, :gold, 1, 0)
+    refute goblin.ally
   end
 
   def test_shields_of_a_kind_are_listed_together
@@ -3770,7 +4607,7 @@ class DungeonTest < Minitest::Test
     @game.move(1, 0)
     assert_equal [egg, egg(true)], @game.knapsack[:eggs]
     assert_equal({ [6, 5] => [egg] }, assert_get(:eggs))
-    assert_includes @game.log, "You gather 2 eggs from the nest, leaving 1 for want of room."
+    assert_includes @game.log, "You gather 2 Quail eggs from the nest, leaving 1 for want of room."
   end
 
   def test_a_full_knapsack_leaves_the_eggs_in_the_nest
@@ -5154,6 +5991,20 @@ class WebGameTest < Minitest::Test
   def test_the_banner_says_when_the_adventure_ends_without_a_win
     @web.game.instance_variable_set(:@trapped, true)
     assert_includes @web.respond("GET", "/").last, "ADVENTURE OVER"
+  end
+  def test_the_plaque_is_not_served_before_the_game_ends
+    assert_equal 404, @web.respond("GET", "/plaque").first
+    refute_includes @web.respond("GET", "/").last, "/plaque"
+  end
+
+  def test_a_finished_game_serves_its_plaque_as_xhtml
+    skip "no XSLT processor: install the nokogiri gem or xsltproc" unless Plaque.processor
+    @web.game.instance_variable_set(:@hp, 0)
+    status, headers, body = @web.respond("GET", "/plaque")
+    assert_equal 200, status
+    assert_equal "application/xhtml+xml; charset=utf-8", headers["Content-Type"]
+    assert_includes body, "WALL OF FALLEN HEROES"
+    assert_includes @web.respond("GET", "/").last, %(<iframe src="/plaque")
   end
 end
 

@@ -41,8 +41,9 @@ You descend into the dark. Find the stairs (>).
 ```
 
 
-Nothing to install: the game uses only Ruby's standard library. The only exception is the desktop window,
-which needs the `scarpe` gem.
+Nothing to install: the game uses only Ruby's standard library. The exceptions are the desktop window,
+which needs the `scarpe` gem, and the plaque at the end of a game, which needs an XSLT processor: the
+`nokogiri` gem if you have it, or else the `xsltproc` command.
 
 ## Ways to play
 
@@ -66,56 +67,14 @@ the same everywhere.
 4. **Hold them to the light.** Candling an egg tells you whether it has legs, wings, and a beak, or is just
    yolk. Deeper nests hold more developed eggs.
 5. **Spring the cage.** From depth 5, every level has a cage room. Stepping on its plate drops bars, and
-   everything behind them is your haul. If a developed egg is in the haul, it hatches and **you win**. If only
-   yolk eggs are, the adventure is over. With no egg at all, step off the plate and back on to lift the bars
-   and try again.
+   everything behind them is your haul. The haul needs both an egg and a living Quail. If a developed egg is
+   in it, it hatches and **you win**. If only yolk eggs are, the adventure is over. Without an egg or a Quail,
+   step off the plate and back on to lift the bars and try again.
 
 You lose if your hit points run out.
 
-## What you'll meet
-
-- **Rats**: they attack on sight.
-- **Squirrels**: curious. They come up and tap you, harmlessly, until you hit one; then it bites.
-- **Coyotes, goblins, orcs, trolls**: they leave you alone until you hit them.
-- **Potions of sleep**: drink one, or throw it at a monster, and the drinker sleeps 3d4 rounds while everything
-  else carries on. Half of them go about disguised as a creature, and hurl themselves at you once you're within 3
-  squares.
-- **Floor traps**: unseen until someone treads on one. A potion of poison breaks underfoot for 2d2 damage and
-  stays a trap (`,`). A wand of slowness (`/`) slows whoever treads on it for 2d2 rounds; you pick it up and
-  zap it with `z` and an arrow. It holds 3 charges, refilled on every level you enter.
-- **Rats and Axebeaks** know where the unseen traps are. A rat runs behind one so you chase it over the trap;
-  an Axebeak does the same to a hunting coyote.
-- **Trolls and Quails, coyotes and Axebeaks**: a living Quail horrifies a troll, and an Axebeak is a coyote's
-  nemesis. A quiet hunter that sees its prey is enraged and hunts it down and eats it, with a howl
-  (`sounds/wolf.wav`) if you're close enough to see. Hit or push a hunter and it drops its prey to come after
-  you. Tap a quiet one and it marks you, but leaves you be.
-- **Goblins** like sandwiches (they'll be friendly for a while) and some will take a coin and fight for you.
-- **Doors and walls** (`#`): tap a door to open it, but a locked one only rattles. A coin or a sandwich opens it
-  too. Hit a door or a wall twice and it's enraged, hitting back from where it stands. An enraged one throws a
-  sandwich back at you: sometimes it lands at your feet still edible, and sometimes it's ruined. A coin calms
-  it back down, and a second coin wins it over as before.
-- **The Quail** (`Q`): a pacifist that follows you without striking. Hit it and it sulks and stays put. Kill it
-  and it explodes into sandwiches. Its cousin the **Axebeak** (`A`) is just as tough but no pacifist, so think
-  twice before you hit it.
-- **Weapons and shields**: some of these are alive, so beat one to wield or pack it. Daggers, swords, an axe,
-  and a bow, whose string wears out if you march too far with it strung.
-
-## Staying alive
-
-- **Alarms**: as your hit points or blood sugar run down, three error sounds go off at once at 3, two at 2, a
-  bat chirps at 1, and an error sounds at 0.
-- **Experience**: each nearby foe you calm down or defeat while it's out to get you is worth 10 XP. Every 50 XP
-  takes you up a level, with a new proficiency bonus of half your level, and recharges your wands.
-
-- **Blood sugar** drops one point every ten rounds. Run out and you die, unless you're in god mode, so eat a
-  sandwich (`~`) before then.
-- **The knapsack** holds 60 pounds. Gold is light, swords are not, and an egg weighs half a pound.
-- **Potions**: sight, speed, slowness, gaseous form, healing. Drink one, throw it at someone nearby, or pour it
-  into a candle. A laced candle can be thrown or kicked and bursts over a 20-by-20-foot area.
-- **Scrolls** of mapping and of potion finding, and **rings** of peace, strength, and protection (one at a
-  time).
-- **Teleport plates**: `_` drops you in the cage room. `ṯ` sends you to a random room, though the cage room is
-  the likeliest.
+However it ends, a game played without `--god` or `--level` earns an ASCII art plaque on the **wall of fallen
+heroes**, with the name you gave at the start.
 
 ## Terminal keys
 
@@ -146,5 +105,4 @@ rake claude                  # open Claude Code here; words after it become the 
 `rogue.rb` holds the game (`Dungeon`) and its front ends (`DosBox` and `WebGame`). Every kind of creature and 
 item is one row of `Dungeon::THINGAGES`: its glyph, D&D-style ability scores, challenge rating 
 (the first depth it turns up on), and how peaceful it is. Doors, sandwiches, and the other locked 
-things share a small state machine, `Dungeon::DoorLock`. The quiet and enraged states of hunters and of
-the `#` furniture are one more table there, `STATE_TRANSITIONS`.
+things share a small state machine, `Dungeon::DoorLock`.

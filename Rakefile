@@ -29,19 +29,25 @@ end
 
 desc "Run every test in test_rogue.rb; a frog croaks if they pass, a kitten mews if they fail"
 task :test do
+  ENV['QUIET'] = '1'
+
   ruby "test_rogue.rb" do |ok, status|
     play(ok ? "frog2" : "kitten")
     ok or abort "The tests failed (exit status #{status.exitstatus})."
   end
+
   sh 'figlet tests passed'
 end
 
 desc "Play sounds from sounds/ by name, one after another, e.g. rake 'sound[car_horn chimp error]'; with no name, list them"
 task :sound do |_t, args|
   names = args.extras.flat_map { |a| a.split(/[\s,]+/) }.reject(&:empty?) # spaces or commas between names
-  next puts(Dir.children(SOUNDS).grep(/\.wav\z/).sort.map { |f| f.delete_suffix(".wav") }) if names.empty?
+  names.empty? and (next puts(Dir.children(SOUNDS).grep(/\.wav\z/).sort.map { |f| f.delete_suffix(".wav") }))
 
-  names.each { |name| play(name)&.join } # each finishes before the next starts
+  names.each do |name|
+    playing = play(name)
+    # playing.join # < -- Mr Machine thinks play returned an object and join waits until it finishes
+  end # each finishes before the next starts
 end
 
 desc "Run the tests; only if they all pass, commit with the rest of the command line as the message, and push"
@@ -72,5 +78,5 @@ task :claude do
 
   # exec hands the terminal straight to claude, and rake never sees the prompt words as tasks
   Dir.chdir(__dir__)
-  prompt.empty? ? exec("claude") : exec("claude", prompt)
+  prompt.empty? ? exec("claude-code") : exec("claude-code", prompt)
 end

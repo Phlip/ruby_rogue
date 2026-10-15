@@ -5,6 +5,7 @@
 
 require 'socket'
 require 'uri'
+require 'rexml/document'
 
 # The game knows nothing about Scarpe; the app below only draws it and pushes buttons
 class Dungeon
@@ -66,6 +67,8 @@ class Dungeon
       HIT      = :hit
       SEE_PREY = :see_prey
       CALM     = :calm # a hunter's prey is gone, or the player paid off a piece of furniture
+      FLEE     = :flee # pushed or hit in a tight spot, with a brain to mind it
+      SAFE     = :safe # out of the tight spot it fled
     end
 
     # Each state's on_entry is handed the game, the creature, and who it pursues now: a hunter's prey, :ego for
@@ -84,9 +87,17 @@ class Dungeon
       end
     end
 
+    # A fleeing creature only remembers who it flees; it does nothing but get away from them
+    class FleeingState < State
+      def on_entry(_game, creature, target)
+        creature.pursuit_target = target
+      end
+    end
+
     # A tapped quiet creature turns to face the player but won't engage; pushed or hit, one in any state turns on
     # the player, giving up any prey it chased; a quiet hunter that sees its prey goes straight for it, and
-    # calming walks an enraged one back to quiet
+    # calming walks an enraged one back to quiet. Pushed or hit in a tight spot, a creature with a brain flees
+    # instead, and once it's clear, it turns on the player
     STATE_TRANSITIONS = {
       [QuietState,   StateEvent::TAP]      => QuietState,
       [QuietState,   StateEvent::PUSH]     => EnragedState,
@@ -95,6 +106,10 @@ class Dungeon
       [EnragedState, StateEvent::PUSH]     => EnragedState,
       [EnragedState, StateEvent::HIT]      => EnragedState,
       [EnragedState, StateEvent::CALM]     => QuietState,
+      [QuietState,   StateEvent::FLEE]     => FleeingState,
+      [EnragedState, StateEvent::FLEE]     => FleeingState,
+      [FleeingState, StateEvent::FLEE]     => FleeingState,
+      [FleeingState, StateEvent::SAFE]     => EnragedState,
     }.freeze
 
     # Starts in its initial state, locked unless told otherwise, and moves along its table: the old state's
@@ -179,6 +194,10 @@ class Dungeon
       transitions: doorLikeTransitions },
     { glyph: "!", name: "sleep potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
       transitions: doorLikeTransitions },
+    { glyph: "!", name: "glue potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
+      transitions: doorLikeTransitions },
+    { glyph: "!", name: "slip potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
+      transitions: doorLikeTransitions },
     { glyph: "!", name: "empty potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
       transitions: doorLikeTransitions },
     { glyph: "~", name: "sandwich",   na: 20, cr: 4, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 1,
@@ -199,6 +218,8 @@ class Dungeon
                     [UnlockingState, LockEvent::TIMER]      => OpenState,
                     [OpenState,      LockEvent::KEY]        => LockState,}
     },
+    { glyph: "D", name: "Dodo",     na:  3, cr: 4, hp:  6, hit: 1..2, ac:  8, str:  8, dex:  6, con: 10, int:  2, wis:  2, cha:  6, pacifist: true,
+      transitions: doorLikeTransitions },
     { glyph: "Q", name: "Quail",    na:  1, cr: 5, hp: 28, hit: 4..9, ac: 15, str: 18, dex: 17, con: 16, int: 15, wis: 14, cha: 13, pacifist: true, eats: true,
       transitions: {[LockState,      LockEvent::KEY]        => UnlockingState,
         [UnlockingState, LockEvent::REMOVE_KEY] => LockState,
@@ -310,7 +331,7 @@ class Dungeon
   # state is the STATE_TRANSITIONS machine of a hunter or a piece of furniture, kept apart from machine, a door's
   # lock. pursuit_target is who its state has it after: a hunter's prey, :ego for the player, or nil
   Thingage = Struct.new(:x, :y, :glyph, :name, :hp, :hit, :str, :dex, :con, :int, :wis, :cha, :pacifist, :spurned, :greedy, :fed, :ally, :coins, :aggressive,
-                        :hasted, :gaseous, :farsighted, :nesting, :sugar, :starving, :slowed, :lagging, :weapon, :locked, :machine, :plate_bound, :met, :asleep,
+                        :hasted, :gaseous, :farsighted, :nesting, :sugar, :starving, :slowed, :lagging, :weapon, :locked, :machine, :plate_bound, :met, :asleep, :stuck,
                         :disguised_potion, :pursuit_target, :state)
   ABILITIES = %i[str dex con int wis cha].freeze
 
@@ -351,6 +372,8 @@ class Dungeon
   HERO_AC = PLAYER[:ac]
 
   attr_reader :hp, :max_hp, :ac, :abilities, :blood_sugar, :knapsack, :depth, :log, :wielded, :ring, :xp, :hero_level
+  # The name the hero gave, for their plaque; nil when the front end never asked
+  attr_accessor :hero_name
 
   # In god mode the player takes no damage; everything else still can. Like a monster's from its row, the
   # player's hit points are the Ego row's plus its con modifier, though never fewer than 1. A game can start at a
@@ -367,17 +390,21 @@ class Dungeon
     @strung_steps = 0
     @facing = [1, 0]
     @knapsack = { gold: 0, sandwiches: 0, potions: 0, speed_potions: 0, gas_potions: 0, slow_potions: 0, healing_potions: 0,
-                  sleep_potions: 0, empty_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0,
+                  sleep_potions: 0, glue_potions: 0, slip_potions: 0, empty_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0,
                   candles: 0, laced_potions: 0, laced_speed_potions: 0, laced_gas_potions: 0, laced_slow_potions: 0,
-                  laced_healing_potions: 0, laced_sleep_potions: 0, laced_empty_potions: 0, eggs: [], weapons: [], shields: [], wands: [] }
+                  laced_healing_potions: 0, laced_sleep_potions: 0, laced_glue_potions: 0, laced_slip_potions: 0, laced_empty_potions: 0, eggs: [], weapons: [], shields: [], wands: [],
+                  slip_wands: [] }
     @ring = nil
     @hasted = 0
     @slowed = 0
+    @stuck = 0
     @gaseous = 0
     @quick = false
     @won = false
     @trapped = false
     @depth = level
+    @start_depth = level
+    @caged = { eggs: 0, critters: [] }
     @levels = {}
     @xp = 0
     @hero_level = 1
@@ -435,14 +462,35 @@ class Dungeon
   BROKEN_POTION = ","
   WAND = "/"
 
+  # A shattered potion of glue leaves glue on the floor, seen by all, which sticks whoever treads in it in place
+  # for 2d2 rounds; the glue stays put after
+  GLUE = ":"
+
+  # A potion or wand of slipperiness, used on an area, leaves slippery floor, seen by all. Every d3 rounds whoever
+  # stands on a slippery square slips off it, as if pushed. Slipperiness and glue cancel: either one landing on the
+  # other leaves the floor clean, and frees anyone stuck there. A wand of slipperiness lies about like a wand of
+  # slowness, on SLIP_WAND_CHANCE of the levels; treading on one with a charge left slicks the floor around it
+  SLIPPERY = "≈"
+  SLIP_WAND_CHANCE = 0.3
+  OPPOSITE = { glue: :slippery, slippery: :glue }.freeze
+  def self.d3 = rand(1..3)
+
+  # Each kind of wand by knapsack slot: the floor trap it lies about as, and what it does. A packed wand is its
+  # charges left
+  WANDS = {
+    wands:      { kind: :wand,      name: "wand of slowness" },
+    slip_wands: { kind: :slip_wand, name: "wand of slipperiness" },
+  }.freeze
+
   def self.d2x2 = rand(1..2) + rand(1..2)
 
   # The chance a level has a random plate, a teleportation trap; it never has more than one, so fewer than one a
   # level on average
   TELEPORT_CHANCE = 0.5
 
-  # An egg is developed, with legs, wings, and a beak, or just yolk; candled once it's been held up to the light
-  Egg = Struct.new(:developed, :candled)
+  # An egg is developed, with legs, wings, and a beak, or just yolk; candled once it's been held up to the light,
+  # which also shows a Dodo's egg for what it is
+  Egg = Struct.new(:developed, :candled, :dodo)
 
   # The first depth where a Quail always turns up; shallower than this, from the Quail's cr, it's a coin toss.
   # From here on, every two levels deeper add one more
@@ -483,11 +531,12 @@ class Dungeon
   # Rounds the player has left of each timed potion; a round is one turn of everyone else's
   def hasted? = @hasted.positive?
   def slowed? = @slowed.positive?
+  def stuck? = @stuck.to_i.positive?
   def gaseous? = @gaseous.positive?
 
   # The timed potion effects for the banner, e.g. "Hasted 12   Gaseous 3", or "" when none
   def effects
-    [("Hasted #{@hasted}" if hasted?), ("Slowed #{@slowed}" if slowed?), ("Gaseous #{@gaseous}" if gaseous?)].compact.join("   ")
+    [("Hasted #{@hasted}" if hasted?), ("Slowed #{@slowed}" if slowed?), ("Stuck #{@stuck}" if stuck?), ("Gaseous #{@gaseous}" if gaseous?)].compact.join("   ")
   end
 
   # Each kind of potion by knapsack slot: the THINGAGES row it spawns from, its full name, and its glyph.
@@ -499,13 +548,15 @@ class Dungeon
     slow_potions:    { row: "slow potion",    name: "potion of slowness",     glyph: "!" },
     healing_potions: { row: "healing potion", name: "potion of healing",      glyph: "!" },
     sleep_potions:   { row: "sleep potion",   name: "potion of sleep",        glyph: "!" },
+    glue_potions:    { row: "glue potion",    name: "potion of glue",         glyph: "!" },
+    slip_potions:    { row: "slip potion",    name: "potion of slipperiness", glyph: "!" },
     empty_potions:   { row: "empty potion",   name: "empty potion",           glyph: "!" },
   }.freeze
 
   # A potion of speed gives two actions for everyone else's one for this many rounds; slowness gives everyone else
   # two for the drinker's one for SLOW_ROUNDS; gaseous form leaves nothing able to touch, or be touched by, the
   # drinker for GAS_ROUNDS. Healing restores the player to full, and a monster, which has no full, by HEAL_HP
-  SPEED_ROUNDS = 30
+  SPEED_ROUNDS = 10
   SLOW_ROUNDS = 20
 
   # A potion of sleep puts its drinker, or whoever it's thrown at, to sleep for 3d4 rounds while everyone else
@@ -514,6 +565,18 @@ class Dungeon
   DISGUISED_SLEEP_CHANCE = 0.5
   DISGUISE_RANGE = 3
   def self.d4x3 = rand(1..4) + rand(1..4) + rand(1..4)
+
+  # A potion of glue, drunk, slows its drinker for SLOW_ROUNDS like slowness. Thrown, it sticks whoever catches it
+  # in place for 2d2 rounds. A potion of slipperiness frees its drinker, or whoever catches it, from glue. Wherever
+  # either shatters, or a wand of slipperiness strikes, it covers SPLASH_SPOTS squares of floor
+  SPLASH_SPOTS = 1..3
+
+  # Drunk, the two potions undo each other: slipperiness cures glue's slowness, and otherwise hastes its drinker
+  # for SLIP_HASTE_ROUNDS, longer than a potion of speed; glue drunk while hasted ends the haste and burns for d6,
+  # but leaves at least GLUE_BURN_FLOOR hit points
+  SLIP_HASTE_ROUNDS = 30
+  GLUE_BURN_FLOOR = 3
+  def self.d6 = rand(1..6)
   GAS_ROUNDS = 10
   HEAL_HP = 10
 
@@ -639,11 +702,13 @@ class Dungeon
     @knapsack[:shields].group_by { |s| s[:name] }.each_value do |kind|
       packed << [kind.size == 1 ? label(kind.first) : "#{kind.size} #{label(kind.first)}s", :shields]
     end
-    wands = @knapsack[:wands]
-    charges = wands.sum
-    unless wands.empty?
-      packed << ["#{wands.size == 1 ? "#{WAND} wand" : "#{wands.size} #{WAND} wands"} of slowness " \
-                 "(#{charges} #{charges == 1 ? "charge" : "charges"})", :wands]
+    WANDS.each do |slot, wand|
+      wands = @knapsack[slot]
+      next if wands.empty?
+
+      charges = wands.sum
+      packed << ["#{wands.size == 1 ? "#{WAND} wand" : "#{wands.size} #{WAND} wands"} #{wand[:name].delete_prefix("wand ")} " \
+                 "(#{charges} #{charges == 1 ? "charge" : "charges"})", slot]
     end
     packed
   end
@@ -692,9 +757,38 @@ class Dungeon
     when :sleep_potions
       @asleep = Dungeon.d4x3
       "You fall asleep!"
+    when :glue_potions
+      return ungum_haste if hasted?
+
+      @slowed = SLOW_ROUNDS
+      "Your limbs go gummy. Everything else speeds up to twice your pace!"
+    when :slip_potions
+      freed = "You slip free of the glue! " if stuck?
+      @stuck = 0
+      if slowed?
+        @slowed = 0
+        "#{freed}Your limbs loosen, and you're back to your own pace."
+      else
+        @hasted = SLIP_HASTE_ROUNDS
+        @quick = false
+        "#{freed}You feel slick all over, and everything else slows to half your pace!"
+      end
     when :empty_potions
       "It's empty. Nothing happens."
     end
+  end
+
+  # Glue taken while hasted ends the haste instead of slowing, and burns going down: d6 damage, though never
+  # enough to leave fewer than GLUE_BURN_FLOOR hit points
+  def ungum_haste
+    @hasted = 0
+    @quick = false
+    burn = [Dungeon.d6, @hp - GLUE_BURN_FLOOR].min.clamp(0..)
+    slowed = "The glue gums up your speed, and you slow back down."
+    return "#{slowed} It burns going down, but you take no damage." if godMode? || burn.zero?
+
+    hurt(burn)
+    "#{slowed} It burns going down for #{burn} damage."
   end
 
   # Pours a potion into a candle from the knapsack, making a laced candle to throw or kick; pouring takes a turn
@@ -736,15 +830,25 @@ class Dungeon
     say "Throw the #{potion[:name]} which way?"
   end
 
-  # Readies a wand of slowness to zap; the next arrow zaps it that way, and rest cancels it
-  def zap
+  # Readies a wand to zap, from that slot, or else the first kind with a charge left; the next arrow zaps it that
+  # way, and rest cancels it
+  def zap(slot = nil)
     over? and return
     @throwable = nil
-    @knapsack[:wands].empty? and return say("You have no wand to zap.")
-    @knapsack[:wands].any?(&:positive?) or return say("Your wand of slowness has no charges left on this level.")
+    slot ||= WANDS.keys.find { |s| @knapsack[s].any?(&:positive?) } || WANDS.keys.find { |s| @knapsack[s].any? }
+    slot && @knapsack[slot].any? or return say("You have no wand to zap.")
+    name = WANDS[slot][:name]
+    @knapsack[slot].any?(&:positive?) or return say("Your #{name} has no charges left on this level.")
 
-    @offering = :wand
-    say "Zap the wand of slowness which way?"
+    @offering = WANDS[slot][:kind]
+    say "Zap the #{name} which way?"
+  end
+
+  # Eggs by whose they are, as gathering tells them apart: "a Quail egg", or "2 Quail eggs and a Dodo egg"
+  def egg_kinds(eggs)
+    dodos = eggs.count(&:dodo)
+    kinds = [["Quail", eggs.size - dodos], ["Dodo", dodos]].select { |_, n| n.positive? }
+    and_list(kinds.map { |kind, n| n == 1 ? "a #{kind} egg" : "#{n} #{kind} eggs" })
   end
 
   # "3 eggs", and once candled, what the light showed, e.g. "3 eggs (1 developed, 1 yolk, 1 unknown)"
@@ -754,7 +858,8 @@ class Dungeon
     return text if candled.empty?
 
     developed = candled.count(&:developed)
-    seen = ["#{developed} developed", "#{candled.size - developed} yolk", "#{eggs.size - candled.size} unknown"]
+    seen = ["#{developed} developed", "#{candled.size - developed} yolk", "#{eggs.size - candled.size} unknown",
+            "#{candled.count(&:dodo)} Dodo"]
     "#{text} (#{seen.reject { |s| s.start_with?("0 ") }.join(", ")})"
   end
 
@@ -777,6 +882,8 @@ class Dungeon
       seen << "in #{developed == 1 ? "one" : developed} you can see legs, wings, and a beak" if developed.positive?
       say "You hold #{eggs.size} eggs up to the light: #{seen.join("; ")}."
     end
+    dodos = eggs.count(&:dodo)
+    say(eggs.size == 1 ? "It's a Dodo's egg." : "#{dodos == 1 ? "One is" : "#{dodos} are"} a Dodo's.") if dodos.positive?
     end_turn
   end
 
@@ -1014,10 +1121,10 @@ class Dungeon
         say "You tap the door, and it swings open."
       elsif m.name == "sandwich"
         unwrap(m, 1)
-      elsif tight_spot?(m) && pushable_to?(to = [x + @facing[0], y + @facing[1]])
+      elsif tight_spot?(m) && !m.stuck.to_i.positive? && pushable_to?(to = [x + @facing[0], y + @facing[1]])
         m.x, m.y = to
         say "You push the #{m.name}."
-        provoke_hunter(m, DoorLock::StateEvent::PUSH)
+        brain?(m) ? scare(m) : provoke_hunter(m, DoorLock::StateEvent::PUSH)
         tread(m)
       else
         say "You tap the #{m.name}."
@@ -1032,6 +1139,31 @@ class Dungeon
   # A thingage is in a tight spot, as in a hallway or a corner, when walls close in on all but two of its sides at
   # most, so a tap against it pushes it on a square instead
   def tight_spot?(m) = [[1, 0], [-1, 0], [0, 1], [0, -1]].count { |dx, dy| !wall?(m.x + dx, m.y + dy) } <= 2
+
+  # Whether a thingage has a brain to be scared with: any intelligence at all, unlike a wall, a door, or an item
+  def brain?(m) = m.int.to_i.positive?
+
+  def fleeing?(m) = m.state&.state.is_a?(DoorLock::FleeingState)
+
+  # Pushed or hit in a tight spot, a creature with a brain flees the player
+  def scare(m)
+    state_machine(m).transit(DoorLock::StateEvent::FLEE, self, m, :ego)
+    say "The #{m.name} panics and flees!" if (m.x - @px).abs <= SIGHT && (m.y - @py).abs <= SIGHT
+  end
+
+  # A fleeing creature steps to whichever open square takes it furthest from the player, until it's out of the
+  # tight spot; then it's safe, and turns on the player. Cornered, with nowhere further to go, it stays put
+  def flee(m)
+    return state_machine(m).transit(DoorLock::StateEvent::SAFE, self, m, :ego) unless tight_spot?(m)
+    return if m.stuck.to_i.positive?
+
+    away = ->(x, y) { (x - @px).abs + (y - @py).abs }
+    spot = [[1, 0], [-1, 0], [0, 1], [0, -1]].map { |dx, dy| [m.x + dx, m.y + dy] }
+                                              .select { |s| pushable_to?(s) && away.(*s) > away.(m.x, m.y) }
+                                              .max_by { |s| away.(*s) } or return
+    m.x, m.y = spot
+    tread(m)
+  end
 
   # Open floor, with no one on it, that a push can move a thingage onto
   def pushable_to?(spot) = !wall?(*spot) && !monster_at(*spot) && spot != [@px, @py]
@@ -1062,6 +1194,7 @@ class Dungeon
     if (item = @offering)
       return fling_candle(item, dx, dy) if LACED.key?(item)
       return zap_wand(dx, dy) if item == :wand
+      return zap_slip_wand(dx, dy) if item == :slip_wand
 
       return POTIONS.key?(item) ? throw_potion(item, dx, dy) : give(item, dx, dy)
     end
@@ -1083,6 +1216,8 @@ class Dungeon
       else
         attack(foe)
       end
+    elsif stuck?
+      say "You're stuck in the glue."
     else
       @px, @py = nx, ny
       march
@@ -1090,9 +1225,13 @@ class Dungeon
       tread_player
       over? and return
       if [@px, @py] == @cage&.dig(:plate)
-        return spring_trap unless @cage[:state] == :sprung
-
-        lift_bars
+        if @cage[:state] == :sprung
+          lift_bars
+        elsif (threat = cage_threat)
+          say "The plate won't budge with #{a_name(threat.name)} loose in the cage. Deal with it, then step back on."
+        else
+          return spring_trap
+        end
       end
       if (way = STAIRS[@map[@py][@px]])
         @stairs_question = way
@@ -1244,6 +1383,8 @@ class Dungeon
     @traps[free_spot(poisoned)] = { kind: :poison, seen: false } if poisoned
     wanded = @rooms.drop(1).sample if rand < WAND_CHANCE
     @traps[free_spot(wanded)] = { kind: :wand, seen: false, charges: WAND_CHARGES } if wanded
+    slicker = @rooms.drop(1).sample if rand < SLIP_WAND_CHANCE
+    @traps[free_spot(slicker)] = { kind: :slip_wand, seen: false, charges: WAND_CHARGES } if slicker
     @rooms.drop(1).each do |room|
       rand(0..2).times { @treasure[free_spot(room)] = rand(5..20) * @depth }
       @sandwiches[free_spot(room)] = 1 if rand(3).zero?
@@ -1314,9 +1455,9 @@ class Dungeon
   end
 
   # Stepping onto the plate drops the bars along the line: everything behind them, the player and their knapsack
-  # included, is the haul. A haul with no egg at all is only a practice run, so the adventure goes on behind the
-  # bars until the player steps off the plate and back on. Otherwise it ends: every developed egg hatches, and a
-  # chick is a win
+  # included, is the haul. A haul without both an egg and a living Quail is only a practice run, so the adventure
+  # goes on behind the bars until the player steps off the plate and back on. Otherwise it ends: every developed
+  # egg hatches, and a Quail chick, with a Quail to raise it, is a win
   def spring_trap
     @cage[:state] = :sprung
     caught = @monsters.select { |m| in_trap?(m.x, m.y) }
@@ -1324,20 +1465,59 @@ class Dungeon
     eggs = @knapsack[:eggs] + @eggs.select { |spot, _| in_trap?(*spot) }.values.flatten
     coins = gold + floor.(@treasure)
     food = sandwiches + floor.(@sandwiches)
+    @caged = { eggs: eggs.size, critters: caught.select { |m| critter?(m) }.map(&:name) }
     haul = caught.map { |m| a_name(m.name) }
     haul << egg_count(eggs).sub(/ \(.*/, "") if eggs.any?
     haul << "#{coins} gold" if coins.positive?
     haul << "#{food} #{food == 1 ? "sandwich" : "sandwiches"}" if food.positive?
     say "The bars slam down behind you. Your haul: #{haul.empty? ? "nothing but yourself" : and_list(haul)}."
-    return say("Without an egg, step off the plate and back on to lift the bars.") if eggs.empty?
+    quail = caught.any? { |m| m.name == "Quail" && m.hp.positive? }
+    missing = [("an egg" if eggs.empty?), ("a Quail" unless quail)].compact
+    return say("Without #{missing.join(" and ")}, step off the plate and back on to lift the bars.") if missing.any?
 
     @trapped = true
-    hatched = eggs.count(&:developed)
+    hatched = eggs.count { |e| e.developed && !e.dodo }
+    dodos = eggs.count { |e| e.developed && e.dodo }
     @won = hatched.positive?
-    return say("No egg in your haul hatches. The adventure is over.") unless @won
+    return say("No egg in your haul hatches. The adventure is over.") if (hatched + dodos).zero?
+    return say("#{dodos == 1 ? "An egg hatches" : "#{dodos} eggs hatch"}, but only Dodo chicks peep in the cage. " \
+               "The adventure is over.") unless @won
 
-    say "#{hatched == 1 ? "An egg hatches" : "#{hatched} eggs hatch"}, and Quail chicks peep in the cage. You won!"
+    say "#{hatched == 1 ? "An egg hatches" : "#{hatched} eggs hatch"}, and Quail chicks peep in the cage" \
+        "#{", with Dodo chicks among them" if dodos.positive?}. You won!"
   end
+
+  # A danger inside the cage's perimeter that keeps its plate from springing: any troll, or a coyote in its
+  # enraged state, until the player neutralizes it, killing it, winning it over, feeding it, or putting it to sleep
+  def cage_threat
+    @monsters.find do |m|
+      in_trap?(m.x, m.y) && m.hp.positive? && !friend?(m) && !m.asleep.to_i.positive? &&
+        (m.name == "troll" || (m.name == "coyote" && m.state&.state.is_a?(DoorLock::EnragedState)))
+    end
+  end
+
+  # A living creature, rather than furniture, an item, or a weapon or shield lying about
+  def critter?(m)
+    !(FURNITURE + SHIELDS + %w[weapon sandwich]).include?(m.name) && !PACKABLE.key?(m.name) && !m.weapon && !m.disguised_potion
+  end
+
+  # A finished game earns a plaque on the wall of fallen heroes, unless it was played as a god or started deep
+  def plaque? = over? && !godMode? && @start_depth == 1
+
+  # The plaque's data, for plaque.xslt to fluff: the hero's name, how many eggs and Quails were in the cage when its bars last
+  # slammed down, and how many of each other critter, by name. A cage never sprung held nothing
+  def plaque_xml
+    doc = REXML::Document.new
+    doc << REXML::XMLDecl.new("1.0", "UTF-8")
+    plaque = doc.add_element("plaque")
+    plaque.add_element("name").text = @hero_name.to_s
+    quails, others = @caged[:critters].partition { |name| name == "Quail" }
+    plaque.add_element("eggs").text = @caged[:eggs].to_s
+    plaque.add_element("quails").text = quails.size.to_s
+    others.tally.sort.each { |name, count| plaque.add_element("critter", "name" => name).text = count.to_s }
+    doc.to_s
+  end
+  public :plaque?, :plaque_xml # the front ends ask for the plaque, from down here among the private helpers
 
   # Stepping back onto the plate of a cage sprung without an egg lifts the bars, setting the trap again
   def lift_bars
@@ -1349,7 +1529,10 @@ class Dungeon
   # up to 0.9
   def developed_chance = [(@depth - HATCHERY_DEPTH + 3) / 9.0, 0.9].min
 
-  def lay_egg = Egg.new(rand < developed_chance, false)
+  # The chance an egg in a Quail's nest was slipped there by a Dodo
+  NEST_DODO_CHANCE = 0.25
+
+  def lay_egg = Egg.new(rand < developed_chance, false, (true if rand < NEST_DODO_CHANCE))
 
   # A nest of 1-3 eggs in a room of its own, with a nesting Quail beside it that won't leave while its eggs lie there
   def nest_quail(quail)
@@ -1468,15 +1651,16 @@ class Dungeon
   def attack(foe)
     dmg = rand(weapon_hit)
     return unwrap(foe, dmg) if foe.name == "sandwich"
+    return capture(foe) if foe.ally && useful?(foe)
 
     foe.hp -= dmg
     provoked = !foe.pacifist && !foe.aggressive
     foe.aggressive = true unless foe.pacifist
-    provoke_hunter(foe, DoorLock::StateEvent::HIT) if foe.hp.positive?
+    cornered = foe.hp.positive? && brain?(foe) && tight_spot?(foe) # before any knock back moves it
     if foe.hp <= 0
       @monsters.delete(foe)
       return say("The #{foe.name} shatters: it was a #{POTIONS[foe.disguised_potion][:name]} in disguise!") if foe.disguised_potion
-      return seize(foe) if foe.weapon || WEAPONS.any? { |w| w[:name] == foe.name }
+      return seize(foe) if armed?(foe)
       return stow(foe) if SHIELDS.include?(foe.name) || PACKABLE.key?(foe.name)
 
       say "You defeat the #{foe.name}!"
@@ -1491,9 +1675,12 @@ class Dungeon
       state_machine(foe).transit(DoorLock::StateEvent::HIT, self, foe, :ego)
       say "You hit the #{foe.name} for #{dmg}. It turns on you!"
     else
-      say "You hit the #{foe.name} for #{dmg}.#{" It turns on you!" if provoked}"
+      say "You hit the #{foe.name} for #{dmg}.#{" It turns on you!" if provoked && !cornered}"
       knock_back(foe, foe.x - @px, foe.y - @py) if foe.name == "Quail"
     end
+    return unless foe.hp.positive?
+
+    cornered ? scare(foe) : provoke_hunter(foe, DoorLock::StateEvent::HIT)
   end
 
   # A potion disguised as a creature, once the player is within DISGUISE_RANGE, drops the disguise and hurls itself
@@ -1525,6 +1712,7 @@ class Dungeon
       line << behind
     end
     pushable_to?([line.last.x + dx, line.last.y + dy]) or return
+    return if line.any? { |q| q.stuck.to_i.positive? } # glue holds the line in place
 
     line.reverse_each { |q| q.x += dx; q.y += dy }
     line.each { |q| tread(q) }
@@ -1632,10 +1820,47 @@ class Dungeon
       next unless (target = monster_at(x, y)) && !mist?(target)
 
       say "You throw the #{name} at the #{target.name}. #{empower(target, slot)}"
+      say "It shatters, #{splash_words(SPLASHES[slot], *spread(SPLASHES[slot], x, y))}." if SPLASHES.key?(slot)
       return end_turn
     end
-    say "You throw the #{name} and it shatters on the floor."
+    if SPLASHES.key?(slot)
+      say "You throw the #{name} and it shatters, #{splash_words(SPLASHES[slot], *spread(SPLASHES[slot], x, y))}."
+    else
+      say "You throw the #{name} and it shatters on the floor."
+    end
     end_turn
+  end
+
+  # The potions that, shattering, leave something on the floor, and what
+  SPLASHES = { glue_potions: :glue, slip_potions: :slippery }.freeze
+
+  # Glue or slipperiness lands at x, y and covers SPLASH_SPOTS squares of floor: that one, then its open
+  # neighbors. It never covers a plate or any other trap, and where it meets its opposite the two cancel, leaving
+  # clean floor and freeing anyone stuck there. Returns how many squares it covered, and how many it cleaned
+  def spread(kind, x, y)
+    @traps ||= {}
+    near = [[1, 0], [-1, 0], [0, 1], [0, -1]].map { |dx, dy| [x + dx, y + dy] }.shuffle
+    spots = ([[x, y]] + near).reject { |s| wall?(*s) || @plates.key?(s) || (@traps.key?(s) && !OPPOSITE.key?(@traps[s][:kind])) }
+    spots = spots.first(rand(SPLASH_SPOTS))
+    cleaned = spots.select { |s| @traps[s]&.dig(:kind) == OPPOSITE[kind] }
+    cleaned.each do |s|
+      @traps.delete(s)
+      @stuck = 0 if s == [@px, @py]
+      monster_at(*s)&.stuck = 0
+    end
+    (spots - cleaned).each { |s| @traps[s] = { kind: kind, seen: true }.merge(kind == :slippery ? { slip_in: Dungeon.d3 } : {}) }
+    [spots.size - cleaned.size, cleaned.size]
+  end
+
+  # What a splash of glue or slipperiness did to the floor, e.g. "gluing 2 squares of floor and cleaning 1 square
+  # of slippery floor"
+  def splash_words(kind, covered, cleaned)
+    squares = ->(n) { "#{n} #{n == 1 ? "square" : "squares"}" }
+    covering = "#{kind == :glue ? "gluing" : "slicking"} #{squares.(covered)} of floor"
+    return covering if cleaned.zero?
+
+    cleaning = "cleaning #{squares.(cleaned)} of #{kind == :glue ? "slippery floor" : "glue"}"
+    covered.zero? ? cleaning : "#{covering} and #{cleaning}"
   end
 
   # Sends a laced candle that way, thrown up to THROW_RANGE or kicked up to KICK_RANGE: it stops at the first
@@ -1670,6 +1895,8 @@ class Dungeon
     slow_potions:    "They slow to half your pace!",
     healing_potions: "They look healthier.",
     sleep_potions:   "They fall asleep!",
+    glue_potions:    "They're stuck fast!",
+    slip_potions:    "Any glue lets go of them.",
     empty_potions:   "Nothing happens. It was empty.",
   }.freeze
 
@@ -1708,6 +1935,13 @@ class Dungeon
     when :sleep_potions
       m.asleep = Dungeon.d4x3
       "It falls asleep!"
+    when :glue_potions
+      m.stuck = Dungeon.d2x2
+      "It's stuck fast!"
+    when :slip_potions
+      freed = m.stuck.to_i.positive?
+      m.stuck = 0
+      freed ? "It slips free of the glue!" : "It looks slick for a moment."
     when :empty_potions
       "Nothing happens. It was empty."
     end
@@ -1723,6 +1957,7 @@ class Dungeon
   def receive(taker, item)
     @knapsack[item] -= 1
     return appease(taker, item) if FURNITURE.include?(taker.name) && state_machine(taker).state.is_a?(DoorLock::EnragedState)
+    return win_over(taker) if item == :gold && useful?(taker) && agitated?(taker)
 
     if taker.name == "door"
       @monsters.delete(taker)
@@ -1872,39 +2107,60 @@ class Dungeon
 
   # Defeating a shield, or a potion or any other packable thing, packs it into the knapsack, room allowing; with no
   # room, it's left behind
-  def stow(foe)
+  def stow(foe, how = "defeat")
     shield = SHIELDS.include?(foe.name)
     weight = shield ? Dungeon.pounds(Dungeon.packable(foe.name)) : pounds(PACKABLE[foe.name])
     room_for?(weight) or
-      return say("You defeat the #{foe.name}, but your knapsack is too full to carry it, so you leave it behind.")
+      return say("You #{how} the #{foe.name}, but your knapsack is too full to carry it, so you leave it behind.")
 
     if shield
       @knapsack[:shields] << { name: foe.name, glyph: foe.glyph }
     else
       @knapsack[PACKABLE[foe.name]] += 1
     end
-    say "You defeat the #{foe.name} and pack it into your knapsack."
+    say "You #{how} the #{foe.name} and pack it into your knapsack."
+  end
+
+  # A weapon, or something wielding one, that defeating or capturing seizes
+  def armed?(m) = m.weapon || WEAPONS.any? { |w| w[:name] == m.name }
+
+  # A useful obstacle: a live weapon or shield, or anything else the knapsack can hold
+  def useful?(m) = armed?(m) || SHIELDS.include?(m.name) || PACKABLE.key?(m.name)
+
+  # A grumpy useful obstacle, given a coin, comes over to the player's side
+  def win_over(taker)
+    taker.coins = taker.coins.to_i + 1
+    taker.ally = true
+    taker.aggressive = false
+    taker.spurned = false
+    "pockets it and comes over to your side"
+  end
+
+  # Hitting a useful obstacle on the player's side captures it into the knapsack, whatever its hit points
+  def capture(foe)
+    @monsters.delete(foe)
+    armed?(foe) ? seize(foe, "capture", pack: true) : stow(foe, "capture")
   end
 
   # Defeating a weapon seizes it, and defeating a cloaked one seizes the weapon it wielded. Empty hands wield it: it
   # shows in the banner and its hit range becomes the player's. A player already wielding one, or seizing a ranged
   # one, packs it into the knapsack instead, room allowing; it keeps the packable weight and ranged flag from its
   # WEAPONS entry
-  def seize(foe)
+  def seize(foe, how = "defeat", pack: false)
     held = foe.weapon || { name: foe.name, glyph: foe.glyph, hit: foe.hit }
     found = held.slice(:name, :glyph, :hit).merge(WEAPONS.find { |w| w[:name] == held[:name] }&.slice(:packable, :ranged) || {})
     them = pair?(found[:name]) ? "them" : "it"
     what = foe.weapon ? "its #{found[:name]}" : them
-    if @wielded != FISTS || found[:ranged]
+    if pack || @wielded != FISTS || found[:ranged]
       room_for?(weapon_pounds(found)) or
-        return say("You defeat the #{foe.name}, but your knapsack is too full to carry #{what}, so you leave #{them} behind.")
+        return say("You #{how} the #{foe.name}, but your knapsack is too full to carry #{what}, so you leave #{them} behind.")
 
       @knapsack[:weapons] << found
-      return say("You defeat the #{foe.name} and pack #{what} into your knapsack.")
+      return say("You #{how} the #{foe.name} and pack #{what} into your knapsack.")
     end
 
     @wielded = found
-    say "You defeat the #{foe.name} and seize #{what}! You now wield #{weapon}."
+    say "You #{how} the #{foe.name} and seize #{what}! You now wield #{weapon}."
   end
 
   def a_name(name)
@@ -2013,9 +2269,10 @@ class Dungeon
     @eggs[spot] = laid.drop(taken) if taken < laid.size
     return say("Your knapsack is too full for the #{laid.size == 1 ? "egg" : "eggs"}.") if taken.zero?
 
-    @knapsack[:eggs].concat(laid.first(taken))
+    gathered = laid.first(taken)
+    @knapsack[:eggs].concat(gathered)
     left = laid.size - taken
-    say "You gather #{taken == 1 ? "an egg" : "#{taken} eggs"} from the nest#{", leaving #{left} for want of room" if left.positive?}."
+    say "You gather #{egg_kinds(gathered)}#{" from the nest" unless laid.all?(&:dodo)}#{", leaving #{left} for want of room" if left.positive?}."
     nesters = @monsters.select(&:nesting)
     nesters.each { |m| m.nesting = false }
     say "The nesting Quail stirs and follows its eggs!" if nesters.any?
@@ -2048,8 +2305,8 @@ class Dungeon
 
   # Every wand, in the knapsack or lying on the level, holds WAND_CHARGES again
   def refill_wands
-    @knapsack[:wands].map! { WAND_CHARGES }
-    @traps&.each_value { |t| t[:charges] = WAND_CHARGES if t[:kind] == :wand }
+    WANDS.each_key { |slot| @knapsack[slot].map! { WAND_CHARGES } }
+    @traps&.each_value { |t| t[:charges] = WAND_CHARGES if t.key?(:charges) }
   end
 
   # A level already visited is the one the player left
@@ -2122,9 +2379,10 @@ class Dungeon
   XP_PER_CALMING = 10
   XP_PER_LEVEL = 50
 
-  # Whether a thingage is agitated: out to fight the player, not spurned, paid off, fed, asleep, or defeated
+  # Whether a thingage is agitated: out to fight the player, not spurned, paid off, fed, asleep, fleeing, or
+  # defeated
   def agitated?(m)
-    m.hp.positive? && m.aggressive && !m.pacifist && !m.spurned && !friend?(m) && !m.asleep.to_i.positive?
+    m.hp.positive? && m.aggressive && !m.pacifist && !m.spurned && !friend?(m) && !m.asleep.to_i.positive? && !fleeing?(m)
   end
 
   # The agitated thingages within SIGHT of the player
@@ -2170,15 +2428,50 @@ class Dungeon
     end
     say "You speed back up." if slowed? && (@slowed -= 1).zero?
     say "You become solid again." if gaseous? && (@gaseous -= 1).zero?
+    say "You pull free of the glue." if stuck? && (@stuck -= 1).zero?
     @monsters.each do |m|
       m.hasted -= 1 if m.hasted.to_i.positive?
       m.slowed -= 1 if m.slowed.to_i.positive?
       m.gaseous -= 1 if m.gaseous.to_i.positive?
+      m.stuck -= 1 if m.stuck.to_i.positive?
       next unless m.asleep.to_i.positive? && (m.asleep -= 1).zero?
 
       say "The #{m.name} wakes up." if (m.x - @px).abs <= SIGHT && (m.y - @py).abs <= SIGHT
     end
+    slip
     hunger
+  end
+
+  # Each slippery square counts down to its next slip, d3 rounds apart; then whoever stands on it slips off
+  def slip
+    (@traps || {}).to_a.each do |spot, trap|
+      next unless trap[:kind] == :slippery && @traps[spot].equal?(trap) && (trap[:slip_in] -= 1) <= 0
+
+      trap[:slip_in] = Dungeon.d3
+      slide_off(spot)
+      break if over?
+    end
+  end
+
+  # Whoever stands on a slippery square slides off it, as if pushed, onto open floor beside it that isn't slippery
+  # too; with nowhere like that to go, or nothing solid to slip, they keep their footing
+  def slide_off(spot)
+    (who = spot == [@px, @py] ? :ego : monster_at(*spot)) or return
+    return if who == :ego ? gaseous? : mist?(who)
+
+    off = [[1, 0], [-1, 0], [0, 1], [0, -1]].map { |dx, dy| [spot[0] + dx, spot[1] + dy] }
+                                            .select { |s| pushable_to?(s) && !@plates.key?(s) && s != @cage&.dig(:plate) }
+                                            .reject { |s| @traps[s]&.dig(:kind) == :slippery }.sample or return
+    if who == :ego
+      @px, @py = off
+      say "You slip and slide off the slippery floor!"
+      pick_up
+      tread_player
+    else
+      who.x, who.y = off
+      say "The #{who.name} slips and slides off the slippery floor!" if (who.x - @px).abs <= SIGHT && (who.y - @py).abs <= SIGHT
+      tread(who)
+    end
   end
 
   # Every monster takes its turn, a hasted one two, and a slowed one only every other round
@@ -2203,6 +2496,8 @@ class Dungeon
   # (allies, and goblins still full from a sandwich) follow without striking the player, and an ally strikes a
   # hostile monster beside it instead. Nothing touches a misty thing or a gaseous player, nor wants to
   def act(m)
+    return dodo_act(m) if m.name == "Dodo" && m.hp.positive? && !mist?(m)
+    return flee(m) if m.hp.positive? && fleeing?(m)
     return if m.hp <= 0 || m.spurned || m.nesting
     return board_plate(m) if m.plate_bound
     return if hurl_self(m)
@@ -2233,6 +2528,7 @@ class Dungeon
     else
       return if gaseous? && !friend?(m) && !follower?(m) # nothing hostile bothers chasing mist
       return if FURNITURE.include?(m.name) # angry furniture strikes from where it stands but never leaves it
+      return if m.stuck.to_i.positive? # glued in place: it strikes from where it stands, too
 
       step = dx.abs >= dy.abs ? [dx <=> 0, 0] : [0, dy <=> 0]
       nx, ny = (follower?(m) && path_step(m)) || [m.x + step[0], m.y + step[1]]
@@ -2247,11 +2543,26 @@ class Dungeon
     end
   end
 
-  # The player treads on a trap where they stand: poison hurts, and a wand slows them, then goes in the knapsack
+  # The player treads on a trap where they stand: poison hurts, glue sticks them in place, a wand of slowness slows
+  # them and a wand of slipperiness slicks the floor round them, either then going in the knapsack, and slippery
+  # floor waits its turn to trip them
   def tread_player
     (trap = @traps&.[]([@px, @py])) or return
     trap[:seen] = true
-    if trap[:kind] == :poison
+    if trap[:kind] == :slippery
+      nil # it trips its stander up in its own time
+    elsif trap[:kind] == :glue
+      @stuck = Dungeon.d2x2
+      say "You step in glue and stick fast!"
+    elsif trap[:kind] == :slip_wand
+      @traps.delete([@px, @py])
+      if trap[:charges].positive?
+        trap[:charges] -= 1
+        say "You step on a wand of slipperiness, and it zaps the floor, #{splash_words(:slippery, *spread(:slippery, @px, @py))}."
+      end
+      @knapsack[:slip_wands] << trap[:charges]
+      say "You pick up the wand of slipperiness (#{trap[:charges]} #{trap[:charges] == 1 ? "charge" : "charges"} left)."
+    elsif trap[:kind] == :poison
       dmg = Dungeon.d2x2
       return say("You step on a potion of poison and it breaks, but you take no damage.") if godMode?
 
@@ -2270,13 +2581,22 @@ class Dungeon
     end
   end
 
-  # A monster treads on a trap where it stands: poison hurts it, and a wand with a charge left slows it. False
-  # when the poison kills it
+  # A monster treads on a trap where it stands: poison hurts it, glue sticks it in place, and a wand with a charge
+  # left slows it, or slicks the floor round it. False when the poison kills it
   def tread(m)
     (trap = @traps&.[]([m.x, m.y])) or return true
     seen = (m.x - @px).abs <= SIGHT && (m.y - @py).abs <= SIGHT
     trap[:seen] ||= seen
-    if trap[:kind] == :poison
+    if trap[:kind] == :glue
+      m.stuck = Dungeon.d2x2
+      say "The #{m.name} steps in glue and sticks fast!" if seen
+    elsif trap[:kind] == :slip_wand
+      if trap[:charges].positive?
+        trap[:charges] -= 1
+        spread(:slippery, m.x, m.y)
+        say "The #{m.name} steps on a wand of slipperiness, and the floor around it turns slick!" if seen
+      end
+    elsif trap[:kind] == :poison
       dmg = Dungeon.d2x2
       m.hp -= dmg
       unless m.hp.positive?
@@ -2285,7 +2605,7 @@ class Dungeon
         return false
       end
       say "The #{m.name} steps on a potion of poison and takes #{dmg} damage." if seen
-    elsif trap[:charges].positive?
+    elsif trap[:kind] == :wand && trap[:charges].positive?
       trap[:charges] -= 1
       m.slowed = m.slowed.to_i + Dungeon.d2x2
       say "The #{m.name} steps on a wand of slowness and slows down!" if seen
@@ -2306,6 +2626,24 @@ class Dungeon
     else
       say "You zap the wand of slowness, and it fizzles out."
     end
+    end_turn
+  end
+
+  # Zaps a charge of slipperiness that way: it flies up to THROW_RANGE, stopping at the first thingage or before a
+  # wall, and slicks the floor there. Zapping takes a turn
+  def zap_slip_wand(dx, dy)
+    @offering = nil
+    at = @knapsack[:slip_wands].index(&:positive?) or return say("Your wand of slipperiness has no charges left on this level.")
+    @knapsack[:slip_wands][at] -= 1
+    x, y = @px, @py
+    THROW_RANGE.times do
+      break if wall?(x + dx, y + dy)
+
+      x += dx
+      y += dy
+      break if monster_at(x, y)
+    end
+    say "You zap the wand of slipperiness, #{splash_words(:slippery, *spread(:slippery, x, y))}."
     end_turn
   end
 
@@ -2432,6 +2770,65 @@ class Dungeon
     true
   end
 
+  # Every other critter's survival instincts, and the Dodo's opposite of each, in the order it looks for a
+  # chance. Prey keeps clear of an enraged hunter, so a Dodo strikes the hunter, whose HIT turns it on the Dodo
+  # instead. The trap-wise steer round traps, so a Dodo walks onto the nearest one. Anything not spoiling for a
+  # fight keeps its distance from the player, so a Dodo walks up and stands beside them. Hitting a Dodo only
+  # spurns it, and it carries on regardless
+  def dodo_act(m)
+    dodo_lay(m)
+    near = ->(x, y) { (x - m.x).abs <= SIGHT && (y - m.y).abs <= SIGHT }
+    far = ->(x, y) { (x - m.x).abs + (y - m.y).abs }
+    hunter = @monsters.select do |h|
+      PREY.key?(h.name) && h.hp.positive? && near.(h.x, h.y) && h.pursuit_target.is_a?(Thingage) &&
+        !h.pursuit_target.equal?(m) && state_machine(h).state.is_a?(DoorLock::EnragedState)
+    end.min_by { |h| far.(h.x, h.y) }
+    return dodo_strike(m, hunter) if hunter && far.(hunter.x, hunter.y) == 1
+    return dodo_step(m, [hunter.x, hunter.y]) if hunter
+
+    trap = @traps.to_h.keys.select { |spot| near.(*spot) && spot != [m.x, m.y] }.min_by { |spot| far.(*spot) }
+    return dodo_step(m, trap) if trap
+
+    dodo_step(m) if (m.x - @px).abs <= SIGHT && (m.y - @py).abs <= SIGHT
+  end
+
+  # The chance, each time it acts, that a Dodo lays an egg, and that a Dodo's egg is developed
+  DODO_LAY_CHANCE = 0.01
+  DODO_DEVELOPED_CHANCE = 0.5
+
+  # Now and then, where a Quail would guard a nest, a Dodo drops an egg wherever it happens to stand, and
+  # wanders off. It won't lay on top of another egg
+  def dodo_lay(m)
+    return if @eggs.key?([m.x, m.y]) || rand >= DODO_LAY_CHANCE
+
+    @eggs[[m.x, m.y]] = [Egg.new(rand < DODO_DEVELOPED_CHANCE, false, true)]
+    say "The Dodo lays an egg and wanders off." if (m.x - @px).abs <= SIGHT && (m.y - @py).abs <= SIGHT
+  end
+
+  # A Dodo pecks a hunter, which turns from its prey to the Dodo, unless the peck finishes it
+  def dodo_strike(m, hunter)
+    seen = (hunter.x - @px).abs <= SIGHT && (hunter.y - @py).abs <= SIGHT
+    dmg = blow(m)
+    hunter.hp -= dmg
+    if hunter.hp.positive?
+      state_machine(hunter).transit(DoorLock::StateEvent::HIT, self, hunter, m)
+      say "The Dodo pecks the #{hunter.name} for #{dmg}, and the #{hunter.name} turns on the Dodo!" if seen
+    else
+      @monsters.delete(hunter)
+      say "The Dodo pecks the #{hunter.name} to death!" if seen
+    end
+  end
+
+  # A Dodo's step toward a goal square, or toward beside the player, finding its way round walls, then treading
+  # on whatever lies there
+  def dodo_step(m, goal = nil)
+    (nx, ny = path_step(m, goal)) or return
+    return if monster_at(nx, ny) || [nx, ny] == [@px, @py]
+
+    m.x, m.y = nx, ny
+    tread(m)
+  end
+
   # A Quail walks to the plate it saw the player ride, one action per square, steps onto it as an action of its
   # own, and rides it on the next, landing in a random room like any rider. It gives up if no walk gets there
   def board_plate(m)
@@ -2443,6 +2840,7 @@ class Dungeon
       return
     end
 
+    return if m.stuck.to_i.positive?
     (nx, ny = path_step(m, plate)) or return m.plate_bound = nil
     return if monster_at(nx, ny) || [nx, ny] == [@px, @py]
 
@@ -2454,6 +2852,7 @@ class Dungeon
   # when no walk gets there. Everything else steps straight at the player and gets stuck behind corners; only
   # the Quail is clever enough to find its way round. Given a goal square instead, the walk ends on it
   def path_step(m, goal = nil, wary: false)
+    return if m.stuck.to_i.positive? # glued in place, it goes nowhere
     start = [m.x, m.y]
     first = { start => nil } # each square reached, mapped to the first step taken toward it
     queue = [start]
@@ -2540,7 +2939,7 @@ class Dungeon
     elsif @treasure.key?([x, y]) then "$"
     elsif @sandwiches.key?([x, y]) then "%"
     elsif @plates.key?([x, y]) then @plates[[x, y]]
-    elsif @traps&.dig([x, y], :seen) then @traps[[x, y]][:kind] == :poison ? BROKEN_POTION : WAND
+    elsif @traps&.dig([x, y], :seen) then { poison: BROKEN_POTION, glue: GLUE, slippery: SLIPPERY }.fetch(@traps[[x, y]][:kind], WAND)
     elsif [x, y] == @cage&.dig(:plate) then "o"
     else @map[y][x]
     end
@@ -2638,6 +3037,84 @@ PAD = [
 ]
 
 # Serves one shared Dungeon over plain HTTP; each button is a form that POSTs, then redirects back
+# Fluffs a plaque's XML into XHTML with plaque.xslt, server-side. Ruby's standard library has no XSLT, so this
+# uses the nokogiri gem when it's installed, and the xsltproc command otherwise
+module Plaque
+  XSLT = File.join(__dir__, "plaque.xslt")
+  XHTML = "http://www.w3.org/1999/xhtml"
+
+  # Every plaque earned in the console, oldest first, as one XML file; the last hero on it is the name offered
+  # next time. The tests point it somewhere else
+  WALL = File.join(__dir__, "wall_of_fallen_heroes.xml")
+  class << self
+    attr_writer :wall
+
+    def wall = @wall || WALL
+  end
+
+  # A name fits the plaque's line between its bars
+  NAME_LENGTH = 28
+
+  # A typed name, without control characters or the spaces around it, cut to NAME_LENGTH
+  def self.clean_name(text) = text.to_s.gsub(/[[:cntrl:]]/, "").strip[0, NAME_LENGTH]
+
+  # Hangs a plaque's XML on the wall, starting the wall if there's none yet
+  def self.record(xml)
+    doc = File.exist?(wall) ? REXML::Document.new(File.read(wall)) : REXML::Document.new.tap { |d| d << REXML::XMLDecl.new("1.0", "UTF-8") }
+    (doc.root || doc.add_element("wall")).add_element(REXML::Document.new(xml).root)
+    File.write(wall, doc.to_s)
+  end
+
+  # The name on the wall's newest plaque, or nil
+  def self.last_name
+    File.exist?(wall) or return nil
+    name = REXML::XPath.match(REXML::Document.new(File.read(wall)), "/wall/plaque/name").last&.text
+    name unless name.to_s.empty?
+  rescue REXML::ParseException
+    nil
+  end
+
+  # :nokogiri, :xsltproc, or nil when neither is around
+  def self.processor
+    return @processor if defined?(@processor)
+
+    @processor = begin
+      require 'nokogiri'
+      :nokogiri
+    rescue LoadError
+      :xsltproc if system("command -v xsltproc > /dev/null 2>&1")
+    end
+  end
+
+  def self.xhtml(xml)
+    case processor
+    when :nokogiri then Nokogiri::XSLT(File.read(XSLT)).apply_to(Nokogiri::XML(xml))
+    when :xsltproc
+      require 'open3'
+      out, status = Open3.capture2("xsltproc", XSLT, "-", stdin_data: xml)
+      status.success? or raise "xsltproc couldn't fluff the plaque"
+      out
+    else raise "No XSLT processor for the plaque: install the nokogiri gem or xsltproc"
+    end
+  end
+
+  # Quick and dirty: the plaque as plain console text straight from the XML, no XSLT needed
+  def self.text(xml)
+    doc = REXML::Document.new(xml)
+    name = doc.elements["plaque/name"]&.text.to_s
+    rows = [["Eggs", doc.elements["plaque/eggs"].text], ["Quails", doc.elements["plaque/quails"].text]] +
+           doc.get_elements("plaque/critter").map { |c| [c.attributes["name"], c.text] }
+    lines = ["WALL OF FALLEN HEROES", "Here lies #{name.empty? ? "an unknown hero" : name}", "In the cage when the end came:"] +
+            rows.map { |label, count| "  #{label} #{"." * [31 - label.size - count.size, 0].max} #{count}" }
+    lines.map { |line| "#{line}\n" }.join
+  end
+
+  # Just the ASCII art, out of the XHTML's pre, for a console
+  def self.ascii(xml)
+    REXML::XPath.first(REXML::Document.new(xhtml(xml)), "//x:pre", "x" => XHTML).text
+  end
+end
+
 class WebGame
   attr_reader :game
 
@@ -2720,6 +3197,15 @@ class WebGame
       return [303, { "Location" => "/" }, ""]
     end
 
+    if method == "GET" && path == "/plaque"
+      return [404, {}, "Not found"] unless @game.plaque?
+
+      begin
+        return [200, { "Content-Type" => "application/xhtml+xml; charset=utf-8" }, Plaque.xhtml(@game.plaque_xml)]
+      rescue StandardError => e
+        return [500, { "Content-Type" => "text/plain; charset=utf-8" }, "No plaque: #{e.message}"]
+      end
+    end
     return [404, {}, "Not found"] unless method == "GET" && path == "/"
 
     [200, { "Content-Type" => "text/html; charset=utf-8" }, page]
@@ -2736,7 +3222,7 @@ class WebGame
     client.read(length) if length.positive?
 
     status, headers, body = respond(method, target)
-    reason = { 200 => "OK", 303 => "See Other", 404 => "Not Found" }[status]
+    reason = { 200 => "OK", 303 => "See Other", 404 => "Not Found", 500 => "Internal Server Error" }[status]
     head = headers.merge("Content-Length" => body.bytesize, "Connection" => "close")
     client.write "HTTP/1.1 #{status} #{reason}\r\n#{head.map { |k, v| "#{k}: #{v}\r\n" }.join}\r\n#{body}"
   end
@@ -2833,6 +3319,7 @@ class WebGame
         <p>#{"#{@game.outcome} &nbsp; " unless @game.outcome.empty?}#{"GOD MODE &nbsp; " if @game.godMode?}#{"#{h @game.effects} &nbsp; " unless @game.effects.empty?}HP #{@game.hp}/#{@game.max_hp} &nbsp; AC #{@game.ac} &nbsp; Weapon #{h @game.weapon} &nbsp; Blood sugar #{@game.blood_sugar} &nbsp; Gold #{@game.gold} &nbsp; Sandwiches #{@game.sandwiches} &nbsp; #{@game.load_text} &nbsp; Depth #{@game.depth}</p>
         <pre>#{map_html}</pre>
         <p>#{@game.log.map { |line| h line }.join("<br>")}</p>
+        #{%(<iframe src="/plaque" title="Wall of Fallen Heroes" style="border: 0; width: 100%; height: 22em;"></iframe>) if @game.plaque?}
         <!-- The map spans the page like a lintel over two posts: the move pad lower left, the knapsack lower right -->
         <div class="below">
           <div class="controls">
@@ -2938,6 +3425,7 @@ class DosBox
     @godMode = godMode
     @level = level
     @game = Dungeon.new(godMode: @godMode, level: @level)
+    @game.hero_name = @name = Plaque.last_name
     @pending = nil
     @note = nil
     @error = nil
@@ -2964,13 +3452,30 @@ class DosBox
     lines.each_with_index.map { |line, i| "#{ESC}[#{i + 1};1H#{fit(line, width)}#{ESC}[0m#{ESC}[K" }.join
   end
 
-  # The screen's lines: the status, the map with the knapsack (or the keys) beside it, the log, and a prompt
+  # The screen's lines: the status, the map with the knapsack (or the keys) beside it, the log, any plaque the
+  # finished game earned, and a prompt
   def lines
     panel = panel_lines
     map = @game.cells.map do |row|
       row.map { |glyph, hungry| hungry ? "#{ESC}[1;33m#{oem(glyph)}#{ESC}[0m" : oem(glyph) }.join
     end
-    [status] + panel + map + Array.new(4) { |i| @game.log[i].to_s } + [prompt]
+    [status] + panel + map + Array.new(4) { |i| @game.log[i].to_s } + plaque_lines + [prompt]
+  end
+
+  # The finished game's plaque, made once per game and hung on the wall: the stylesheet's ASCII art, or, with
+  # no XSLT processor around, Plaque.text's plain lines. None until the game is over, or for a game that earns none
+  def plaque_lines
+    @game.plaque? or return []
+    return @plaque.last if @plaque&.first.equal?(@game)
+
+    xml = @game.plaque_xml
+    begin
+      Plaque.record(xml)
+    rescue SystemCallError
+      # a wall that can't be written to just goes without this plaque
+    end
+    text = Plaque.processor ? Plaque.ascii(xml) : Plaque.text(xml)
+    (@plaque = [@game, text.lines.map(&:chomp)]).last
   end
 
   # Handles one key, as read_key names it. Once the game is over, or has broken, only y (play again) and n or Esc
@@ -3016,8 +3521,10 @@ class DosBox
   # Plays until the player quits, then exits gracefully
   def play
     require 'io/console'
+    @game.hero_name = ask_name($stdin)
     write "#{ESC}[2J#{ESC}[?25l"
     $stdin.raw do |input|
+      @input = input
       until quit?
         write screen(($stdout.winsize.last rescue 80))
         press(read_key(input))
@@ -3035,6 +3542,15 @@ class DosBox
     return goodbye unless @error
 
     "#{goodbye}The game broke: #{@error.class}: #{@error.message}\n#{@error.backtrace.to_a.first(5).map { |l| "  #{l}\n" }.join}"
+  end
+
+  # Asks the hero's name on a clear screen, offering the last one, as ['Johnson']: _, which Enter keeps
+  def ask_name(input)
+    write "#{ESC}[2J#{ESC}[H#{ESC}[?25hWhat is your name, hero?#{" ['#{@name}']" if @name}: "
+    given = Plaque.clean_name(input.gets)
+    @name = given unless given.empty?
+    write "#{ESC}[?25l"
+    @name
   end
 
   # One key from the console: a plain character, or the name of an arrow, keypad, or Escape key
@@ -3115,6 +3631,7 @@ class DosBox
 
   def replay
     @game = Dungeon.new(godMode: @godMode, level: @level)
+    @game.hero_name = @input ? @input.cooked { ask_name(@input) } : @name
     @error = nil
     @pending = nil
   end
@@ -3141,7 +3658,7 @@ class DosBox
       elsif Dungeon::RINGS.key?(slot) then @game.wear(slot)
       elsif Dungeon::LACED.key?(slot) then @game.fling(slot, :throw)
       elsif slot == :eggs then @game.candle
-      elsif slot == :wands then @game.zap
+      elsif Dungeon::WANDS.key?(slot) then @game.zap(slot)
       elsif slot == :candles then @note = "A candle needs a potion poured into it first: P."
       elsif slot == :shields then @note = "There's nothing to do with a shield yet."
       elsif slot.is_a?(Symbol) then @game.offer(slot)
@@ -3322,7 +3839,7 @@ Scarpe.app(title: "Scarpe Rogue") do # , width: 560, height: 640) do
           elsif Dungeon::SCROLLS.key?(slot) then @game.read(slot)
           elsif Dungeon::RINGS.key?(slot) then @game.wear(slot)
           elsif slot == :eggs then @game.candle
-          elsif slot == :wands then @game.zap
+          elsif Dungeon::WANDS.key?(slot) then @game.zap(slot)
           elsif slot.is_a?(Symbol) then @game.offer(slot)
           else @game.wield(slot)
           end

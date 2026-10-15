@@ -51,7 +51,7 @@ task :sound do |_t, args|
 end
 
 task :banner do
-  `figlet Testing...`
+  `figlet "Testing..."`
 end
 
 desc "Run the tests; only if they all pass, commit with the rest of the command line as the message, and push"

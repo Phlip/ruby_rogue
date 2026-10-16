@@ -3398,6 +3398,40 @@ class DungeonTest < Minitest::Test
     Dungeon.sound_player = nil
   end
 
+  # --- the squirrel's coin ---
+
+  def arrange_squirrel(x, y) = arrange_get(:monsters) << thing(x, y, "🐿️", "squirrel", 100, 0..0, aggressive: false) # curious by kind
+
+  def test_a_hit_squirrel_is_enraged
+    arrange_arena
+    squirrel = arrange_squirrel(6, 5).last
+    @game.move(1, 0)
+    assert squirrel.aggressive
+    assert_instance_of Dungeon::DoorLock::EnragedState, @game.send(:state_machine, squirrel).state
+  end
+
+  def test_a_coin_calms_an_attacking_squirrel_back_to_curious
+    arrange_arena
+    squirrel = arrange_squirrel(6, 5).last
+    @game.move(1, 0)
+    arrange_get(:knapsack)[:gold] = 1
+    @game.send(:give, :gold, 1, 0)
+    assert_instance_of Dungeon::DoorLock::QuietState, @game.send(:state_machine, squirrel).state
+    refute squirrel.aggressive
+    assert @game.send(:curious?, squirrel), "neutral again: it comes up and taps you"
+    assert_equal 1, squirrel.coins
+    assert_includes @game.log, "You give the squirrel a coin. It pockets it and calms down, curious again."
+  end
+
+  def test_a_coin_to_a_curious_squirrel_is_just_kept
+    arrange_arena
+    squirrel = arrange_squirrel(6, 5).last
+    arrange_get(:knapsack)[:gold] = 1
+    @game.send(:give, :gold, 1, 0)
+    assert_includes @game.log, "You give the squirrel a coin. It keeps it."
+    refute squirrel.aggressive
+  end
+
   # --- the Dodo ---
 
   def arrange_dodo(x, y) = arrange_get(:monsters) << thing(x, y, "D", "Dodo", 6, 1..2, pacifist: true)
@@ -5109,6 +5143,53 @@ class DungeonTest < Minitest::Test
     add_door(6, 5).last.locked = true
     give(:gold, 1, 0)
     assert_empty assert_get(:monsters)
+  end
+
+  # Every rand() roll comes up r; rand with a range still rolls for real
+  def roll(r) = @game.define_singleton_method(:rand) { |*args| args.empty? ? r : Kernel.rand(*args) }
+
+  def test_a_locked_door_offered_a_sandwich_draws_an_imp_a_quarter_of_the_time
+    arrange_arena
+    add_door(6, 5).last.locked = true
+    arrange_get(:knapsack)[:sandwiches] = 1
+    roll(0.0)
+    give(:sandwiches, 1, 0)
+    assert_equal %w[Imp], assert_get(:monsters).map(&:name), "the door is gone, and an Imp stands by"
+    assert_equal 0, @game.sandwiches
+    assert_includes @game.log, "You give the door a sandwich. It draws an Imp, which sets upon the sandwich, and the door swings open."
+  end
+
+  def test_an_imp_already_nearby_answers_the_call
+    arrange_arena
+    add_door(6, 5).last.locked = true
+    imp = thing(10, 5, "I", "Imp", 3, 1..2, pacifist: true)
+    arrange_get(:monsters) << imp
+    arrange_get(:knapsack)[:sandwiches] = 1
+    roll(0.0)
+    give(:sandwiches, 1, 0)
+    assert_equal [imp], assert_get(:monsters), "no new Imp"
+    refute_equal [10, 5], [imp.x, imp.y], "it comes to the door"
+  end
+
+  def test_otherwise_a_locked_door_keeps_you_your_sandwich
+    arrange_arena
+    door = add_door(6, 5).last.tap { |d| d.locked = true }
+    arrange_get(:knapsack)[:sandwiches] = 1
+    roll(0.99)
+    give(:sandwiches, 1, 0)
+    assert_equal [door], assert_get(:monsters)
+    assert_equal 1, @game.sandwiches
+    assert_includes @game.log, "You give the door a sandwich. It won't take it while it's locked, so you keep it."
+  end
+
+  def test_an_imp_is_neutral_and_passive
+    arrange_arena
+    imp = thing(6, 5, "I", "Imp", 3, 1..2, pacifist: true)
+    arrange_get(:monsters) << imp
+    3.times { @game.rest }
+    assert_equal [6, 5], [imp.x, imp.y]
+    assert_equal 20, arrange_get(:hp)
+    assert_equal "I", kind("Imp")[:glyph]
   end
 
   def test_tapping_is_not_violence

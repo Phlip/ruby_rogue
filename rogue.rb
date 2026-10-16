@@ -218,6 +218,8 @@ class Dungeon
                     [UnlockingState, LockEvent::TIMER]      => OpenState,
                     [OpenState,      LockEvent::KEY]        => LockState,}
     },
+    { glyph: "I", name: "Imp",      na:  4, cr: 2, hp:  3, hit: 1..2, ac: 12, str:  6, dex: 16, con:  8, int:  8, wis:  8, cha:  6, pacifist: true,
+      transitions: doorLikeTransitions },
     { glyph: "D", name: "Dodo",     na:  3, cr: 4, hp:  6, hit: 1..2, ac:  8, str:  8, dex:  6, con: 10, int:  2, wis:  2, cha:  6, pacifist: true,
       transitions: doorLikeTransitions },
     { glyph: "Q", name: "Quail",    na:  1, cr: 5, hp: 28, hit: 4..9, ac: 15, str: 18, dex: 17, con: 16, int: 15, wis: 14, cha: 13, pacifist: true, eats: true,
@@ -330,6 +332,7 @@ class Dungeon
   # potion of sleep keeps it from acting, and disguised_potion is the POTIONS slot of a potion posing as a creature.
   # state is the STATE_TRANSITIONS machine of a hunter or a piece of furniture, kept apart from machine, a door's
   # lock. pursuit_target is who its state has it after: a hunter's prey, :ego for the player, or nil
+
   Thingage = Struct.new(:x, :y, :glyph, :name, :hp, :hit, :str, :dex, :con, :int, :wis, :cha, :pacifist, :spurned, :greedy, :fed, :ally, :coins, :aggressive,
                         :hasted, :gaseous, :farsighted, :nesting, :sugar, :starving, :slowed, :lagging, :weapon, :locked, :machine, :plate_bound, :met, :asleep, :stuck,
                         :disguised_potion, :pursuit_target, :state)
@@ -1959,6 +1962,8 @@ class Dungeon
     return appease(taker, item) if FURNITURE.include?(taker.name) && state_machine(taker).state.is_a?(DoorLock::EnragedState)
     return win_over(taker) if item == :gold && useful?(taker) && agitated?(taker)
 
+    return imp_opens(taker) if taker.name == "door" && item == :sandwiches && taker.locked
+
     if taker.name == "door"
       @monsters.delete(taker)
       "#{item == :gold ? "pockets" : "eats"} it and swings open"
@@ -1975,6 +1980,10 @@ class Dungeon
       taker.spurned = false
       taker.nesting = false
       "pockets it and sides with you, hoping for more"
+    elsif item == :gold && taker.name == "squirrel" && state_machine(taker).state.is_a?(DoorLock::EnragedState)
+      taker.coins = taker.coins.to_i + 1
+      state_machine(taker).transit(DoorLock::StateEvent::CALM, self, taker, nil)
+      "pockets it and calms down, curious again"
     elsif item == :gold && taker.name == "rat"
       taker.coins = taker.coins.to_i + 1
       taker.spurned = true
@@ -1985,6 +1994,29 @@ class Dungeon
   end
 
   def eater?(m) = EATERS.include?(m.name)
+
+  # The chance a locked door, offered a sandwich, draws an Imp to it
+  IMP_CHANCE = 0.25
+
+  # A locked door has no mouth for a sandwich, but now and then an Imp, one within sight of the door or a new one
+  # beside it, sets upon the sandwich, and the door swings open. Otherwise the player keeps the sandwich
+  def imp_opens(door)
+    unless rand < IMP_CHANCE
+      @knapsack[:sandwiches] += 1
+      return "won't take it while it's locked, so you keep it"
+    end
+
+    @monsters.delete(door)
+    beside = [[1, 0], [-1, 0], [0, 1], [0, -1]].map { |dx, dy| [door.x + dx, door.y + dy] }.select { |s| pushable_to?(s) }
+    spot = beside.first || [door.x, door.y]
+    near = ->(m) { (m.x - door.x).abs <= SIGHT && (m.y - door.y).abs <= SIGHT }
+    if (imp = @monsters.find { |m| m.name == "Imp" && m.hp.positive? && near.(m) })
+      imp.x, imp.y = spot unless beside.empty?
+    else
+      spawn_monster(nil, THINGAGES.find { |k| k[:name] == "Imp" }, at: spot)
+    end
+    "draws an Imp, which sets upon the sandwich, and the door swings open"
+  end
 
   # The # kinds, a wall and a door, whose states a hit enrages and a coin walks back
   FURNITURE = THINGAGES.select { |k| k[:glyph] == "#" }.map { |k| k[:name] }.freeze
@@ -2718,9 +2750,13 @@ class Dungeon
     m.state ||= DoorLock::Machine.new(DoorLock::STATE_TRANSITIONS, DoorLock::QuietState)
   end
 
-  # What the player does to a hunter moves its state along, pointing it at the player
+  # Who what the player does moves along the state table: the hunters, and for now the squirrel, so a coin can
+  # calm an angry one back to curious
+  MOODY = (PREY.keys + %w[squirrel]).freeze
+
+  # What the player does to a hunter or a squirrel moves its state along, pointing it at the player
   def provoke_hunter(m, event)
-    state_machine(m).transit(event, self, m, :ego) if PREY.key?(m.name)
+    state_machine(m).transit(event, self, m, :ego) if MOODY.include?(m.name)
   end
 
   # The prey a hunter is after, if any. A hunter whose prey is gone calms down, and a quiet one that sees its

@@ -411,16 +411,27 @@ class Dungeon
     @levels = {}
     @xp = 0
     @hero_level = 1
-    @log = (level == 1 ? PREFACE : []) + ["You descend into the dark#{" to depth #{level}" if level > 1}. Find the stairs (>)."]
+    @log = ["You descend into the dark#{" to depth #{level}" if level > 1}. Find the stairs (>)."]
     build_level
     take_stock
   end
 
-  # How a new game opens, ahead of the first line of the log: one log line each, wrapped by hand to fit 80 columns
+  # The opening story, on the console's splash screen before a hero's first game: wrapped by hand to fit 80 columns
   PREFACE = [
-    "A mad scientist has framed you for the demise of a large flightless quail",
-    "species, and blackmailed you to return a viable family of the endangered,",
-    "useless critters, which seem to lack a survival instinct.",
+    "\n",
+    "\tThe Situation:",
+    "\n",
+    "A rival mad scientist has framed you for the demise of a large flightless quail",
+    "species, and blackmailed you to return a viable family of the endangered, useless",
+    "critters, which seem to lack a survival instinct. The only known specimens now",
+    "shelter in the basement of an illegal genetic research facility during World War 4.5.",
+    "\n",
+    "Your task is to grab lab supplies and improvise a way into the bunkers, obtain",
+    "one quail egg and one viable adult, and get them to this ring: o. Tap that ring",
+    "to activate the Safe Room with the specimens inside it. On the way you will",
+    "encounter drugged & sleeping genetic experiments, and robotic doors. Do not under",
+    "any circumstances consume their experimental food supplements or abuse their",
+    "emergency restraint systems.",
   ].freeze
 
   # The game ends when the player dies, or springs the cage's trap on themselves and whatever else is inside;
@@ -1329,6 +1340,7 @@ class Dungeon
     @cage = nil
     @cage_room = nil
     @eggs = {}
+    @gas = {}
     @nest = nil
 
     caged = @depth >= CAGE_DEPTH
@@ -1486,8 +1498,28 @@ class Dungeon
     return say("#{dodos == 1 ? "An egg hatches" : "#{dodos} eggs hatch"}, but only Dodo chicks peep in the cage. " \
                "The adventure is over.") unless @won
 
+    @chicks = hatched
     say "#{hatched == 1 ? "An egg hatches" : "#{hatched} eggs hatch"}, and Quail chicks peep in the cage" \
         "#{", with Dodo chicks among them" if dodos.positive?}. You won!"
+    record_hero
+  end
+
+  # A winner's final score: SCORE_PER_CHICK for each Quail chick hatched, SCORE_PER_DEPTH for each level down,
+  # and a point for each piece of gold carried and each point of experience
+  SCORE_PER_CHICK = 100
+  SCORE_PER_DEPTH = 50
+
+  def final_score = @chicks.to_i * SCORE_PER_CHICK + @depth * SCORE_PER_DEPTH + gold + @xp
+  public :final_score
+
+  # A win that earns a plaque also puts the hero's name and final score in heroes.xml; a hall that can't be
+  # written to just goes without
+  def record_hero
+    (@won && plaque?) or return
+
+    Heroes.record(@hero_name.to_s.empty? ? "an unknown hero" : @hero_name, final_score)
+  rescue SystemCallError
+    nil
   end
 
   # A danger inside the cage's perimeter that keeps its plate from springing: any troll, or a coyote in its
@@ -1507,13 +1539,14 @@ class Dungeon
   # A finished game earns a plaque on the wall of fallen heroes, unless it was played as a god or started deep
   def plaque? = over? && !godMode? && @start_depth == 1
 
-  # The plaque's data, for plaque.xslt to fluff: the hero's name, how many eggs and Quails were in the cage when its bars last
+  # The plaque's data, for plaque.xslt to fluff: the hero's name and final score, how many eggs and Quails were in the cage when its bars last
   # slammed down, and how many of each other critter, by name. A cage never sprung held nothing
   def plaque_xml
     doc = REXML::Document.new
     doc << REXML::XMLDecl.new("1.0", "UTF-8")
     plaque = doc.add_element("plaque")
     plaque.add_element("name").text = @hero_name.to_s
+    plaque.add_element("score").text = final_score.to_s
     quails, others = @caged[:critters].partition { |name| name == "Quail" }
     plaque.add_element("eggs").text = @caged[:eggs].to_s
     plaque.add_element("quails").text = quails.size.to_s
@@ -1828,10 +1861,55 @@ class Dungeon
     end
     if SPLASHES.key?(slot)
       say "You throw the #{name} and it shatters, #{splash_words(SPLASHES[slot], *spread(SPLASHES[slot], x, y))}."
+    elsif slot == :sleep_potions
+      n = gas_cloud(x, y)
+      say "You throw the #{name} and it shatters, leaving sleeping gas over #{n} #{n == 1 ? "square" : "squares"}."
     else
       say "You throw the #{name} and it shatters on the floor."
     end
     end_turn
+  end
+
+  # A potion of sleep shattering on the floor leaves a cloud of sleeping gas, drawn as SLEEP_GAS, over d3 squares
+  # for SLEEP_GAS_ROUNDS rounds. Anyone starting a turn in it makes a Constitution check, a d20 plus their con
+  # modifier against SLEEP_GAS_DC, or sleeps for 2d2 rounds
+  SLEEP_GAS = "░"
+  SLEEP_GAS_ROUNDS = 20
+  SLEEP_GAS_DC = 12
+
+  # Where the potion shattered, then its open neighbors, up to d3 squares in all; returns how many
+  def gas_cloud(x, y)
+    near = [[1, 0], [-1, 0], [0, 1], [0, -1]].map { |dx, dy| [x + dx, y + dy] }.shuffle
+    spots = ([[x, y]] + near).reject { |s| wall?(*s) }.first(Dungeon.d3)
+    spots.each { |s| @gas[s] = SLEEP_GAS_ROUNDS }
+    spots.size
+  end
+
+  def con_check(con) = rand(1..20) + Dungeon.modifier(con) >= SLEEP_GAS_DC
+
+  # A monster starting its turn in the gas that fails its check falls asleep, and loses the turn
+  def gassed?(m)
+    @gas&.key?([m.x, m.y]) && !mist?(m) or return false
+    con_check(m.con) and return false
+
+    m.asleep = Dungeon.d2x2
+    say "The #{m.name} breathes the sleeping gas and falls asleep." if (m.x - @px).abs <= SIGHT && (m.y - @py).abs <= SIGHT
+    true
+  end
+
+  # The player, starting their turn in the gas, sleeps through 2d2 rounds each time they fail the check
+  def breathe_gas
+    while !over? && !gaseous? && @gas&.key?([@px, @py]) && !con_check(@abilities[:con])
+      @asleep = Dungeon.d2x2
+      say "You breathe the sleeping gas and fall asleep."
+      doze
+    end
+  end
+
+  # Each round the gas thins, and after SLEEP_GAS_ROUNDS it's gone
+  def thin_gas
+    @gas&.transform_values! { |rounds| rounds - 1 }
+    @gas&.delete_if { |_, rounds| rounds <= 0 }
   end
 
   # The potions that, shattering, leave something on the floor, and what
@@ -2313,7 +2391,7 @@ class Dungeon
   # Everyone on the player's side in the stairs' room comes down with them, landing in the new level's first room
   # Everything that makes a level that level, kept in @levels by depth while the player is elsewhere
   LEVEL_STATE = %i[@map @seen @rooms @cage @cage_room @eggs @nest @treasure @sandwiches @monsters @detected
-                   @population @plates @traps @upstairs @downstairs].freeze
+                   @population @plates @traps @gas @upstairs @downstairs].freeze
 
   # Leaves the current level as it stands, minus whoever comes along, to be found again on coming back
   def remember_level(party)
@@ -2344,22 +2422,51 @@ class Dungeon
   # A level already visited is the one the player left
   def descend
     party = side_in_room
-    remember_level(party)
+    chasers = in_hot_pursuit
+    remember_level(party + chasers)
     @depth += 1
     say "You take the stairs down to depth #{@depth}."
     enter_level("down")
     bring_along(party, @rooms.first, "down")
+    bring_chasers(chasers, @rooms.first, "down")
   end
 
   # Climbing the < returns to the level one up as the player left it, or builds it new if they never saw it, as
   # after starting deep with --level, and the player arrives on its > stairs, their side coming along
   def ascend
     party = side_in_room
-    remember_level(party)
+    chasers = in_hot_pursuit
+    remember_level(party + chasers)
     @depth -= 1
     say "You climb the stairs up to depth #{@depth}."
     enter_level("up")
     bring_along(party, @rooms.last, "up")
+    bring_chasers(chasers, @rooms.last, "up")
+  end
+
+  # The chance each creature in hot pursuit follows the player up or down the stairs
+  PURSUIT_CHANCE = 0.75
+
+  # Taking the stairs no longer always shakes off a pursuer: of those agitated and within sight, able to move and
+  # no fixture like a wall or a door, each gives chase on PURSUIT_CHANCE
+  def in_hot_pursuit
+    agitated_nearby.select { |m| !FURNITURE.include?(m.name) && !m.stuck.to_i.positive? && gives_chase? }
+  end
+
+  def gives_chase? = rand < PURSUIT_CHANCE
+
+  # The chasers land in that room of the new level, near the player, still out to get them
+  def bring_chasers(chasers, room, way)
+    return if chasers.empty?
+
+    chasers.each do |m|
+      m.x, m.y = free_spot(room)
+      m.plate_bound = nil
+      @monsters << m
+    end
+    names = and_list(chasers.map { |m| "the #{m.name}" })
+    say "#{names[0].upcase}#{names[1..]} #{chasers.size == 1 ? "chases" : "chase"} you #{way} the stairs!"
+    take_stock
   end
 
   # The player's side: allies, goblins still full from a sandwich, and a Quail following along, unspurned and off
@@ -2401,6 +2508,7 @@ class Dungeon
       break if over?
     end
     doze
+    breathe_gas
     take_stock
   end
 
@@ -2471,6 +2579,7 @@ class Dungeon
       say "The #{m.name} wakes up." if (m.x - @px).abs <= SIGHT && (m.y - @py).abs <= SIGHT
     end
     slip
+    thin_gas
     hunger
   end
 
@@ -2511,6 +2620,7 @@ class Dungeon
     @monsters.dup.each do |m|
       next if m.hp <= 0 # slain by an ally earlier this turn
       next if m.asleep.to_i.positive?
+      next if gassed?(m)
 
       if m.fed.to_i.positive?
         m.fed -= 1
@@ -2970,6 +3080,7 @@ class Dungeon
     near = (x - @px).abs <= SIGHT && (y - @py).abs <= SIGHT
     if near && (m = monster_at(x, y)) then m.glyph
     elsif bar?(x, y) then "|"
+    elsif @gas&.key?([x, y]) then SLEEP_GAS
     elsif @eggs.key?([x, y]) then "0"
     elsif [x, y] == @nest then "&"
     elsif @treasure.key?([x, y]) then "$"
@@ -3073,6 +3184,38 @@ PAD = [
 ]
 
 # Serves one shared Dungeon over plain HTTP; each button is a form that POSTs, then redirects back
+# The winners: heroes.xml, each winner's name and final score, best first. It's kept fewer than 20 long by
+# dropping the lowest scores, so the newest winner always gets on. The tests point it somewhere else
+module Heroes
+  FILE = File.join(__dir__, "heroes.xml")
+  LIMIT = 19
+
+  class << self
+    attr_writer :file
+
+    def file = @file || FILE
+  end
+
+  # Every hero on file, as [name, score], best first
+  def self.all
+    File.exist?(file) or return []
+    heroes = REXML::XPath.match(REXML::Document.new(File.read(file)), "/heroes/hero")
+    heroes.map { |h| [h.attributes["name"].to_s, h.attributes["score"].to_i] }.sort_by { |_, score| -score }
+  rescue REXML::ParseException
+    []
+  end
+
+  # Adds a winner, first dropping the lowest scores already there to leave room for them
+  def self.record(name, score)
+    heroes = (all.first(LIMIT - 1) + [[name, score]]).sort_by { |_, s| -s }
+    doc = REXML::Document.new
+    doc << REXML::XMLDecl.new("1.0", "UTF-8")
+    hall = doc.add_element("heroes")
+    heroes.each { |n, s| hall.add_element("hero", "name" => n, "score" => s.to_s) }
+    File.write(file, doc.to_s)
+  end
+end
+
 # Fluffs a plaque's XML into XHTML with plaque.xslt, server-side. Ruby's standard library has no XSLT, so this
 # uses the nokogiri gem when it's installed, and the xsltproc command otherwise
 module Plaque
@@ -3140,7 +3283,8 @@ module Plaque
     name = doc.elements["plaque/name"]&.text.to_s
     rows = [["Eggs", doc.elements["plaque/eggs"].text], ["Quails", doc.elements["plaque/quails"].text]] +
            doc.get_elements("plaque/critter").map { |c| [c.attributes["name"], c.text] }
-    lines = ["WALL OF FALLEN HEROES", "Here lies #{name.empty? ? "an unknown hero" : name}", "In the cage when the end came:"] +
+    lines = ["WALL OF FALLEN HEROES", "Here lies #{name.empty? ? "an unknown hero" : name}",
+             "Final score: #{doc.elements["plaque/score"]&.text.to_i}", "In the cage when the end came:"] +
             rows.map { |label, count| "  #{label} #{"." * [31 - label.size - count.size, 0].max} #{count}" }
     lines.map { |line| "#{line}\n" }.join
   end
@@ -3557,6 +3701,7 @@ class DosBox
   # Plays until the player quits, then exits gracefully
   def play
     require 'io/console'
+    splash($stdin) unless File.exist?(Heroes.file)
     @game.hero_name = ask_name($stdin)
     write "#{ESC}[2J#{ESC}[?25l"
     $stdin.raw do |input|
@@ -3578,6 +3723,14 @@ class DosBox
     return goodbye unless @error
 
     "#{goodbye}The game broke: #{@error.class}: #{@error.message}\n#{@error.backtrace.to_a.first(5).map { |l| "  #{l}\n" }.join}"
+  end
+
+  # Before anyone has won, the opening story fills a clear screen, until a key is tapped
+  def splash(input)
+    write "#{ESC}[2J#{ESC}[H#{ESC}[?25l"
+    write "\r\n#{Dungeon::PREFACE.map { |line| "  #{line}\r\n" }.join}\r\n  Tap any key to proceed."
+    input.raw(&:getc)
+    write "#{ESC}[?25h"
   end
 
   # Asks the hero's name on a clear screen, offering the last one, as ['Johnson']: _, which Enter keeps

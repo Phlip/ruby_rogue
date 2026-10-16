@@ -30,6 +30,7 @@
             </xsl:choose>
           </xsl:variable>
           <xsl:value-of select="concat('|   Here lies ', $who, substring($spaces, 1, 28 - string-length($who)), '|&#10;')"/>
+          <xsl:value-of select="concat('|   Final score: ', score, substring($spaces, 1, 25 - string-length(score)), '|&#10;')"/>
           <xsl:text>|   In the cage when the end came:        |&#10;</xsl:text>
           <xsl:text>|                                         |&#10;</xsl:text>
           <xsl:call-template name="row">

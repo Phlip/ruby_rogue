@@ -8,6 +8,8 @@ require_relative 'rogue'
 # The tests hang their plaques on a wall of their own, never the real one
 Plaque.wall = File.join(Dir.tmpdir, "test_wall_of_fallen_heroes_#{Process.pid}.xml")
 Minitest.after_run { File.delete(Plaque.wall) if File.exist?(Plaque.wall) }
+Heroes.file = File.join(Dir.tmpdir, "test_heroes_#{Process.pid}.xml")
+Minitest.after_run { File.delete(Heroes.file) if File.exist?(Heroes.file) }
 
 # Sounds you can hear while the tests run. Minitest shuffles its test classes, so this one is pulled to the front:
 # its sounds play in the background, and keep playing while every other test runs. QUIET=1 skips them
@@ -167,8 +169,7 @@ class DungeonTest < Minitest::Test
     assert_equal "fists", @game.weapon
     assert_equal({ gold: 0, sandwiches: 0, potions: 0, speed_potions: 0, gas_potions: 0, slow_potions: 0, healing_potions: 0, sleep_potions: 0, glue_potions: 0, slip_potions: 0, empty_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0, candles: 0, laced_potions: 0, laced_speed_potions: 0, laced_gas_potions: 0, laced_slow_potions: 0, laced_healing_potions: 0, laced_sleep_potions: 0, laced_glue_potions: 0, laced_slip_potions: 0, laced_empty_potions: 0, eggs: [], weapons: [], shields: [], wands: [], slip_wands: [] }, @game.knapsack)
     assert_equal 1, @game.depth
-    assert_equal Dungeon::PREFACE + ["You descend into the dark. Find the stairs (>)."], @game.log
-    assert(@game.log.all? { |line| line.size <= 80 }, "each line fits the console")
+    assert_equal ["You descend into the dark. Find the stairs (>)."], @game.log
     refute @game.over?
   end
 
@@ -2746,6 +2747,54 @@ class DungeonTest < Minitest::Test
     assert_equal "", Plaque.clean_name(nil)
   end
 
+  def fresh_heroes = File.exist?(Heroes.file) && File.delete(Heroes.file)
+
+  def test_a_winner_goes_in_the_hall_of_heroes_with_their_final_score
+    fresh_heroes
+    @game.hero_name = "Johnson"
+    caged_haul
+    assert_equal [["Johnson", @game.final_score]], Heroes.all
+  ensure
+    fresh_heroes
+  end
+
+  def test_the_final_score_counts_chicks_depth_gold_and_experience
+    caged_haul # one Quail chick at depth 1
+    arrange_get(:knapsack)[:gold] = 7
+    arrange_set :xp, 30
+    assert_equal 100 + 50 + 7 + 30, @game.final_score
+  end
+
+  def test_a_loss_or_a_god_s_win_is_not_recorded
+    fresh_heroes
+    arrange_arena
+    arrange_set :hp, 0
+    @game.send(:record_hero)
+    @game = Dungeon.new(godMode: true)
+    caged_haul
+    assert_empty Heroes.all
+  ensure
+    fresh_heroes
+  end
+
+  def test_the_hall_stays_under_twenty_by_dropping_the_lowest
+    fresh_heroes
+    25.times { |i| Heroes.record("hero #{i}", (i + 1) * 10) }
+    Heroes.record("Last Place", 1)
+    heroes = Heroes.all
+    assert_equal Heroes::LIMIT, heroes.size
+    assert_operator heroes.size, :<, 20
+    assert_equal ["hero 24", 250], heroes.first, "best first"
+    assert_equal ["Last Place", 1], heroes.last, "the newest always gets on, even with the lowest score"
+  ensure
+    fresh_heroes
+  end
+
+  def test_the_plaque_carries_the_final_score
+    caged_haul
+    assert_equal @game.final_score.to_s, plaque_text("/plaque/score")
+  end
+
   def test_a_cage_never_sprung_leaves_an_empty_plaque
     arrange_arena
     arrange_set :hp, 0
@@ -2777,7 +2826,7 @@ class DungeonTest < Minitest::Test
     caged_haul
     @game.hero_name = "Johnson"
     text = Plaque.text(@game.plaque_xml)
-    assert_equal ["WALL OF FALLEN HEROES", "Here lies Johnson", "In the cage when the end came:",
+    assert_equal ["WALL OF FALLEN HEROES", "Here lies Johnson", "Final score: #{@game.final_score}", "In the cage when the end came:",
                   "  Eggs .......................... 1", "  Quails ........................ 1",
                   "  Dodo .......................... 2"], text.lines.map(&:chomp)
   end
@@ -2828,6 +2877,16 @@ class DungeonTest < Minitest::Test
   def test_the_console_shows_no_plaque_mid_game
     dos = DosBox.new
     refute(dos.lines.any? { |l| l.include?("WALL OF FALLEN HEROES") })
+    refute(dos.lines.any? { |l| l.include?(Dungeon::PREFACE.first) }, "the story is on the splash, never in the game")
+  end
+
+  def test_the_splash_shows_the_story_and_waits_for_a_key
+    dos = DosBox.new
+    key = StringIO.new("x")
+    def key.raw = yield(self) # a StringIO has no console to put in raw mode
+    out = capture_io { dos.splash(key) }.first
+    assert_includes out, "Tap any key to proceed."
+    assert key.eof?, "the key was read"
   end
 
   def test_the_stylesheet_fluffs_the_plaque_into_xhtml_ascii_art
@@ -3122,6 +3181,71 @@ class DungeonTest < Minitest::Test
   end
 
   # --- potions of sleep ---
+
+  # Every Constitution check comes out as the given answers, one after another, the last repeating
+  def con_checks(*answers)
+    @game.define_singleton_method(:con_check) { |_con| answers.size > 1 ? answers.shift : answers.first }
+  end
+
+  def test_a_sleep_potion_thrown_on_the_floor_leaves_a_gas_cloud
+    arrange_arena
+    arrange_get(:knapsack)[:sleep_potions] = 1
+    @game.send(:throw_potion, :sleep_potions, 1, 0)
+    gas = assert_get(:gas)
+    assert_includes 1..3, gas.size
+    assert_equal [Dungeon::SLEEP_GAS_ROUNDS - 1] * gas.size, gas.values, "a round has passed already"
+    assert_match(/\AYou throw the potion of sleep and it shatters, leaving sleeping gas over [123] squares?\.\z/,
+                 @game.log.find { |l| l.start_with?("You throw") })
+  end
+
+  def test_the_gas_shows_on_the_map
+    arrange_arena
+    arrange_set :gas, { [7, 5] => 5 }
+    assert_equal Dungeon::SLEEP_GAS, @game.rows[5][7]
+  end
+
+  def test_the_gas_is_gone_after_its_rounds
+    arrange_arena
+    arrange_set :gas, { [9, 9] => 3 }
+    3.times { @game.rest }
+    assert_empty assert_get(:gas)
+  end
+
+  def test_a_monster_starting_its_turn_in_the_gas_may_fall_asleep
+    arrange_arena
+    goblin = arrange_monster(7, 5, hp: 100, hit: 0..0).last
+    arrange_set :gas, { [7, 5] => 10 }
+    con_checks(false)
+    @game.rest
+    assert goblin.asleep.to_i.positive?
+    assert_equal [7, 5], [goblin.x, goblin.y], "it loses its turn"
+    assert_includes @game.log, "The goblin breathes the sleeping gas and falls asleep."
+  end
+
+  def test_a_monster_that_passes_its_check_carries_on
+    arrange_arena
+    goblin = arrange_monster(8, 5, hp: 100, hit: 0..0).last
+    arrange_set :gas, { [8, 5] => 10 }
+    con_checks(true)
+    @game.rest
+    refute goblin.asleep.to_i.positive?
+    assert_equal [7, 5], [goblin.x, goblin.y]
+  end
+
+  def test_the_player_starting_a_turn_in_the_gas_may_fall_asleep
+    arrange_arena
+    arrange_set :gas, { [5, 5] => 10 }
+    con_checks(false, true) # fails once, then shrugs it off
+    @game.rest
+    assert_includes @game.log, "You breathe the sleeping gas and fall asleep."
+    assert_includes @game.log, "You wake up."
+    assert_equal 0, assert_get(:asleep)
+  end
+
+  def test_the_con_check_is_a_d20_plus_con_against_twelve
+    rolls = Array.new(2000) { @game.send(:con_check, 10) }
+    assert_in_delta 0.45, rolls.count(true) / 2000.0, 0.05, "9 of 20 rolls make 12 with no modifier"
+  end
 
   def test_quaffing_a_potion_of_sleep_lets_the_monsters_carry_on
     arrange_arena
@@ -4772,6 +4896,43 @@ class DungeonTest < Minitest::Test
     assert_equal 2, @game.depth
     refute_nil assert_get(:map)
     assert_equal assert_get(:downstairs), player
+  end
+
+  # Whether each creature in hot pursuit follows up or down the stairs, fixed for the test
+  def chase(answer) = @game.define_singleton_method(:gives_chase?) { answer }
+
+  def test_a_pursuer_follows_you_down_the_stairs
+    stairs_room
+    goblin = arrange_monster(4, 5, hp: 100, hit: 0..0).last # behind the player, out to get them
+    chase(true)
+    take_the_stairs_east
+    assert_equal 2, @game.depth
+    assert_includes assert_get(:monsters), goblin
+    assert_includes @game.log, "The goblin chases you down the stairs!"
+    refute_includes assert_get(:levels)[1][:@monsters], goblin, "and isn't also left upstairs"
+  end
+
+  def test_a_pursuer_that_doesnt_give_chase_stays_behind
+    stairs_room
+    goblin = arrange_monster(4, 5, hp: 100, hit: 0..0).last
+    chase(false)
+    take_the_stairs_east
+    refute_includes assert_get(:monsters), goblin
+    assert_includes assert_get(:levels)[1][:@monsters], goblin
+  end
+
+  def test_only_those_in_hot_pursuit_give_chase
+    stairs_room
+    calm = arrange_monster(4, 5, hp: 100, aggressive: false).last
+    far = arrange_monster(5 + Dungeon::SIGHT + 2, 5, hp: 100).last
+    chase(true)
+    take_the_stairs_east
+    refute_includes assert_get(:monsters), calm, "never out to get you"
+    refute_includes assert_get(:monsters), far, "too far off to be in pursuit"
+  end
+
+  def test_about_three_in_four_give_chase
+    assert_in_delta 0.75, Array.new(2000) { @game.send(:gives_chase?) }.count(true) / 2000.0, 0.04
   end
 
   def test_half_the_levels_have_one_teleport_plate

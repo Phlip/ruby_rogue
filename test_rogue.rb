@@ -42,7 +42,7 @@ class SoundTest < Minitest::Test
     Dungeon.sound_player.("bell")  # toll for the Quail
 
     assert_equal %w[troll], game.instance_variable_get(:@monsters).map(&:name)
-    assert_equal %w[frog2 kitten wolf bell], @played
+    assert_equal %w[frog2 kitten bat_hit wolf bell], @played
   end
 
   def test_the_menagerie_plays_one_after_another_in_the_background
@@ -3493,7 +3493,7 @@ class DungeonTest < Minitest::Test
     arrange_troll(8, 5)
     arrange_quail(9, 5).last.spurned = true # so it stays put while they meet
     2.times { @game.rest }
-    assert_equal %w[wolf], played
+    assert_equal %w[bat_hit wolf], played
   ensure
     Dungeon.sound_player = nil
   end
@@ -3505,7 +3505,20 @@ class DungeonTest < Minitest::Test
     arrange_set :hp, 4
     arrange_monster(6, 5, hit: 2..2) # each rest heals 1 and each blow takes 2
     sounds = 4.times.map { played.clear; @game.rest; played.dup }
-    assert_equal [%w[error error error], %w[error error], %w[bat_chirp], %w[error]], sounds
+    assert_equal [%w[error error error error], %w[error error error], %w[error bat_chirp], %w[error error]], sounds,
+                 "each blow's own error, then the alarm"
+  ensure
+    Dungeon.sound_player = nil
+  end
+
+  def test_a_monster_taking_a_blow_chirps_a_short_bat
+    played = []
+    Dungeon.sound_player = ->(name) { played << name }
+    arrange_arena
+    arrange_monster(6, 5, hp: 100, hit: 0..0)
+    @game.move(1, 0)
+    assert_equal %w[bat_hit], played, "and a blow of nothing on the hero is silent"
+    assert File.exist?(File.join(__dir__, "sounds", "#{Dungeon::NPC_HIT_SOUND}.wav"))
   ensure
     Dungeon.sound_player = nil
   end
@@ -3517,7 +3530,7 @@ class DungeonTest < Minitest::Test
     arrange_set :hp, 5
     arrange_monster(6, 5, hit: 5..5) # resting to 6, then down to 1
     @game.rest
-    assert_equal %w[bat_chirp], played
+    assert_equal %w[error bat_chirp], played
   ensure
     Dungeon.sound_player = nil
   end
@@ -3767,7 +3780,7 @@ class DungeonTest < Minitest::Test
     @game.rest
     assert_equal %w[coyote], assert_get(:monsters).map(&:name)
     assert_equal "The coyote eats the Axebeak!", last_log
-    assert_equal %w[wolf], played
+    assert_equal %w[bat_hit wolf], played
   ensure
     Dungeon.sound_player = nil
   end

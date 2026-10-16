@@ -431,13 +431,15 @@ class Dungeon
     "species; blackmailing you to return a viable family of the endangered, useless",
     "critters, which seem to lack a survival instinct. The only known specimens now",
     "shelter in bunkers below an illegal genetic research facility during World War 4.5.",
+    "Owing to a direct hit to the control bunker, all surviving humans have evacuated",
+    "the premises and are unaware of your endeavors, and have the only passcards.",
     "\n",
     "Your task is to grab lab supplies and improvise a way into the bunkers, obtain",
     "one quail egg and one viable adult, and get them to this ring: o. Step on that ring",
     "to activate the Safe Room with the specimens inside it. On the way you will",
     "encounter drugged & sleeping genetic experiments, and robotic doors. Do not, under",
-    "any circumstances, consume their experimental food supplements or abuse their",
-    "emergency restraint systems.",
+    "any circumstances, consume their experimental food supplements, infiltrate locked",
+    "areas, or abuse the subjects' experimental emergency restraint systems.",
   ].freeze
 
   # The game ends when the player dies, or springs the cage's trap on themselves and whatever else is inside;
@@ -1696,6 +1698,7 @@ class Dungeon
     return capture(foe) if foe.ally && useful?(foe)
 
     foe.hp -= dmg
+    ouch(dmg)
     provoked = !foe.pacifist && !foe.aggressive
     foe.aggressive = true unless foe.pacifist
     cornered = foe.hp.positive? && brain?(foe) && tight_spot?(foe) # before any knock back moves it
@@ -2747,6 +2750,7 @@ class Dungeon
     elsif trap[:kind] == :poison
       dmg = Dungeon.d2x2
       m.hp -= dmg
+      ouch(dmg)
       unless m.hp.positive?
         @monsters.delete(m)
         say "The #{m.name} steps on a potion of poison, and it kills the #{m.name}!" if seen
@@ -2844,15 +2848,25 @@ class Dungeon
   # Sounds the alarm for a count, if it has one
   def alarm(count) = ALARMS.fetch(count, []).each { |name| sound name }
 
-  # The player loses n hit points, sounding the alarm for the lowest count they fall to; a blow that falls past
-  # several sounds only the last, and dying below zero sounds as 0
+  # The player loses n hit points, with HERO_HIT_SOUND, then sounds the alarm for the lowest count they fall to;
+  # a blow that falls past several sounds only the last, and dying below zero sounds as 0
   def hurt(n)
     @hp -= n
-    alarm([@hp, 0].max) if n.positive?
+    return unless n.positive?
+
+    sound HERO_HIT_SOUND
+    alarm([@hp, 0].max)
   end
+
+  # Anyone else taking a blow, or a trap's damage, chirps a short burst of bat; a blow of nothing is silent
+  def ouch(dmg) = dmg.positive? && sound(NPC_HIT_SOUND)
 
   # The sound a hunter makes eating its prey, from the sounds folder
   EATING_SOUND = "wolf"
+
+  # The sounds of a blow landing: on the hero, and on anyone else
+  HERO_HIT_SOUND = "error"
+  NPC_HIT_SOUND = "bat_hit"
 
   # Plays a named sound, when a front end has said how; nil, as in the tests, keeps the game silent
   class << self
@@ -2905,6 +2919,7 @@ class Dungeon
       end
       dmg = blow(m)
       prey.hp -= dmg
+      ouch(dmg)
       if prey.hp.positive?
         say "The #{m.name} hits the #{prey.name} for #{dmg}." if seen.(prey.x, prey.y)
         knock_back(prey, prey.x - m.x, prey.y - m.y) if prey.name == "Quail"
@@ -2962,6 +2977,7 @@ class Dungeon
     seen = (hunter.x - @px).abs <= SIGHT && (hunter.y - @py).abs <= SIGHT
     dmg = blow(m)
     hunter.hp -= dmg
+    ouch(dmg)
     if hunter.hp.positive?
       state_machine(hunter).transit(DoorLock::StateEvent::HIT, self, hunter, m)
       say "The Dodo pecks the #{hunter.name} for #{dmg}, and the #{hunter.name} turns on the Dodo!" if seen
@@ -3063,6 +3079,7 @@ class Dungeon
   def ally_strike(ally, enemy)
     dmg = blow(ally)
     enemy.hp -= dmg
+    ouch(dmg)
     return say("Your #{ally.name} hits the #{enemy.name} for #{dmg}.") if enemy.hp.positive?
 
     @monsters.delete(enemy)

@@ -3157,7 +3157,7 @@ class DungeonTest < Minitest::Test
     assert @game.won?
     assert_equal "YOU WON", @game.outcome
     assert_includes @game.log, "The bars slam down behind you. Your haul: a Quail and 2 eggs."
-    assert_equal "An egg hatches, and Quail chicks peep in the cage. You won!", last_log
+    assert_equal "An egg hatches, and Quail chicks peep in the Safe Room. You won!", last_log
   end
 
   def test_eggs_lying_in_the_cage_hatch_too_but_not_those_outside
@@ -3167,7 +3167,7 @@ class DungeonTest < Minitest::Test
     spring
     assert @game.won?
     assert_includes @game.log, "The bars slam down behind you. Your haul: a Quail and 2 eggs."
-    assert_equal "2 eggs hatch, and Quail chicks peep in the cage. You won!", last_log
+    assert_equal "2 eggs hatch, and Quail chicks peep in the Safe Room. You won!", last_log
   end
 
   def test_yolk_eggs_never_hatch
@@ -3660,7 +3660,7 @@ class DungeonTest < Minitest::Test
     spring
     assert @game.over?
     refute @game.won?
-    assert_includes @game.log, "An egg hatches, but only Dodo chicks peep in the cage. The adventure is over."
+    assert_includes @game.log, "An egg hatches, but only Dodo chicks peep in the Safe Room. The adventure is over."
   end
 
   def test_quail_chicks_win_with_dodo_chicks_among_them
@@ -3668,7 +3668,7 @@ class DungeonTest < Minitest::Test
     arrange_get(:knapsack)[:eggs] = [egg(true), dodo_egg(true)]
     arrange_quail(12, 12)
     spring
-    assert_includes @game.log, "An egg hatches, and Quail chicks peep in the cage, with Dodo chicks among them. You won!"
+    assert_includes @game.log, "An egg hatches, and Quail chicks peep in the Safe Room, with Dodo chicks among them. You won!"
   end
 
   def test_hitting_a_dodo_only_spurns_it

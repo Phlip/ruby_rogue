@@ -1495,11 +1495,11 @@ class Dungeon
     dodos = eggs.count { |e| e.developed && e.dodo }
     @won = hatched.positive?
     return say("No egg in your haul hatches. The adventure is over.") if (hatched + dodos).zero?
-    return say("#{dodos == 1 ? "An egg hatches" : "#{dodos} eggs hatch"}, but only Dodo chicks peep in the cage. " \
+    return say("#{dodos == 1 ? "An egg hatches" : "#{dodos} eggs hatch"}, but only Dodo chicks peep in the Safe Room. " \
                "The adventure is over.") unless @won
 
     @chicks = hatched
-    say "#{hatched == 1 ? "An egg hatches" : "#{hatched} eggs hatch"}, and Quail chicks peep in the cage" \
+    say "#{hatched == 1 ? "An egg hatches" : "#{hatched} eggs hatch"}, and Quail chicks peep in the Safe Room" \
         "#{", with Dodo chicks among them" if dodos.positive?}. You won!"
     record_hero
   end

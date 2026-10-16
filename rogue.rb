@@ -418,19 +418,25 @@ class Dungeon
 
   # The opening story, on the console's splash screen before a hero's first game: wrapped by hand to fit 80 columns
   PREFACE = [
+    "        9",
+    "      (}",
+    "     /|",
+    "    / )",
+    "     /",
+    "  ~~~~\\~~~",
     "\n",
     "\tThe Situation:",
     "\n",
     "A rival mad scientist has framed you for the demise of a large flightless quail",
-    "species, and blackmailed you to return a viable family of the endangered, useless",
+    "species; blackmailing you to return a viable family of the endangered, useless",
     "critters, which seem to lack a survival instinct. The only known specimens now",
-    "shelter in the basement of an illegal genetic research facility during World War 4.5.",
+    "shelter in bunkers below an illegal genetic research facility during World War 4.5.",
     "\n",
     "Your task is to grab lab supplies and improvise a way into the bunkers, obtain",
-    "one quail egg and one viable adult, and get them to this ring: o. Tap that ring",
+    "one quail egg and one viable adult, and get them to this ring: o. Step on that ring",
     "to activate the Safe Room with the specimens inside it. On the way you will",
-    "encounter drugged & sleeping genetic experiments, and robotic doors. Do not under",
-    "any circumstances consume their experimental food supplements or abuse their",
+    "encounter drugged & sleeping genetic experiments, and robotic doors. Do not, under",
+    "any circumstances, consume their experimental food supplements or abuse their",
     "emergency restraint systems.",
   ].freeze
 

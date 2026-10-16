@@ -7,7 +7,7 @@ A fun, one-file roguelike game platform. Go down into the dungeon, find a Quail'
 caged with you before the dark (or your blood sugar) gets you.
 
 ```
-ruby rogue.rb
+ruby ruby_rogue.rb
 ```
 
 That opens a DOS box window like this, using the same technology as the original Rogue "Tunnels of Doom."
@@ -49,11 +49,11 @@ which needs the `scarpe` gem, and the plaque at the end of a game, which needs a
 
 | Command                          | Where it plays                                                                                  |
 | -------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `ruby rogue.rb` or `--dos`       | Right in your terminal, styled after the original PC Rogue: ANSI screen, code page 437 glyphs, Rogue's keys |
-| `ruby rogue.rb --web [port]`     | In a browser at `http://localhost:4567/` (or the port you give, 1–65535)                         |
+| `ruby ruby_rogue.rb` or `--dos` | Right in your terminal, styled after the original PC Rogue: ANSI screen, code page 437 glyphs, Rogue's keys |
+| `ruby ruby_rogue.rb --web [port]` | In a browser at `http://localhost:4567/` (or the port you give, 1–65535)                         |
 | add `--level N`                  | Start at depth N (1–99). It's a cheat, so it also turns on god mode; New game starts there too   |
 | add `--god`                      | God mode: you take no damage, everything else still can                                          |
-| `ruby rogue.rb --help`           | Lists all of the above                                                                          |
+| `ruby ruby_rogue.rb --help`      | Lists all of the above                                                                          |
 
 All three front ends draw the same `Dungeon`. The game logic knows nothing about the screens, so a turn plays
 the same everywhere.
@@ -97,12 +97,14 @@ Press `?` in the game for the full list.
 ## Developing
 
 ```
+rake play                    # play in this console
+rake god                     # play in god mode
 rake test                    # run test_rogue.rb (Minitest)
 rake ship your message here  # run the tests; only if they pass, commit everything and push
 rake claude                  # open Claude Code here; words after it become the first prompt
 ```
 
-`rogue.rb` holds the game (`Dungeon`) and its front ends (`DosBox` and `WebGame`). Every kind of creature and 
+`ruby_rogue.rb` holds the game (`Dungeon`) and its front ends (`DosBox` and `WebGame`). Every kind of creature and 
 item is one row of `Dungeon::THINGAGES`: its glyph, D&D-style ability scores, challenge rating 
 (the first depth it turns up on), and how peaceful it is. Doors, sandwiches, and the other locked 
 things share a small state machine, `Dungeon::DoorLock`.

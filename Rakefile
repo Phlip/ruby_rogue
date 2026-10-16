@@ -10,6 +10,12 @@
 #   to run, so ship exits once it's done, before rake gets to them. Quote anything the shell would eat, such as
 #   it's or (parentheses); a word with = in it, or starting with -, goes to rake instead of the message
 #
+# rake play
+#   plays the game in this console
+#
+# rake god
+#   plays it in god mode, where you take no damage
+#
 # rake claude
 #   opens Claude Code in this folder. Words after claude become its first prompt, the same way ship's become
 #   the commit message, and the same quoting rules apply
@@ -90,4 +96,16 @@ task :claude do
   # exec hands the terminal straight to claude, and rake never sees the prompt words as tasks
   Dir.chdir(__dir__)
   prompt.empty? ? exec("claude-code") : exec("claude-code", prompt)
+end
+
+desc "Play the game in this console"
+task :play do
+  Dir.chdir(__dir__)
+  exec RbConfig.ruby, "ruby_rogue.rb" # exec hands the terminal straight to the game
+end
+
+desc "Play the game in god mode, where you take no damage"
+task :god do
+  Dir.chdir(__dir__)
+  exec RbConfig.ruby, "ruby_rogue.rb", "--god"
 end

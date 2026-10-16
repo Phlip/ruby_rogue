@@ -1,6 +1,6 @@
-# Run with: ruby rogue.rb, which plays in the console like the original PC Rogue (the same as --dos)
-# Or in a browser: ruby rogue.rb --web [port], e.g. --web 8080, then open http://localhost:8080/ (default port 4567)
-# Or in a desktop window, drawn by Scarpe: ruby rogue.rb --scarpe
+# Run with: ruby ruby_rogue.rb, which plays in the console like the original PC Rogue (the same as --dos)
+# Or in a browser: ruby ruby_rogue.rb --web [port], e.g. --web 8080, then open http://localhost:8080/ (default port 4567)
+# Or in a desktop window, drawn by Scarpe: ruby ruby_rogue.rb --scarpe
 # Add --god to any of them for god mode, where the player takes no damage; --help lists all of these
 
 require 'socket'
@@ -8,6 +8,24 @@ require 'uri'
 require 'rexml/document'
 
 # The game knows nothing about Scarpe; the app below only draws it and pushes buttons
+# The one stream of input events every state table reads: what the player, or prey a hunter sees, does to a
+# creature, a piece of furniture, or the cage's plate, and what turns a lock
+module StateEvent
+  TAP      = :tap
+  PUSH     = :push
+  HIT      = :hit
+  SEE_PREY = :see_prey
+  CALM     = :calm # a hunter's prey is gone, or the player paid off a piece of furniture
+  FLEE     = :flee # pushed or hit in a tight spot, with a brain to mind it
+  SAFE     = :safe # out of the tight spot it fled
+  STEP_ON  = :step_on # someone steps onto it, as onto any trap
+
+  # A lock's: a door's, or a sandwich's wrapping
+  KEY        = :key        # the key goes in
+  REMOVE_KEY = :remove_key # it comes out
+  TIMER      = :timer      # the turn it takes runs out
+end
+
 class Dungeon
 
   # cr (challenge rating) is the first depth a kind turns up on, and na (number appearing) caps how many of it
@@ -24,12 +42,6 @@ class Dungeon
   # pulling the key out leaves it open, and only inserting the key locks it. A table of [state, event] => next
   # state is the one place a machine's shape is written down: TRANSITIONS here, or a row's own transitions
   module DoorLock
-    module LockEvent
-      KEY        = :key
-      REMOVE_KEY = :remove_key
-      TIMER      = :timer
-    end
-
     # A state's chores: on_entry as the machine enters it, on_exit as it leaves. Each is handed whatever the
     # machine's transit was, such as the game and the thingage the machine belongs to
     class State
@@ -53,23 +65,11 @@ class Dungeon
     end
 
     TRANSITIONS = {
-      [LockState,      LockEvent::KEY]        => UnlockingState,
-      [UnlockingState, LockEvent::REMOVE_KEY] => LockState,
-      [UnlockingState, LockEvent::TIMER]      => OpenState,
-      [OpenState,      LockEvent::KEY]        => LockState,
+      [LockState,      StateEvent::KEY]        => UnlockingState,
+      [UnlockingState, StateEvent::REMOVE_KEY] => LockState,
+      [UnlockingState, StateEvent::TIMER]      => OpenState,
+      [OpenState,      StateEvent::KEY]        => LockState,
     }.freeze
-
-    # What moves along the state of a hunter, a troll or a coyote, or of the # furniture, a wall or a door: what
-    # the player, or prey a hunter sees, does to one
-    module StateEvent
-      TAP      = :tap
-      PUSH     = :push
-      HIT      = :hit
-      SEE_PREY = :see_prey
-      CALM     = :calm # a hunter's prey is gone, or the player paid off a piece of furniture
-      FLEE     = :flee # pushed or hit in a tight spot, with a brain to mind it
-      SAFE     = :safe # out of the tight spot it fled
-    end
 
     # Each state's on_entry is handed the game, the creature, and who it pursues now: a hunter's prey, :ego for
     # the player, or nil. A quiet one only remembers who that is; an enraged one goes after them
@@ -112,6 +112,24 @@ class Dungeon
       [FleeingState, StateEvent::SAFE]     => EnragedState,
     }.freeze
 
+    # The Safe Room cage's plate, the o, is snapped or not. Snapping it, by stepping onto it or tapping it,
+    # drops the bars and springs the trap; doing either again lifts them. Each state's on_entry is handed the
+    # game, which does the work
+    class UnsnappedState < State
+      def on_entry(game, _plate) = game.lift_bars
+    end
+
+    class SnappedState < State
+      def on_entry(game, _plate) = game.spring_trap
+    end
+
+    CAGE_TRANSITIONS = {
+      [UnsnappedState, StateEvent::STEP_ON] => SnappedState,
+      [UnsnappedState, StateEvent::TAP]     => SnappedState,
+      [SnappedState,   StateEvent::STEP_ON] => UnsnappedState,
+      [SnappedState,   StateEvent::TAP]     => UnsnappedState,
+    }.freeze
+
     # Starts in its initial state, locked unless told otherwise, and moves along its table: the old state's
     # on_exit, then the new state's on_entry, each handed the transit's context. A row back to the same state
     # leaves and re-enters it. An event its state has no row for changes nothing, not even which state object
@@ -136,10 +154,10 @@ class Dungeon
   end
   include DoorLock
 
-  doorLikeTransitions = {[LockState,      LockEvent::KEY]        => UnlockingState,
-                  [UnlockingState, LockEvent::REMOVE_KEY] => LockState,
-                  [UnlockingState, LockEvent::TIMER]      => OpenState,
-                  [OpenState,      LockEvent::KEY]        => LockState,}
+  doorLikeTransitions = {[LockState,      StateEvent::KEY]        => UnlockingState,
+                  [UnlockingState, StateEvent::REMOVE_KEY] => LockState,
+                  [UnlockingState, StateEvent::TIMER]      => OpenState,
+                  [OpenState,      StateEvent::KEY]        => LockState,}
 
   THINGAGES = [
     { glyph: "@", name: "Ego", na: 1, cr: 1, hp: 15, ac: 15, str: 15, dex: 15, con: 11, int: 15, wis: 15, cha: 14,  hit: 1..8 },
@@ -174,8 +192,6 @@ class Dungeon
       transitions: doorLikeTransitions },
     { glyph: "#", name: "door",     na:  4, cr: 1, hp: 30, hit: 1..4, ac: 10, str: 18, dex:  0, con: 18, int:  0, wis:  0, cha:  0, pacifist: true, out_of_band: true,
       transitions: doorLikeTransitions },
-    { glyph: "$", name: "gold",     na: 15, cr: 2, hp:  3, hit: 0..0, ac: 18, str: 18, dex:  0, con: 18, int:  0, wis:  0, cha:  0, pacifist: true, packable: 0.02,
-      transitions: doorLikeTransitions },
     { glyph: "=", name: "ring of peace",     na:  3, cr: 5, hp: 20, hit: 0..0, ac: 18, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true, packable: 0.1,
       transitions: doorLikeTransitions },
     { glyph: "=", name: "ring of strength",     na:  3, cr: 5, hp: 20, hit: 0..0, ac: 18, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true, packable: 0.1,
@@ -201,32 +217,34 @@ class Dungeon
     { glyph: "!", name: "empty potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
       transitions: doorLikeTransitions },
     { glyph: "~", name: "sandwich",   na: 20, cr: 4, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 1,
-      transitions: {[LockState,      LockEvent::KEY]        => UnlockingState,
-                    [UnlockingState, LockEvent::REMOVE_KEY] => LockState,
-                    [UnlockingState, LockEvent::TIMER]      => SandwichOpenState,
-                    [SandwichOpenState,      LockEvent::KEY]        => LockState,}
+      transitions: {[LockState,      StateEvent::KEY]        => UnlockingState,
+                    [UnlockingState, StateEvent::REMOVE_KEY] => LockState,
+                    [UnlockingState, StateEvent::TIMER]      => SandwichOpenState,
+                    [SandwichOpenState,      StateEvent::KEY]        => LockState,}
     },
     { glyph: "?", name: "scroll of 3 potions", na:  1, cr: 6, hp:  3, hit: 0..0, ac:  2, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true, packable: 0.1,
-      transitions: {[LockState,      LockEvent::KEY]        => UnlockingState,
-                    [UnlockingState, LockEvent::REMOVE_KEY] => LockState,
-                    [UnlockingState, LockEvent::TIMER]      => OpenState,
-                    [OpenState,      LockEvent::KEY]        => LockState,}
+      transitions: {[LockState,      StateEvent::KEY]        => UnlockingState,
+                    [UnlockingState, StateEvent::REMOVE_KEY] => LockState,
+                    [UnlockingState, StateEvent::TIMER]      => OpenState,
+                    [OpenState,      StateEvent::KEY]        => LockState,}
     },
     { glyph: "A", name: "Axebeak",    na:  1, cr: 5, hp: 28, hit: 4..9, ac: 15, str: 18, dex: 17, con: 16, int: 15, wis: 14, cha: 13, pacifist: false, eats: true,
-      transitions: {[LockState,      LockEvent::KEY]        => UnlockingState,
-                    [UnlockingState, LockEvent::REMOVE_KEY] => LockState,
-                    [UnlockingState, LockEvent::TIMER]      => OpenState,
-                    [OpenState,      LockEvent::KEY]        => LockState,}
+      transitions: {[LockState,      StateEvent::KEY]        => UnlockingState,
+                    [UnlockingState, StateEvent::REMOVE_KEY] => LockState,
+                    [UnlockingState, StateEvent::TIMER]      => OpenState,
+                    [OpenState,      StateEvent::KEY]        => LockState,}
     },
+    { glyph: "o", name: "cage plate", na: 1, cr: 5, hp: 1, hit: 0..0, ac: 10, str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0, pacifist: true, out_of_band: true,
+      transitions: CAGE_TRANSITIONS },
     { glyph: "I", name: "Imp",      na:  4, cr: 2, hp:  3, hit: 1..2, ac: 12, str:  6, dex: 16, con:  8, int:  8, wis:  8, cha:  6, pacifist: true,
       transitions: doorLikeTransitions },
     { glyph: "D", name: "Dodo",     na:  3, cr: 4, hp:  6, hit: 1..2, ac:  8, str:  8, dex:  6, con: 10, int:  2, wis:  2, cha:  6, pacifist: true,
       transitions: doorLikeTransitions },
     { glyph: "Q", name: "Quail",    na:  1, cr: 5, hp: 28, hit: 4..9, ac: 15, str: 18, dex: 17, con: 16, int: 15, wis: 14, cha: 13, pacifist: true, eats: true,
-      transitions: {[LockState,      LockEvent::KEY]        => UnlockingState,
-        [UnlockingState, LockEvent::REMOVE_KEY] => LockState,
-      [UnlockingState, LockEvent::TIMER]      => OpenState,
-      [OpenState,      LockEvent::KEY]        => LockState,}
+      transitions: {[LockState,      StateEvent::KEY]        => UnlockingState,
+        [UnlockingState, StateEvent::REMOVE_KEY] => LockState,
+      [UnlockingState, StateEvent::TIMER]      => OpenState,
+      [OpenState,      StateEvent::KEY]        => LockState,}
 
     }
   ]
@@ -434,7 +452,7 @@ class Dungeon
     "Owing to a direct hit to the control bunker, all surviving humans have evacuated",
     "the premises and are unaware of your endeavors, and have the only passcards.",
     "\n",
-    "Your task is to grab lab supplies and improvise a way into the bunkers, obtain",
+    "Your task is to acquire lab resources to improvise a way into the bunkers, obtain",
     "one quail egg and one viable adult, and get them to this ring: o. Step on that ring",
     "to activate the Safe Room with the specimens inside it. On the way you will",
     "encounter drugged & sleeping genetic experiments, and robotic doors. Do not, under",
@@ -638,9 +656,11 @@ class Dungeon
 
   # The most the knapsack holds, in pounds. What's wielded is in hand and what's worn is on a finger, so neither
   # counts. Each thing's weight is the packable on the line that builds it: its THINGAGES row, its WEAPONS entry,
-  # or, for a potion with no row of its own, its POTIONS entry. A Quail egg has no line, so it weighs EGG_POUNDS
+  # or, for a potion with no row of its own, its POTIONS entry. A Quail egg has no line, so it weighs EGG_POUNDS,
+  # and gold, which lies about only as @treasure piles, weighs GOLD_POUNDS a coin
   ENCUMBRANCE = 60
   EGG_POUNDS = 0.5
+  GOLD_POUNDS = 0.02
 
   # A weight as an exact fraction, so that, say, 3,000 coins at 0.02 pounds weigh 60 pounds even
   def self.pounds(weight) = Rational(weight.to_s)
@@ -652,7 +672,7 @@ class Dungeon
     return pounds(:candles) + pounds(LACED[slot]) if LACED.key?(slot)
 
     Dungeon.pounds(case slot
-                   when :gold then Dungeon.packable("gold")
+                   when :gold then GOLD_POUNDS
                    when :sandwiches then Dungeon.packable("sandwich")
                    else ITEMS.fetch(slot)[:packable] || Dungeon.packable(ITEMS.fetch(slot)[:row])
                    end)
@@ -1146,12 +1166,15 @@ class Dungeon
       elsif tight_spot?(m) && !m.stuck.to_i.positive? && pushable_to?(to = [x + @facing[0], y + @facing[1]])
         m.x, m.y = to
         say "You push the #{m.name}."
-        brain?(m) ? scare(m) : provoke_hunter(m, DoorLock::StateEvent::PUSH)
+        brain?(m) ? scare(m) : provoke_hunter(m, StateEvent::PUSH)
         tread(m)
       else
         say "You tap the #{m.name}."
-        provoke_hunter(m, DoorLock::StateEvent::TAP)
+        provoke_hunter(m, StateEvent::TAP)
       end
+    elsif [x, y] == @cage&.dig(:plate)
+      press_plate(StateEvent::TAP)
+      return if cage_sprung?
     else
       return # tapping a wall or empty air is a bad keystroke: it just disappears, no message and no turn
     end
@@ -1169,14 +1192,14 @@ class Dungeon
 
   # Pushed or hit in a tight spot, a creature with a brain flees the player
   def scare(m)
-    state_machine(m).transit(DoorLock::StateEvent::FLEE, self, m, :ego)
+    state_machine(m).transit(StateEvent::FLEE, self, m, :ego)
     say "The #{m.name} panics and flees!" if (m.x - @px).abs <= SIGHT && (m.y - @py).abs <= SIGHT
   end
 
   # A fleeing creature steps to whichever open square takes it furthest from the player, until it's out of the
   # tight spot; then it's safe, and turns on the player. Cornered, with nowhere further to go, it stays put
   def flee(m)
-    return state_machine(m).transit(DoorLock::StateEvent::SAFE, self, m, :ego) unless tight_spot?(m)
+    return state_machine(m).transit(StateEvent::SAFE, self, m, :ego) unless tight_spot?(m)
     return if m.stuck.to_i.positive?
 
     away = ->(x, y) { (x - @px).abs + (y - @py).abs }
@@ -1247,13 +1270,8 @@ class Dungeon
       tread_player
       over? and return
       if [@px, @py] == @cage&.dig(:plate)
-        if @cage[:state] == :sprung
-          lift_bars
-        elsif (threat = cage_threat)
-          say "The plate won't budge with #{a_name(threat.name)} loose in the cage. Deal with it, then step back on."
-        else
-          return spring_trap
-        end
+        press_plate(StateEvent::STEP_ON)
+        return if cage_sprung? # springing ends the turn at once
       end
       if (way = STAIRS[@map[@py][@px]])
         @stairs_question = way
@@ -1461,7 +1479,7 @@ class Dungeon
         [-1, 0, 1].product([-1, 0, 1]).all? { |dx, dy| xs.cover?(cx + dx) && ys.cover?(cy + dy) || @map[cy + dy][cx + dx] == "#" }
       end
     end
-    (chosen = sealed.sample) and chosen.merge(state: :arrange_set)
+    sealed.sample
   end
 
   # Inside the cage, behind the line
@@ -1469,9 +1487,30 @@ class Dungeon
     @cage && @cage[:xs].cover?(x) && @cage[:ys].cover?(y)
   end
 
+  # The cage's plate, a Thingage of its own, built the first time it's wanted, unsnapped, on its CAGE_TRANSITIONS
+  CAGE_PLATE_ROW = THINGAGES.find { |k| k[:name] == "cage plate" }
+
+  def cage_plate
+    @cage[:thing] ||= Thingage.new(*@cage[:plate], CAGE_PLATE_ROW[:glyph], CAGE_PLATE_ROW[:name], CAGE_PLATE_ROW[:hp], CAGE_PLATE_ROW[:hit],
+                                   *CAGE_PLATE_ROW.values_at(*ABILITIES), true)
+                              .tap { |t| t.machine = DoorLock::Machine.new(CAGE_PLATE_ROW[:transitions], DoorLock::UnsnappedState) }
+  end
+
+  def cage_sprung? = !!@cage && cage_plate.machine.state.is_a?(DoorLock::SnappedState)
+
+  # Stepping onto or tapping the plate moves it along its table, unless a threat loose in the unsnapped cage
+  # keeps it from budging
+  def press_plate(event)
+    if !cage_sprung? && (threat = cage_threat)
+      return say("The plate won't budge with #{a_name(threat.name)} loose in the cage. Deal with it, then step back on.")
+    end
+
+    cage_plate.machine.transit(event, self, cage_plate)
+  end
+
   # The line's squares, which are bars once the trap is sprung
   def bar?(x, y)
-    return false unless @cage&.dig(:state) == :sprung
+    return false unless cage_sprung?
 
     lx, ly = @cage[:line]
     (lx.is_a?(Range) ? lx.cover?(x) : lx == x) && (ly.is_a?(Range) ? ly.cover?(y) : ly == y)
@@ -1482,7 +1521,6 @@ class Dungeon
   # goes on behind the bars until the player steps off the plate and back on. Otherwise it ends: every developed
   # egg hatches, and a Quail chick, with a Quail to raise it, is a win
   def spring_trap
-    @cage[:state] = :sprung
     caught = @monsters.select { |m| in_trap?(m.x, m.y) }
     floor = ->(items) { items.sum { |spot, n| in_trap?(*spot) ? n : 0 } }
     eggs = @knapsack[:eggs] + @eggs.select { |spot, _| in_trap?(*spot) }.values.flatten
@@ -1565,9 +1603,9 @@ class Dungeon
 
   # Stepping back onto the plate of a cage sprung without an egg lifts the bars, setting the trap again
   def lift_bars
-    @cage[:state] = :arrange_set
     say "The bars lift, and the trap is set again."
   end
+  public :spring_trap, :lift_bars # the plate's states call these
 
   # The chance a newly laid egg is developed: a third at HATCHERY_DEPTH, and a ninth more each level deeper,
   # up to 0.9
@@ -1717,7 +1755,7 @@ class Dungeon
     elsif foe.pacifist && FURNITURE.include?(foe.name)
       foe.pacifist = false
       foe.spurned = false
-      state_machine(foe).transit(DoorLock::StateEvent::HIT, self, foe, :ego)
+      state_machine(foe).transit(StateEvent::HIT, self, foe, :ego)
       say "You hit the #{foe.name} for #{dmg}. It turns on you!"
     else
       say "You hit the #{foe.name} for #{dmg}.#{" It turns on you!" if provoked && !cornered}"
@@ -1725,7 +1763,7 @@ class Dungeon
     end
     return unless foe.hp.positive?
 
-    cornered ? scare(foe) : provoke_hunter(foe, DoorLock::StateEvent::HIT)
+    cornered ? scare(foe) : provoke_hunter(foe, StateEvent::HIT)
   end
 
   # A potion disguised as a creature, once the player is within DISGUISE_RANGE, drops the disguise and hurls itself
@@ -2069,7 +2107,7 @@ class Dungeon
       "pockets it and sides with you, hoping for more"
     elsif item == :gold && taker.name == "squirrel" && state_machine(taker).state.is_a?(DoorLock::EnragedState)
       taker.coins = taker.coins.to_i + 1
-      state_machine(taker).transit(DoorLock::StateEvent::CALM, self, taker, nil)
+      state_machine(taker).transit(StateEvent::CALM, self, taker, nil)
       "pockets it and calms down, curious again"
     elsif item == :gold && taker.name == "rat"
       taker.coins = taker.coins.to_i + 1
@@ -2116,7 +2154,7 @@ class Dungeon
   # and sometimes it's ruined
   def appease(taker, item)
     if item == :gold
-      state_machine(taker).transit(DoorLock::StateEvent::CALM, self, taker, nil)
+      state_machine(taker).transit(StateEvent::CALM, self, taker, nil)
       taker.pacifist = true
       taker.spurned = true
       return "pockets it and calms down, though it's still sore"
@@ -2193,8 +2231,8 @@ class Dungeon
   def door_machine(door)
     door.machine ||= DoorLock::Machine.new(THINGAGES.find { |k| k[:name] == "door" }[:transitions]).tap do |machine|
       unless door.locked
-        machine.transit(DoorLock::LockEvent::KEY)
-        machine.transit(DoorLock::LockEvent::TIMER)
+        machine.transit(StateEvent::KEY)
+        machine.transit(StateEvent::TIMER)
       end
     end
   end
@@ -2213,14 +2251,14 @@ class Dungeon
     if machine.state.is_a?(DoorLock::OpenState)
       peckish? or return say("The sandwich is open and edible, but your blood sugar isn't low enough to want it.")
 
-      return machine.transit(DoorLock::LockEvent::KEY, self, food)
+      return machine.transit(StateEvent::KEY, self, food)
     end
 
-    machine.transit(DoorLock::LockEvent::KEY, self, food) if machine.state.is_a?(DoorLock::LockState)
+    machine.transit(StateEvent::KEY, self, food) if machine.state.is_a?(DoorLock::LockState)
     food.hp -= damage
     return say("You work at the sandwich's wrapping.") if food.hp.positive?
 
-    machine.transit(DoorLock::LockEvent::TIMER, self, food)
+    machine.transit(StateEvent::TIMER, self, food)
     say "The sandwich's wrapping gives way. It's open, and edible."
   end
 
@@ -2894,11 +2932,11 @@ class Dungeon
   def hunted(m)
     machine = state_machine(m)
     prey = m.pursuit_target
-    machine.transit(DoorLock::StateEvent::CALM, self, m, nil) if prey.is_a?(Thingage) && !(prey.hp.positive? && @monsters.include?(prey))
+    machine.transit(StateEvent::CALM, self, m, nil) if prey.is_a?(Thingage) && !(prey.hp.positive? && @monsters.include?(prey))
     if machine.state.is_a?(DoorLock::QuietState)
       near = ->(q) { (q.x - m.x).abs <= SIGHT && (q.y - m.y).abs <= SIGHT }
       seen = @monsters.select { |q| q.name == PREY[m.name] && q.hp.positive? && near.(q) }
-      (prey = seen.min_by { |q| (q.x - m.x).abs + (q.y - m.y).abs }) and machine.transit(DoorLock::StateEvent::SEE_PREY, self, m, prey)
+      (prey = seen.min_by { |q| (q.x - m.x).abs + (q.y - m.y).abs }) and machine.transit(StateEvent::SEE_PREY, self, m, prey)
     end
     m.pursuit_target if m.pursuit_target.is_a?(Thingage)
   end
@@ -2979,7 +3017,7 @@ class Dungeon
     hunter.hp -= dmg
     ouch(dmg)
     if hunter.hp.positive?
-      state_machine(hunter).transit(DoorLock::StateEvent::HIT, self, hunter, m)
+      state_machine(hunter).transit(StateEvent::HIT, self, hunter, m)
       say "The Dodo pecks the #{hunter.name} for #{dmg}, and the #{hunter.name} turns on the Dodo!" if seen
     else
       @monsters.delete(hunter)
@@ -3110,7 +3148,7 @@ class Dungeon
     elsif @sandwiches.key?([x, y]) then "%"
     elsif @plates.key?([x, y]) then @plates[[x, y]]
     elsif @traps&.dig([x, y], :seen) then { poison: BROKEN_POTION, glue: GLUE, slippery: SLIPPERY }.fetch(@traps[[x, y]][:kind], WAND)
-    elsif [x, y] == @cage&.dig(:plate) then "o"
+    elsif [x, y] == @cage&.dig(:plate) then cage_plate.glyph
     else @map[y][x]
     end
   end
@@ -3901,8 +3939,8 @@ end
 USAGE = <<~TEXT
   Quail on the Run, a roguelike
 
-  Usage: ruby rogue.rb [--dos | --web [port] | --scarpe] [--level N] [--god]
-         ruby rogue.rb --help
+  Usage: ruby ruby_rogue.rb [--dos | --web [port] | --scarpe] [--level N] [--god]
+         ruby ruby_rogue.rb --help
 
     --dos         play right here in the console, like the original PC Rogue: ANSI driver commands, OEM glyphs,
                   and Rogue's keys (? lists them). This is the default, with no front end named
@@ -3919,7 +3957,7 @@ def cli_level
   level = Integer(ARGV[at + 1].to_s, exception: false)
   return level if level&.between?(1, 99)
 
-  abort "Usage: ruby rogue.rb --level N, where N is a depth from 1 to 99 (got #{ARGV[at + 1].inspect})"
+  abort "Usage: ruby ruby_rogue.rb --level N, where N is a depth from 1 to 99 (got #{ARGV[at + 1].inspect})"
 end
 
 # Guarded so the tests can require this file for Dungeon without opening a window or a port.
@@ -3949,7 +3987,7 @@ elsif $PROGRAM_NAME == __FILE__ && ARGV.include?("--web")
   arg = ARGV[ARGV.index("--web") + 1]
   arg = nil if arg&.start_with?("--")
   port = arg ? Integer(arg, exception: false) : 4567
-  abort "Usage: ruby rogue.rb --web [port] [--god], where port is 1-65535 (got #{arg.inspect})" unless port&.between?(1, 65_535)
+  abort "Usage: ruby ruby_rogue.rb --web [port] [--god], where port is 1-65535 (got #{arg.inspect})" unless port&.between?(1, 65_535)
 
   WebGame.new(godMode: GOD, level: cli_level).serve(port)
 elsif $PROGRAM_NAME == __FILE__

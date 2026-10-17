@@ -475,6 +475,8 @@ class Dungeon
     "Do not interrogate robotic security doors how to bypass them with the\ndiagonal movement keys 7 9 1 3.",
     "Do not bribe doors with money to get them to open; their govt contractor\nwill be notified.",
     "Do not offer sandwiches to locked doors while Imps are watching.",
+    "You have signed an NDA for every experimental tool you will be using that\n"+
+      "voids your liability if you depart from the warantee terms.",
     "Never pick a lock with the contents of an unattended Toolbag.",
     "Do not hotwire a door's openness status by offering a bribe from your\ncredit card or any cash on hand.",
     "Bring Dodo and Axebeak eggs into the Safe Room too. Whatever.",  #  the joke is nothing enforces if you do

@@ -3976,13 +3976,15 @@ class DungeonTest < Minitest::Test
     arrange_arena
     assert_get(:knapsack)[:wands] << 0
     @game.zap
-    assert_equal "Your wand of slowness has no charges left on this level.", last_log
+    assert_equal "Your wand of slowness has no charges left until you level up.", last_log
   end
 
-  def test_wands_refill_on_each_level
+  def test_a_new_level_recharges_no_wand
     assert_get(:knapsack)[:wands] << 0
+    assert_get(:knapsack)[:slip_wands] << 1
     @game.send(:descend)
-    assert_equal [3], assert_get(:knapsack)[:wands]
+    assert_equal [0], assert_get(:knapsack)[:wands], "only levelling up recharges"
+    assert_equal [1], assert_get(:knapsack)[:slip_wands]
   end
 
   def test_a_rat_runs_behind_an_unseen_trap_and_waits
@@ -4637,6 +4639,22 @@ class DungeonTest < Minitest::Test
     @game.send(:take_stock)
     @game.move(1, 0)
     assert_equal [Dungeon::WAND_CHARGES] * 2, @game.knapsack[:wands]
+  end
+
+  def test_levelling_up_gives_every_wand_you_carry_three_charges_but_none_on_the_floor
+    arrange_arena
+    arrange_set :experience_points, Dungeon::XP_PER_LEVEL - Dungeon::XP_PER_CALMING
+    assert_get(:knapsack)[:wands] = [0, 2]
+    assert_get(:knapsack)[:slip_wands] = [1]
+    wand_at(20, 20, charges: 0)
+    arrange_monster(6, 5, hp: 1, hit: 0..0)
+    @game.send(:take_stock)
+
+    @game.move(1, 0)
+
+    assert_equal [3, 3], @game.knapsack[:wands]
+    assert_equal [3], @game.knapsack[:slip_wands], "both kinds"
+    assert_equal 0, assert_get(:traps)[[20, 20]][:charges], "the one lying about isn't yours"
   end
 
   def test_each_welcome_has_its_proficiency_bonus
@@ -5524,7 +5542,7 @@ class DungeonTest < Minitest::Test
     assert_includes @game.contents, ["#{Dungeon::WAND} wand of slipperiness (2 charges)", :slip_wands]
   end
 
-  def test_a_new_level_recharges_wands_of_slipperiness
+  def test_a_recharge_fills_wands_of_slipperiness_too
     arrange_arena
     assert_get(:knapsack)[:slip_wands] << 0
     @game.send(:refill_wands)

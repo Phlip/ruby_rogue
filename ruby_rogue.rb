@@ -486,6 +486,7 @@ class Dungeon
     "Do not use any corridor in the plenum that is too narrow for two people;\nit's not certified for foot traffic.",
     "Overfeeding or arming wildlife will incur severe civil and criminal penalties.",
     "Tampering with any expensive hardware in the facility is a billable offense.",
+    "Do not interfere with the test subjects' culinary or monetary conditioning.",
     "Place any loose sharps in appropriately labeled biological recycling material\nbins please and syringes.",
     "Do not corner anything with a brain in a narrow corridor; it will panic.",
     "You have a three week supply of proton pills. Do not consume anything local.",
@@ -929,7 +930,7 @@ class Dungeon
     slot ||= WANDS.keys.find { |s| @knapsack[s].any?(&:positive?) } || WANDS.keys.find { |s| @knapsack[s].any? }
     slot && @knapsack[slot].any? or return say("You have no wand to zap.")
     name = WANDS[slot][:name]
-    @knapsack[slot].any?(&:positive?) or return say("Your #{name} has no charges left on this level.")
+    @knapsack[slot].any?(&:positive?) or return say("Your #{name} has no charges left until you level up.")
 
     @offering = WANDS[slot][:kind]
     say "Zap the #{name} which way?"
@@ -2785,16 +2786,12 @@ class Dungeon
       build_level
     end
     @px, @py = (way == "up" ? @downstairs : @upstairs) || [@px, @py]
-    refill_wands
     reveal
     take_stock
   end
 
-  # Every wand, in the knapsack or lying on the level, holds WAND_CHARGES again
-  def refill_wands
-    WANDS.each_key { |slot| @knapsack[slot].map! { WAND_CHARGES } }
-    @traps&.each_value { |t| t[:charges] = WAND_CHARGES if t.key?(:charges) }
-  end
+  # Every wand in the knapsack holds WAND_CHARGES again: the one recharge there is, when the hero levels up
+  def refill_wands = WANDS.each_key { |slot| @knapsack[slot].map! { WAND_CHARGES } }
 
   # A level already visited is the one the player left
   def descend
@@ -3182,7 +3179,7 @@ class Dungeon
   # Zaps a charge that way: the first thingage within THROW_RANGE slows for 2d2 rounds. Zapping takes a turn
   def zap_wand(dx, dy)
     @offering = nil
-    at = @knapsack[:wands].index(&:positive?) or return say("Your wand of slowness has no charges left on this level.")
+    at = @knapsack[:wands].index(&:positive?) or return say("Your wand of slowness has no charges left until you level up.")
     @knapsack[:wands][at] -= 1
     target = (1..THROW_RANGE).lazy.map { |i| [@px + dx * i, @py + dy * i] }
                              .take_while { |x, y| !wall?(x, y) }.map { |x, y| monster_at(x, y) }.find(&:itself)
@@ -3199,7 +3196,7 @@ class Dungeon
   # wall, and slicks the floor there. Zapping takes a turn
   def zap_slip_wand(dx, dy)
     @offering = nil
-    at = @knapsack[:slip_wands].index(&:positive?) or return say("Your wand of slipperiness has no charges left on this level.")
+    at = @knapsack[:slip_wands].index(&:positive?) or return say("Your wand of slipperiness has no charges left until you level up.")
     @knapsack[:slip_wands][at] -= 1
     x, y = @px, @py
     THROW_RANGE.times do

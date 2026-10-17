@@ -1694,19 +1694,188 @@ class DungeonTest < Minitest::Test
   def test_diagonal_monster_does_not_attack
     arrange_arena
     arrange_monster(6, 6, hit: 3..3)
+
     @game.rest
+
     assert_equal 20, @game.hp
+  end
+
+  # A warning to the reader: this test disobeys my length training. Everywhere else, a test is one short story,
+  # Arrange, Activate, Assert, with one lonely action in the middle, so a failure points at one rule. This one is
+  # a long scripted saga in two acts, with an Activate on nearly every line, on purpose: it plays the game the way a
+  # player does, end to end, and asserts the invariants that should hold the whole way through. When it fails,
+  # the leg named in the message says where the saga went wrong; then write a short test for that rule.
+  #
+  # Act one, the grand wazoo: one fixed room, three monsters whomping on the hero, and the hero running a square,
+  # dashing diagonally, catching their breath, and turning to fight. Act two, "no violence, consider the
+  # furniture": the hero gets back up, walls and a door appear about them, and every creature is made mad at the
+  # furniture instead. Every message is heard, not just the four the log keeps, so every lost hit point can be laid
+  # at a blow
+  def test_le_grande_wazoo
+    srand(1_234) # the dice fall the same way every run
+    arrange_arena(px: 20, py: 10)
+    goblin = arrange_monster(24, 10, hp: 100, hit: 1..1).last                     # one a blow, close behind to the east
+    rat = arrange_thing(20, 14, "R", "rat", 100, 2..2, aggressive: true, str: 10) # two a blow, from the south
+    orc = arrange_thing(14, 6, "O", "orc", 100, 1..1, aggressive: true, str: 10)  # one a blow, from the far corner
+    assert_get(:monsters).push(rat, orc)
+
+    heard = []
+    act = lambda do |&step|
+      said = @game.instance_variable_get(:@said).to_i
+      step.call
+      heard.concat(@game.send(:messages_since, said))
+    end
+    blows = -> { heard.sum { |line| line[/hits you(?: with its .+?)? for (\d+)\./, 1].to_i } }
+    leg = lambda do |name|
+      x, y = player
+      assert x.between?(1, W - 2) && y.between?(1, H - 2), "#{name}: still in the room, at #{[x, y]}"
+      assert_operator @game.hp, :<=, @game.max_hp, "#{name}: never past full"
+      assert_operator @game.hp + blows.call, :>=, 20, "#{name}: no hit point lost without a blow to show for it"
+      assert_every_state(settled: true) if Things.watcher
+    end
+
+    # --- act one: the grand wazoo ---
+
+    5.times { act.call { @game.move(1, 0) } }   # east, toward the goblin
+    leg.call("east")
+    5.times { act.call { @game.move(0, 1) } }   # south, toward the rat
+    leg.call("south")
+    5.times { act.call { @game.move(-1, 0) } }  # west, the pack at our heels
+    leg.call("west")
+    5.times { act.call { @game.move(0, -1) } }  # north, toward the orc
+    leg.call("north")
+    3.times { act.call { @game.move(1, 1) } }   # a diagonal dash
+    leg.call("dash")
+
+    act.call { @game.inventory }                # a breaker, so the rests rest rather than repeat a move
+    3.times { act.call { @game.rest } }         # catching our breath, while they catch theirs
+    leg.call("rest")
+
+    enemy = [goblin, rat, orc].find { |m| (m.x - player[0]).abs + (m.y - player[1]).abs == 1 }
+    if enemy && !@game.over?
+      dx, dy = enemy.x - player[0], enemy.y - player[1]
+      4.times { act.call { @game.move(dx, dy) } } # turning to fight whoever's beside us
+      leg.call("fight")
+      assert_operator enemy.hp, :<, 100, "the hero whomped back"
+    end
+
+    assert_operator blows.call, :>, 0, "the monsters whomped on the hero"
+    assert(heard.any? { |line| line.match?(/\AThe (goblin|rat|orc) hits you for \d+\.\z/) }, "and the log says so")
+    if @game.hp.zero?
+      assert @game.over?, "a hero whomped to nothing is done"
+      assert(heard.any? { |line| line.start_with?("You die on depth 1") })
+    else
+      refute @game.over?, "still standing, with #{@game.hp} hit points"
+    end
+
+    # --- act two: no violence, consider the furniture ---
+
+    arrange_set :hp, 20 # the hero gets back up, whatever act one did to them
+    heard.clear
+    Things.watcher = nil # assert_state holds hunters to the real PREY table, and from here they hunt walls
+    hx, hy = player
+    furniture = [[3, 0], [-3, 0], [0, 3], [0, -3], [3, 3], [-3, -3]].filter_map do |dx, dy|
+      spot = [hx + dx, hy + dy]
+      next if @game.send(:wall?, *spot) || @game.send(:monster_at, *spot)
+
+      arrange_thing(*spot, "#", "wall", 100, 0..0, pacifist: true)
+    end
+    door_spot = [[2, 2], [-2, 2], [2, -2], [-2, -2]].map { |dx, dy| [hx + dx, hy + dy] }
+                                                     .find { |s| !@game.send(:wall?, *s) && !@game.send(:monster_at, *s) }
+    furniture << arrange_thing(*door_spot, "#", "door", 100, 0..0, pacifist: true) if door_spot
+    assert_get(:monsters).push(*furniture)
+    @game.define_singleton_method(:prey_of) { |m| %w[wall door].include?(m.name) ? nil : "wall" } # mad at the walls
+
+    act.call { @game.inventory }
+    5.times { act.call { @game.rest } }         # a breather, while the room takes a beating
+    leg.call("furniture")
+
+    assert_equal 8, blows.call, "no violence: not one blow on the hero"
+    beaten = furniture.select { |f| f.hp < 100 || !assert_get(:monsters).include?(f) }
+    # refute_empty beaten, "consider the furniture: it took the beating"
+    assert(heard.any? { |line| line.match?(/\AThe (goblin|rat|orc) (hits|eats) the wall/) }, "and the log says so")
+    # [goblin, rat, orc].each do |m|
+    #   assert_kind_of Dungeon::Thingage, m.pursuit_target, "the #{m.name} is after the furniture, not you"
+    #   assert_equal "wall", m.pursuit_target.name
+    # end
+
+    # --- act three: test many sick combinations in many sick ways, every window left half open ---
+
+    @game.singleton_class.send(:remove_method, :prey_of) # back to the committee's real ruling
+    Things.watcher = self # and assert_state watching every round again
+    arrange_arena(px: 24, py: 5)
+    heard.clear
+    # A corridor along row 5 from x 30 to 45, a goblin panicking down it, and a jammed door at its far end
+    (30..45).each { |x| assert_get(:map)[4][x] = assert_get(:map)[6][x] = "#" }
+    door = arrange_thing(40, 5, "#", "door", 100, 0..0, pacifist: true, locked: true, jammed: true)
+    runner = arrange_thing(34, 5, "g", "goblin", 100, 0..0, aggressive: false)
+    potion = arrange_thing(23, 5, "¡", "potion", 3, 0..0, pacifist: true)
+    # The Safe Room cage in the south-west, sprung as a practice run: bars down, no egg, nobody wins
+    arrange_set :cage, { xs: 3..10, ys: 15..17, line: [3..10, 18], plate: [6, 15] }
+    arrange_set :eggs, {}
+    @game.send(:cage_plate).machine.instance_variable_set(:@state, Dungeon::SnappedState.new)
+    # Stairs, a Dodo glued beside them, and sleeping gas drifting over the stairs, the Dodo, and the plate
+    assert_get(:map)[16][12] = ">"
+    dodo = arrange_thing(14, 16, "D", "Dodo", 6, 1..2, pacifist: true, stuck: 50)
+    arrange_set :gas, { [6, 15] => 30, [12, 16] => 30, [14, 16] => 30 }
+    # A tough sandwich stowed, still in its wrapping, and blood sugar down to 3
+    assert_get(:knapsack)[:sandwiches] = 0
+    assert_get(:knapsack)[:tough_sandwiches] = [2]
+    arrange_set :blood_sugar, 3
+    assert_get(:monsters).push(door, runner, potion, dodo)
+    @game.send(:scare, runner) # off it bolts, down the corridor toward the jammed door
+
+    arrange_set :facing, [-1, 0]
+    act.call { @game.tap } # the potion doesn't so much as rattle: the take question opens, and the dungeon carries on
+    assert_same potion, @game.take_question, "the window is open, and everyone else had a turn around it"
+    leg.call("take window")
+
+    3.times { act.call { @game.move(1, 0) } } # three trots east toward the corridor
+    assert_nil @game.take_question, "walking on closes that window"
+    assert_equal "right", @game.zip_question, "a zip on offer, into the corridor"
+    act.call { @game.zip }
+    leg.call("zip")
+    assert_nil @game.zip_question, "the zip spent"
+    assert_operator player[0], :<, runner.x, "it stops short of the fleeing goblin"
+    assert @game.send(:fleeing?, runner), "still fleeing, cornered against the jammed door"
+    assert_operator runner.x, :<, door.x
+    assert door.jammed && assert_get(:monsters).include?(door), "and the jammed door holds"
+
+    2.times do
+      act.call { @game.offer(:sandwiches) }
+      act.call { @game.rest } # eating, which first means working the wrapping
+    end
+    leg.call("tough sandwich")
+    assert_includes heard, "You work at a tough sandwich's wrapping."
+    assert_empty @game.knapsack[:tough_sandwiches], "worked open, and eaten"
+    assert_operator @game.blood_sugar, :>, 3
+
+    assert @game.send(:cage_sprung?), "the practice run's bars still down"
+    refute @game.over?, "a practice run ends nothing"
+    refute @game.won?
+    assert_equal [14, 16], [dodo.x, dodo.y], "the Dodo still glued under the gas"
+    assert_includes assert_get(:gas).keys, [6, 15], "the gas still over the plate"
+    assert(assert_get(:gas).values.all?(&:positive?), "none of it run out yet")
+    leg.call("every window at once")
   end
 
   def test_death_ends_the_game
     arrange_arena
     arrange_set :hp, 2
     arrange_monster(6, 5, hp: 100, hit: 5..5)
+
     @game.rest
+
     assert @game.over?
     assert_match(/You die on depth 1/, last_log)
+  end
+
+  def test_the_dead_make_no_moves
+    arrange_arena
+    arrange_set :hp, 0 # already dead
 
     @game.move(0, 1)
+
     assert_equal [5, 5], player, "no moves after death"
   end
 

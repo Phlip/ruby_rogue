@@ -493,6 +493,7 @@ class Dungeon
     "You have signed an NDA for every experimental tool you will be using that\n"+
       "voids your liability if you depart from the warrantee terms.",
     "Never pick a lock with the contents of an unattended Toolbag.",
+    "The departing crew disabled all mortality failsafes so behave at intersections.",
     "The \"credit card on the door hasp bolt\" trick only works in B movies.",
     "Do not hotwire a door's openness status by offering a bribe from your\ncredit card or any cash on hand.",
     "Bring Dodo and Axebeak eggs into the Safe Room too. Whatever.",  #  the joke is nothing enforces if you do

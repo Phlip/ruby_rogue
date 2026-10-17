@@ -496,6 +496,7 @@ class Dungeon
     "The \"credit card on the door hasp bolt\" trick only works in B movies.",
     "Do not hotwire a door's openness status by offering a bribe from your\ncredit card or any cash on hand.",
     "Bring Dodo and Axebeak eggs into the Safe Room too. Whatever.",  #  the joke is nothing enforces if you do
+    "All toxic side-effects registered by the FDA will be fined for mixing\nexperimental chemicals.",
     "Do not activate the Safe Room ring while a Troll is lurking inside the\nsecurity perimeter.",
     "Never hold a specimen's egg up to a candle to see what is growing in it.",
     "And remember the hardware has feelings too.",

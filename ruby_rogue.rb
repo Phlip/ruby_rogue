@@ -209,6 +209,8 @@ class Dungeon
       transitions: doorLikeTransitions },
     { glyph: "!", name: "healing potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
       transitions: doorLikeTransitions },
+    { glyph: "!", name: "hallucination potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
+      transitions: doorLikeTransitions },
     { glyph: "!", name: "sleep potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
       transitions: doorLikeTransitions },
     { glyph: "!", name: "glue potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
@@ -360,12 +362,13 @@ class Dungeon
   # jammed marks a door a Toolbag failed on, stuck shut until it's bashed through. unhurt counts its rounds in a
   # row without losing a hit point, last_hp being what it had at the end of the last one. pleas counts the blows a
   # door has begged the player to go round it. struck_hero marks a creature that has ever attacked the player, and
-  # wrongs counts the blows the player dealt it while it was still innocent
+  # wrongs counts the blows the player dealt it while it was still innocent. phantom counts the hit points an
+  # experimental friend has taken from the player, nil on anything real
 
   Thingage = Struct.new(:x, :y, :glyph, :name, :hp, :hit, :str, :dex, :con, :int, :wis, :cha, :pacifist, :spurned, :greedy, :fed, :ally, :coins, :aggressive,
                         :hasted, :gaseous, :farsighted, :nesting, :sugar, :starving, :slowed, :lagging, :weapon, :locked, :machine, :plate_bound, :met, :asleep, :stuck,
                         :disguised_potion, :pursuit_target, :state, :devoted, :max_hp, :struck, :touched, :jammed,
-                        :unhurt, :last_hp, :pleas, :struck_hero, :wrongs)
+                        :unhurt, :last_hp, :pleas, :struck_hero, :wrongs, :phantom)
   ABILITIES = %i[str dex con int wis cha].freeze
 
   # The D&D ability modifier: 10 and 11 give +0, and every two points up or down moves it by one.
@@ -437,15 +440,17 @@ class Dungeon
     @strung_steps = 0
     @facing = [1, 0]
     @knapsack = { gold: 0, sandwiches: 0, potions: 0, speed_potions: 0, gas_potions: 0, slow_potions: 0, healing_potions: 0,
-                  sleep_potions: 0, glue_potions: 0, slip_potions: 0, empty_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0,
+                  sleep_potions: 0, glue_potions: 0, slip_potions: 0, empty_potions: 0, hallucination_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0,
                   candles: 0, laced_potions: 0, laced_speed_potions: 0, laced_gas_potions: 0, laced_slow_potions: 0,
-                  laced_healing_potions: 0, laced_sleep_potions: 0, laced_glue_potions: 0, laced_slip_potions: 0, laced_empty_potions: 0, eggs: [], weapons: [], shields: [], wands: [],
+                  laced_healing_potions: 0, laced_sleep_potions: 0, laced_glue_potions: 0, laced_slip_potions: 0, laced_empty_potions: 0, laced_hallucination_potions: 0, eggs: [], weapons: [], shields: [], wands: [],
                   slip_wands: [], toolbags: 0, tough_sandwiches: [] }
     @ring = nil
     @hasted = 0
     @slowed = 0
     @stuck = 0
     @gaseous = 0
+    @hallucinating = 0
+    @potion_alias = HALLUCINATION_ALIASES.sample
     @quick = false
     @won = false
     @trapped = false
@@ -492,6 +497,8 @@ class Dungeon
     "Do not offer sandwiches to locked doors while Imps are watching.",
     "You have signed an NDA for every experimental tool you will be using that\n"+
       "voids your liability if you depart from the warrantee terms.",
+    "All living tissue experiments were counted before and expected to match.",
+    "You signed an NDA for every experimental 'potion' that you ..drank. >hic<",
     "Never pick a lock with the contents of an unattended Toolbag.",
     "The departing crew disabled all mortality failsafes so behave at intersections.",
     "The \"credit card on the door hasp bolt\" trick only works in B movies.",
@@ -656,12 +663,29 @@ class Dungeon
     glue_potions:    { row: "glue potion",    name: "potion of glue",         glyph: "!" },
     slip_potions:    { row: "slip potion",    name: "potion of slipperiness", glyph: "!" },
     empty_potions:   { row: "empty potion",   name: "empty potion",           glyph: "!" },
+    hallucination_potions: { row: "hallucination potion", name: "potion of hallucination", glyph: "!" },
   }.freeze
 
   # A potion of speed gives two actions for everyone else's one for this many rounds; slowness gives everyone else
   # two for the drinker's one for SLOW_ROUNDS; gaseous form leaves nothing able to touch, or be touched by, the
   # drinker for GAS_ROUNDS. Healing restores the player to full, and a monster, which has no full, by HEAL_HP
   SPEED_ROUNDS = 10
+
+  # A potion of hallucination passes itself off as one of these, the same one all game. Drunk, it conjures an
+  # experimental friend every PHANTOM_EVERY rounds for HALLUCINATION_ROUNDS, up to PHANTOM_RANGE squares away,
+  # already on the player's trail. Tapped, struck, handed something, or once it has taken PHANTOM_HP from the
+  # player, a friend dissipates
+  HALLUCINATION_ALIASES = ["potion of healing", "potion of gain strength", "potion of water"].freeze
+  HALLUCINATION_ROUNDS = 300
+  PHANTOM_EVERY = 30
+  PHANTOM_RANGE = 15
+  PHANTOM_HP = 2
+
+  # What the player calls a potion: its full name, unless it's passing itself off as another
+  def potion_name(slot) = slot == :hallucination_potions ? @potion_alias : POTIONS[slot][:name]
+
+  # What the player calls a knapsack slot's item, potions by potion_name
+  def item_name(slot) = POTIONS.key?(slot) ? potion_name(slot) : ITEM_NAMES[slot]
   SLOW_ROUNDS = 20
 
   # A potion of sleep puts its drinker, or whoever it's thrown at, to sleep for 3d4 rounds while everyone else
@@ -791,7 +815,7 @@ class Dungeon
     packed << [egg_count(@knapsack[:eggs]), :eggs] if @knapsack[:eggs].any?
     POTIONS.each do |slot, p|
       n = @knapsack[slot]
-      packed << [n == 1 ? "#{p[:glyph]} #{p[:name]}" : "#{n} #{p[:glyph]} #{p[:name].sub("potion", "potions")}", slot] if n.positive?
+      packed << [n == 1 ? "#{p[:glyph]} #{potion_name(slot)}" : "#{n} #{p[:glyph]} #{potion_name(slot).sub("potion", "potions")}", slot] if n.positive?
     end
     SCROLLS.each do |slot, s|
       n = @knapsack[slot]
@@ -807,7 +831,7 @@ class Dungeon
     packed << [n == 1 ? "( Toolbag" : "#{n} ( Toolbags", :toolbags] if n.positive?
     LACED.each do |slot, potion|
       n = @knapsack[slot]
-      packed << ["#{n == 1 ? "i candle" : "#{n} i candles"} laced with #{POTIONS[potion][:name]}", slot] if n.positive?
+      packed << ["#{n == 1 ? "i candle" : "#{n} i candles"} laced with #{potion_name(potion)}", slot] if n.positive?
     end
     @knapsack[:weapons].group_by { |w| w[:name] }.each do |name, kind|
       many = pair?(name) ? "#{kind.size} pairs of #{label(kind.first)}" : "#{kind.size} #{label(kind.first)}s"
@@ -842,10 +866,10 @@ class Dungeon
     over? and return
     @throwable = nil
     (potion = POTIONS[slot]) or return
-    @knapsack[slot].zero? and return say(slot == :potions ? "You have no potion to drink." : "You have no #{potion[:name]} to drink.")
+    @knapsack[slot].zero? and return say(slot == :potions ? "You have no potion to drink." : "You have no #{potion_name(slot)} to drink.")
 
     @knapsack[slot] -= 1
-    say "You quaff the #{potion[:name]}. #{take_effect(slot)}"
+    say "You quaff the #{potion_name(slot)}. #{take_effect(slot)}"
     end_turn
   end
 
@@ -889,6 +913,9 @@ class Dungeon
       end
     when :empty_potions
       "It's empty. Nothing happens."
+    when :hallucination_potions
+      @hallucinating = HALLUCINATION_ROUNDS
+      "This is really a potion of experimental friends. Prepare to meet some!"
     end
   end
 
@@ -910,13 +937,13 @@ class Dungeon
     over? and return
     @throwable = nil
     (potion = POTIONS[slot]) or return
-    @knapsack[slot].zero? and return say("You have no #{potion[:name]} to pour.")
+    @knapsack[slot].zero? and return say("You have no #{potion_name(slot)} to pour.")
     @knapsack[:candles].zero? and return say("You have no candle to pour it into.")
 
     @knapsack[slot] -= 1
     @knapsack[:candles] -= 1
     @knapsack[:"laced_#{slot}"] += 1
-    say "You pour the #{potion[:name]} into a candle."
+    say "You pour the #{potion_name(slot)} into a candle."
     end_turn
   end
 
@@ -926,11 +953,11 @@ class Dungeon
     over? and return
     @throwable = nil
     (potion = LACED[slot]) && %i[throw kick].include?(how) or return
-    @knapsack[slot].zero? and return say("You have no candle laced with #{POTIONS[potion][:name]}.")
+    @knapsack[slot].zero? and return say("You have no candle laced with #{potion_name(potion)}.")
 
     @offering = slot
     @flinging = how
-    say "#{how.to_s.capitalize} the candle laced with #{POTIONS[potion][:name]} which way?"
+    say "#{how.to_s.capitalize} the candle laced with #{potion_name(potion)} which way?"
   end
 
   # Readies a potion to throw; the next arrow throws it that way instead of moving, and rest cancels it
@@ -938,10 +965,10 @@ class Dungeon
     over? and return
     @throwable = nil
     (potion = POTIONS[slot]) or return
-    @knapsack[slot].zero? and return say("You have no #{potion[:name]} to throw.")
+    @knapsack[slot].zero? and return say("You have no #{potion_name(slot)} to throw.")
 
     @offering = slot
-    say "Throw the #{potion[:name]} which way?"
+    say "Throw the #{potion_name(slot)} which way?"
   end
 
   # Readies a wand to zap, from that slot, or else the first kind with a charge left; the next arrow zaps it that
@@ -1093,6 +1120,7 @@ class Dungeon
       x += dx
       y += dy
       next unless (catcher = monster_at(x, y)) && !mist?(catcher) # a gift sails through a misty thing
+      next if dispel(catcher) # and through where a friend just was
 
       say "You throw #{GIFTS[item]} and the #{catcher.name} catches it. It #{receive(catcher, item)}."
       return end_turn
@@ -1127,7 +1155,7 @@ class Dungeon
     when :candles then "candle"
     when :shields then @knapsack[:shields].first[:name]
     when String then slot
-    else LACED.key?(slot) ? "candle laced with #{POTIONS[LACED[slot]][:name]}" : ITEM_NAMES[slot]
+    else LACED.key?(slot) ? "candle laced with #{potion_name(LACED[slot])}" : item_name(slot)
     end
   end
 
@@ -1264,6 +1292,8 @@ class Dungeon
     @offering = nil
     x = @px + @facing[0]
     y = @py + @facing[1]
+    return end_turn if dispel(monster_at(x, y))
+
     if (m = monster_at(x, y))
       m.touched = true unless gaseous? || mist?(m)
       if gaseous? || mist?(m)
@@ -1521,8 +1551,10 @@ class Dungeon
   end
 
   # With only tough sandwiches left, eating wastes turns on a wrapping first: each turn works it a point, while the
-  # dungeon carries on, and the turn it gives way, the sandwich is eaten
+  # dungeon carries on, and the turn it gives way, the sandwich is eaten. A Toolbag's knife needs no turns at all
   def work_tough_sandwich
+    return knife_open_tough_sandwich if @knapsack[:toolbags].positive?
+
     @knapsack[:tough_sandwiches][0] -= 1
     if @knapsack[:tough_sandwiches][0].positive?
       say "You work at a tough sandwich's wrapping."
@@ -1532,6 +1564,16 @@ class Dungeon
     @knapsack[:tough_sandwiches].shift
     @knapsack[:sandwiches] += 1
     say "The tough sandwich's wrapping gives way."
+    eat
+  end
+
+  # The announcement whenever a Toolbag's knife opens a sandwich, wasting no action on its wrapping
+  ZIPPO_KNIFE = "Your zippo knife from the Toolbag opens the sandwich."
+
+  def knife_open_tough_sandwich
+    @knapsack[:tough_sandwiches].shift
+    @knapsack[:sandwiches] += 1
+    say ZIPPO_KNIFE
     eat
   end
 
@@ -1575,7 +1617,7 @@ class Dungeon
 
     @monsters.delete(o)
     effect = empower(m, slot)
-    say "The #{m.name} steps on the #{POTIONS[slot][:name]}, and it breaks. #{effect}" if (x - @px).abs <= SIGHT && (y - @py).abs <= SIGHT
+    say "The #{m.name} steps on the #{potion_name(slot)}, and it breaks. #{effect}" if (x - @px).abs <= SIGHT && (y - @py).abs <= SIGHT
     true
   end
 
@@ -1989,6 +2031,8 @@ class Dungeon
   # The first hit on a pacifist also spurns it; the second on a piece of furniture enrages it, giving up its
   # pacifism to fight
   def attack(foe)
+    return if dispel(foe)
+
     # Innocent: it never struck you, and wasn't out to get you before you started on it. Shoving past in a thin hall
     # is no crime, though: you gotta move someone. The warning comes before the blow, so the blow has the last word
     innocent = critter?(foe) && !foe.struck_hero && (!foe.aggressive || foe.wrongs.to_i.positive?) &&
@@ -2036,7 +2080,7 @@ class Dungeon
     cornered = foe.hp.positive? && brain?(foe) && tight_spot?(foe) # before any knock back moves it
     if foe.hp <= 0
       @monsters.delete(foe)
-      return say("The #{foe.name} shatters: it was a #{POTIONS[foe.disguised_potion][:name]} in disguise!") if foe.disguised_potion
+      return say("The #{foe.name} shatters: it was a #{potion_name(foe.disguised_potion)} in disguise!") if foe.disguised_potion
       return seize(foe) if armed?(foe)
       return stow(foe) if SHIELDS.include?(foe.name) || PACKABLE.key?(foe.name)
 
@@ -2094,7 +2138,7 @@ class Dungeon
     return false if gaseous? || (m.x - @px).abs > DISGUISE_RANGE || (m.y - @py).abs > DISGUISE_RANGE
 
     @monsters.delete(m)
-    say "The #{m.name} is a #{POTIONS[slot][:name]} in disguise! It hurls itself at you and shatters. #{take_effect(slot)}"
+    say "The #{m.name} is a #{potion_name(slot)} in disguise! It hurls itself at you and shatters. #{take_effect(slot)}"
     true
   end
 
@@ -2138,6 +2182,7 @@ class Dungeon
       return say("There's no one there to take it.")
     end
     (gaseous? || mist?(taker)) and return say("#{GIFTS[item].capitalize} passes right through the #{taker.name}. You keep it.")
+    return end_turn if dispel(taker) # you keep the gift
 
     say "You give the #{taker.name} #{GIFTS[item]}. It #{receive(taker, item)}."
     end_turn
@@ -2217,7 +2262,7 @@ class Dungeon
   def throw_potion(slot, dx, dy)
     @offering = nil
     @knapsack[slot] -= 1
-    name = POTIONS[slot][:name]
+    name = potion_name(slot)
     x, y = @px, @py
     THROW_RANGE.times do
       break if wall?(x + dx, y + dy)
@@ -2350,6 +2395,7 @@ class Dungeon
     glue_potions:    "They're stuck fast!",
     slip_potions:    "Any glue lets go of them.",
     empty_potions:   "Nothing happens. It was empty.",
+    hallucination_potions: "They stare at things only they can see.",
   }.freeze
 
   # A laced candle bursts at x, y, and its potion's power washes over every character in the burst area, the
@@ -2359,7 +2405,7 @@ class Dungeon
     caught = @monsters.select { |m| area.include?([m.x, m.y]) }
     splashed = area.include?([@px, @py])
     names = caught.map { |m| "the #{m.name}" } + (splashed ? ["you"] : [])
-    say "You #{verb} the candle laced with #{POTIONS[potion][:name]}, and it bursts over " \
+    say "You #{verb} the candle laced with #{potion_name(potion)}, and it bursts over " \
         "#{names.empty? ? "empty floor" : and_list(names)}."
     caught.each { |m| empower(m, potion) }
     say BURST_EFFECTS[potion] if caught.any?
@@ -2396,6 +2442,8 @@ class Dungeon
       freed ? "It slips free of the glue!" : "It looks slick for a moment."
     when :empty_potions
       "Nothing happens. It was empty."
+    when :hallucination_potions
+      "It stares at something only it can see."
     end
   end
 
@@ -2590,10 +2638,15 @@ class Dungeon
   # Taps and blows wear a sandwich's wrapping down along its table. The first touch starts unwrapping it (KEY),
   # every touch takes that much of its hit points, and with none left it's open, and edible (TIMER). Touching an
   # open sandwich is eating it, when the player is peckish: KEY again, leaving SandwichOpenState for the lock, so
-  # its on_exit runs its action
+  # its on_exit runs its action. A Toolbag's knife opens it at once, then eats it in the same action
   def unwrap(food, damage)
     food.touched = true
     machine = food_machine(food)
+    if !machine.state.is_a?(OpenState) && @knapsack[:toolbags].positive?
+      machine.transit(StateEvent::KEY, self, food) if machine.state.is_a?(LockState)
+      machine.transit(StateEvent::TIMER, self, food)
+      say ZIPPO_KNIFE
+    end
     if machine.state.is_a?(OpenState)
       peckish? or return say("The sandwich is open and edible, but your blood sugar isn't low enough to want it.")
 
@@ -2694,13 +2747,13 @@ class Dungeon
   # Packs it, room allowing; true when it did, so a refusal can cost no turn
   def pack(thing, slot)
     unless room_for?(pounds(slot))
-      say "Your knapsack is too full for the #{ITEM_NAMES[slot]}."
+      say "Your knapsack is too full for the #{item_name(slot)}."
       return false
     end
 
     @monsters.delete(thing)
     @knapsack[slot] += 1
-    say "You pack #{a_name(ITEM_NAMES[slot])} into your knapsack."
+    say "You pack #{a_name(item_name(slot))} into your knapsack."
     true
   end
 
@@ -2962,7 +3015,7 @@ class Dungeon
 
   # The agitated thingages within SIGHT of the player
   def agitated_nearby
-    @monsters.select { |m| agitated?(m) && (m.x - @px).abs <= SIGHT && (m.y - @py).abs <= SIGHT }
+    @monsters.select { |m| agitated?(m) && !m.phantom && (m.x - @px).abs <= SIGHT && (m.y - @py).abs <= SIGHT }
   end
 
   # What the player just did earns XP_PER_CALMING for each agitated thingage that was nearby at the last
@@ -3004,6 +3057,7 @@ class Dungeon
     say "You speed back up." if slowed? && (@slowed -= 1).zero?
     say "You become solid again." if gaseous? && (@gaseous -= 1).zero?
     say "You pull free of the glue." if stuck? && (@stuck -= 1).zero?
+    conjure_friend if @hallucinating.positive? && ((@hallucinating -= 1) % PHANTOM_EVERY).zero?
     @monsters.each do |m|
       m.hasted -= 1 if m.hasted.to_i.positive?
       m.slowed -= 1 if m.slowed.to_i.positive?
@@ -3017,6 +3071,37 @@ class Dungeon
     thin_gas
     recover
     hunger
+  end
+
+  # An experimental friend: a fighting kind this depth has reached, on open floor within PHANTOM_RANGE of the
+  # player, already enraged and on their trail from anywhere. It never counts toward the level's population
+  def conjure_friend
+    kinds = THINGAGES.select { |k| k[:cr] <= @depth && !k[:pacifist] && k[:hit]&.max.to_i.positive? && !k[:out_of_band] &&
+                                   k[:name] != PLAYER_KIND && !(FURNITURE + SHIELDS + %w[weapon sleep\ potion]).include?(k[:name]) }
+    spots = (@py - PHANTOM_RANGE..@py + PHANTOM_RANGE).flat_map { |y| (@px - PHANTOM_RANGE..@px + PHANTOM_RANGE).map { |x| [x, y] } }
+                                                      .select { |x, y| open_floor?(x, y) }
+    (kind = kinds.sample) && (spot = spots.sample) or return
+
+    friend = spawn_monster(nil, kind, at: spot).last
+    @population[kind[:name]] -= 1
+    friend.phantom = 0
+    friend.farsighted = true
+    friend.state = Machine.new(STATE_TRANSITIONS, EnragedState)
+    friend.state.state.on_entry(self, friend, :ego)
+  end
+
+  # Open floor an experimental friend can appear on: no wall, stairs, cage plate, or anyone already there
+  def open_floor?(x, y)
+    !wall?(x, y) && [x, y] != [@px, @py] && !STAIRS.key?(@map[y][x]) && [x, y] != @cage&.dig(:plate) && !monster_at(x, y)
+  end
+
+  # An experimental friend the player has reacted to suddenly isn't there; false for anything real
+  def dispel(m)
+    m&.phantom or return false
+
+    @monsters.delete(m)
+    say "The #{m.name} suddenly turns around and dissipates like smoke!"
+    true
   end
 
   # Each slippery square counts down to its next slip, d3 rounds apart; then whoever stands on it slips off
@@ -3143,12 +3228,17 @@ class Dungeon
       m.struck = true
       m.struck_hero = true # no longer innocent
       dmg = blow(m)
+      dmg = [dmg, PHANTOM_HP - m.phantom].min if m.phantom # a friend takes no more than PHANTOM_HP in all
+      spent = m.phantom && (m.phantom += dmg) >= PHANTOM_HP
       with = " with its #{m.weapon[:name]}" if m.weapon
-      return say("The #{m.name} hits you#{with} for #{dmg}, but you take no damage.") if godMode?
-
-      hurt(dmg)
-      say "The #{m.name} hits you#{with} for #{dmg}."
-      say("You die on depth #{@depth} with #{gold} gold.") if over?
+      if godMode?
+        say "The #{m.name} hits you#{with} for #{dmg}, but you take no damage."
+      else
+        hurt(dmg)
+        say "The #{m.name} hits you#{with} for #{dmg}."
+        say("You die on depth #{@depth} with #{gold} gold.") if over?
+      end
+      dispel(m) if spent
     else
       return if gaseous? && !friend?(m) && !follower?(m) # nothing hostile bothers chasing mist
       return if FURNITURE.include?(m.name) # angry furniture strikes from where it stands but never leaves it
@@ -4135,7 +4225,7 @@ class DosBox
   # The PC Rogue look: a smiley for the player, shaded walls, dotted floors, a triple bar for the stairs, and so on.
   # A glyph code page 437 has no room for, such as an emoji weapon, becomes Rogue's weapon arrow, or a shield's ]
   OEM = { # "@" => "☺",
-          "#" => "▒", "." => "·", ">" => "≡", "$" => "☼", "%" => "♣", "🐿️" => "s", "🐿" => "s" }.freeze
+          "#" => "▒", "." => "·", ">" => "≡", "$" => "☼", "🐿️" => "s", "🐿" => "s" }.freeze
   SHIELDS = %w[༺ 𓆩 ༻].freeze
   WEAPON = "↑"
 
@@ -4144,7 +4234,7 @@ class DosBox
   TINTS = { hungry: "1;33", ally: "1;34", enemy: "1;31" }.freeze
 
   # The OEM glyphs in code page 437's low, control-code range, which a DOS console still draws rather than obeys
-  LOW_GLYPHS = { "☺" => "\x01", "♣" => "\x05", "☼" => "\x0F", "↑" => "\x18" }.freeze
+  LOW_GLYPHS = { "☺" => "\x01", "☼" => "\x0F", "↑" => "\x18" }.freeze
 
   # The escape sequences a terminal sends for the arrow and keypad keys, named as the browser names them, so the
   # movement PAD reads them all alike

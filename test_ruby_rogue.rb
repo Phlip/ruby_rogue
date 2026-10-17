@@ -432,7 +432,7 @@ class DungeonTest < Minitest::Test
     assert_equal Dungeon::HERO_AC, @game.ac
     assert_equal Dungeon::MAX_BLOOD_SUGAR, @game.blood_sugar
     assert_equal "fists", @game.weapon
-    assert_equal({ gold: 0, sandwiches: 0, potions: 0, speed_potions: 0, gas_potions: 0, slow_potions: 0, healing_potions: 0, sleep_potions: 0, glue_potions: 0, slip_potions: 0, empty_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0, candles: 0, laced_potions: 0, laced_speed_potions: 0, laced_gas_potions: 0, laced_slow_potions: 0, laced_healing_potions: 0, laced_sleep_potions: 0, laced_glue_potions: 0, laced_slip_potions: 0, laced_empty_potions: 0, eggs: [], weapons: [], shields: [], wands: [], slip_wands: [], toolbags: 0, tough_sandwiches: [] }, @game.knapsack)
+    assert_equal({ gold: 0, sandwiches: 0, potions: 0, speed_potions: 0, gas_potions: 0, slow_potions: 0, healing_potions: 0, sleep_potions: 0, glue_potions: 0, slip_potions: 0, empty_potions: 0, hallucination_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0, candles: 0, laced_potions: 0, laced_speed_potions: 0, laced_gas_potions: 0, laced_slow_potions: 0, laced_healing_potions: 0, laced_sleep_potions: 0, laced_glue_potions: 0, laced_slip_potions: 0, laced_empty_potions: 0, laced_hallucination_potions: 0, eggs: [], weapons: [], shields: [], wands: [], slip_wands: [], toolbags: 0, tough_sandwiches: [] }, @game.knapsack)
     assert_equal 1, @game.depth
     assert_equal ["The hero descends into the darkness."], @game.log
     @game.hero_name = "Golfy"
@@ -608,6 +608,45 @@ class DungeonTest < Minitest::Test
     assert_empty @game.knapsack[:tough_sandwiches]
     assert_operator @game.blood_sugar, :>, 10, "the third turn, it gives way and is eaten"
     assert_equal 0, @game.sandwiches
+  end
+
+  def test_a_toolbag_knife_opens_a_tough_sandwich_and_you_eat_it_in_one_action
+    arrange_arena
+    arrange_set :blood_sugar, 10
+    assert_get(:knapsack)[:toolbags] = 1
+    assert_get(:knapsack)[:tough_sandwiches] = [3]
+
+    @game.offer(:sandwiches)
+    @game.rest
+
+    assert_includes @game.log, "Your zippo knife from the Toolbag opens the sandwich."
+    assert_empty @game.knapsack[:tough_sandwiches]
+    assert_operator @game.blood_sugar, :>, 10, "eaten the same action"
+    assert_equal 1, @game.knapsack[:toolbags], "the Toolbag keeps its knife"
+  end
+
+  def test_a_toolbag_knife_opens_a_wrapped_sandwich_and_you_eat_it_in_one_tap
+    arrange_arena
+    arrange_set :blood_sugar, 10
+    assert_get(:knapsack)[:toolbags] = 1
+    food = arrange_sandwich_at(6, 5).last
+
+    @game.tap
+
+    assert_includes @game.log, "Your zippo knife from the Toolbag opens the sandwich."
+    refute_includes assert_get(:monsters), food
+    assert_operator @game.blood_sugar, :>, 10
+  end
+
+  def test_a_toolbag_knife_opens_a_sandwich_you_are_not_hungry_for
+    arrange_arena
+    assert_get(:knapsack)[:toolbags] = 1
+    food = arrange_sandwich_at(6, 5).last
+
+    @game.tap
+
+    assert_instance_of Dungeon::SandwichOpenState, wrapping(food)
+    assert_equal "The sandwich is open and edible, but your blood sugar isn't low enough to want it.", last_log
   end
 
   def test_a_sandwich_starts_wrapped_and_its_machine_runs_on_its_rows_table
@@ -2077,7 +2116,7 @@ class DungeonTest < Minitest::Test
     assert_get(:treasure)[[6, 5]] = 15
     assert_get(:sandwiches)[[6, 5]] = 1
     @game.move(1, 0)
-    assert_equal({ gold: 15, sandwiches: 1, potions: 0, speed_potions: 0, gas_potions: 0, slow_potions: 0, healing_potions: 0, sleep_potions: 0, glue_potions: 0, slip_potions: 0, empty_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0, candles: 0, laced_potions: 0, laced_speed_potions: 0, laced_gas_potions: 0, laced_slow_potions: 0, laced_healing_potions: 0, laced_sleep_potions: 0, laced_glue_potions: 0, laced_slip_potions: 0, laced_empty_potions: 0, eggs: [], weapons: [], shields: [], wands: [], slip_wands: [], toolbags: 0, tough_sandwiches: [] }, @game.knapsack)
+    assert_equal({ gold: 15, sandwiches: 1, potions: 0, speed_potions: 0, gas_potions: 0, slow_potions: 0, healing_potions: 0, sleep_potions: 0, glue_potions: 0, slip_potions: 0, empty_potions: 0, hallucination_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0, candles: 0, laced_potions: 0, laced_speed_potions: 0, laced_gas_potions: 0, laced_slow_potions: 0, laced_healing_potions: 0, laced_sleep_potions: 0, laced_glue_potions: 0, laced_slip_potions: 0, laced_empty_potions: 0, laced_hallucination_potions: 0, eggs: [], weapons: [], shields: [], wands: [], slip_wands: [], toolbags: 0, tough_sandwiches: [] }, @game.knapsack)
     assert_equal "You pack a sandwich into your knapsack.", last_log
   end
 
@@ -5632,6 +5671,89 @@ class DungeonTest < Minitest::Test
     assert_equal "You quaff the empty potion. It's empty. Nothing happens.", last_log
   end
 
+  # --- the potion of hallucination, and its experimental friends ---
+
+  def arrange_friend(x, y, hit: 3..3) = assert_get(:monsters) << arrange_thing(x, y, "g", "goblin", 10, hit, pacifist: false, aggressive: true, phantom: 0)
+
+  def test_a_potion_of_hallucination_passes_itself_off_as_another
+    arrange_arena
+    arrange_set :potion_alias, "potion of water"
+    assert_get(:knapsack)[:hallucination_potions] = 1
+    assert_includes @game.contents, ["! potion of water", :hallucination_potions]
+  end
+
+  def test_quaffing_hallucination_promises_friends
+    arrange_arena
+    arrange_set :potion_alias, "potion of gain strength"
+    assert_get(:knapsack)[:hallucination_potions] = 1
+    @game.quaff(:hallucination_potions)
+    assert_equal "You quaff the potion of gain strength. This is really a potion of experimental friends. Prepare to meet some!", last_log
+    assert_equal Dungeon::HALLUCINATION_ROUNDS - 1, assert_get(:hallucinating), "drinking took a round"
+  end
+
+  def test_a_friend_turns_up_every_30_rounds_for_300
+    arrange_arena
+    arrange_set :hallucinating, Dungeon::HALLUCINATION_ROUNDS
+    friends = ->{ assert_get(:monsters).count(&:phantom) }
+    29.times { @game.send(:round_passes) }
+    assert_equal 0, friends.()
+    @game.send(:round_passes)
+    assert_equal 1, friends.()
+    270.times { @game.send(:round_passes) }
+    assert_equal 10, friends.()
+    30.times { @game.send(:round_passes) }
+    assert_equal 10, friends.(), "the hallucination wore off"
+  end
+
+  def test_a_friend_turns_up_close_by_and_hunting_you
+    arrange_arena
+    arrange_set :hallucinating, 1
+    @game.send(:round_passes)
+    friend = assert_get(:monsters).first
+    assert_operator [(friend.x - 5).abs, (friend.y - 5).abs].max, :<=, Dungeon::PHANTOM_RANGE
+    assert friend.aggressive
+    assert_equal :ego, friend.pursuit_target
+    assert friend.farsighted
+    assert_equal 0, assert_get(:population)[friend.name], "a friend is no part of the level"
+  end
+
+  def test_tapping_a_friend_dissipates_it
+    arrange_arena
+    arrange_friend(6, 5)
+    arrange_set :facing, [1, 0]
+    @game.tap
+    assert_empty assert_get(:monsters)
+    assert_equal "The goblin suddenly turns around and dissipates like smoke!", last_log
+  end
+
+  def test_hitting_a_friend_dissipates_it_without_shame_or_glory
+    arrange_arena
+    arrange_friend(6, 5, hit: 0..0)
+    @game.move(1, 0)
+    assert_empty assert_get(:monsters)
+    assert_equal "The goblin suddenly turns around and dissipates like smoke!", last_log
+    assert_equal 0, @game.experience_points
+  end
+
+  def test_giving_a_friend_a_coin_dissipates_it_and_you_keep_the_coin
+    arrange_arena
+    assert_get(:knapsack)[:gold] = 1
+    arrange_friend(6, 5, hit: 0..0)
+    @game.send(:give, :gold, 1, 0)
+    assert_empty assert_get(:monsters)
+    assert_equal 1, @game.gold
+  end
+
+  def test_a_friend_takes_no_more_than_2_hp_then_dissipates
+    arrange_arena
+    arrange_friend(6, 5, hit: 5..5)
+    @game.rest
+    assert_equal 18, @game.hp
+    assert_empty assert_get(:monsters)
+    assert_includes @game.log, "The goblin hits you for 2."
+    assert_equal "The goblin suddenly turns around and dissipates like smoke!", last_log
+  end
+
   def test_slowness_gives_everyone_else_two_actions_for_yours
     arrange_arena
     arrange_monster(9, 5, hp: 100, hit: 0..0)
@@ -8037,7 +8159,7 @@ class DosBoxTest < Minitest::Test
 
   def test_the_map_wears_the_pcs_oem_glyphs
     { "#" => "▒", "." => "·", ">" => "≡", "$" => "☼",
-      "%" => "♣", "G" => "G", "¡" => "¡", "?" => "?"
+      "%" => "%", "G" => "G", "¡" => "¡", "?" => "?"
     }.each do |glyph, oem|
       assert_equal oem, @dos.oem(glyph), glyph
     end
@@ -8401,7 +8523,7 @@ class DosBoxTest < Minitest::Test
   end
 
   def test_a_dos_box_gets_code_page_437_bytes_low_glyphs_included
-    assert_equal [0x01, 0xFA, 0xB1, 0xF0, 0x05, 0x0F, 0x18, 0x1B, 0x5B, 0x4B], @dos.encode("☺·▒≡♣☼↑\e[K", Encoding::IBM437).bytes
+    assert_equal [0x01, 0xFA, 0xB1, 0xF0, 0x0F, 0x18, 0x1B, 0x5B, 0x4B], @dos.encode("☺·▒≡☼↑\e[K", Encoding::IBM437).bytes
   end
 
   def test_a_plain_ascii_console_gets_question_marks_not_control_codes

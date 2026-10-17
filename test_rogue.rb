@@ -3601,7 +3601,7 @@ class DungeonTest < Minitest::Test
     spring
     assert @game.won?
     assert_equal "YOU WON", @game.outcome
-    assert_includes @game.log, "The bars slam down behind you. Your haul: a Quail and 2 eggs."
+    assert_includes @game.log, "The bars slam down behind you. Your haul: a Quail and 2 Quail eggs."
     assert_equal "An egg hatches, and Quail chicks peep in the Safe Room. You won!", last_log
   end
 
@@ -3611,7 +3611,7 @@ class DungeonTest < Minitest::Test
     arrange_quail(12, 12)
     spring
     assert @game.won?
-    assert_includes @game.log, "The bars slam down behind you. Your haul: a Quail and 2 eggs."
+    assert_includes @game.log, "The bars slam down behind you. Your haul: a Quail and 2 Quail eggs."
     assert_equal "2 eggs hatch, and Quail chicks peep in the Safe Room. You won!", last_log
   end
 
@@ -4237,6 +4237,17 @@ class DungeonTest < Minitest::Test
     arrange_set :depth, 8
     laid = Array.new(900) { @game.send(:lay_egg) }
     assert_in_delta 225, laid.count(&:dodo), 50
+  end
+
+  def test_the_haul_counts_quail_eggs_apart_from_the_other_eggs
+    by_the_plate
+    assert_get(:knapsack)[:eggs] = [egg(true), dodo_egg, dodo_egg(true)]
+    arrange_quail(12, 12)
+
+    spring
+
+    assert_includes @game.log, "The bars slam down behind you. Your haul: a Quail, 1 Quail egg, and 2 other eggs."
+    assert @game.won?
   end
 
   def test_a_dodo_chick_is_no_win

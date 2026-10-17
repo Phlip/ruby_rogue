@@ -109,5 +109,5 @@ end
 desc "Play the game in god mode, where you take no damage"
 task :god do
   Dir.chdir(__dir__)
-  exec RbConfig.ruby, "ruby_rogue.rb", "--god"
+  exec RbConfig.ruby, "ruby_rogue.rb", "--god", "--level", "6"
 end

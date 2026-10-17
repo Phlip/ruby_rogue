@@ -476,9 +476,11 @@ class Dungeon
     "Do not bribe doors with money to get them to open.",
     "Do not offer sandwiches to locked doors while Imps are watching.",
     "Never pick a lock with the contents of an unattended Toolbag.",
+    "Do not hotwire a door's openness status by offering a bribe from your\ncredit card or any cash on hand.",
     "Bring Dodo and Axebeak eggs into the Safe Room too. Whatever.",  #  the joke is nothing enforces if you do
     "Do not activate the Safe Room ring while a Troll is lurking inside the\nsecurity perimeter.",
     "Never hold a specimen's egg up to a candle to see what is growing in it.",
+    "Never use any cleaning fluid or industrial adhesive for any off-label\nactivities.",
     "Do not use any corridor in the plenum that is too narrow for two people;\nit's not certified for foot traffic.",
     "Do not corner anything with a brain in a narrow corridor; it will panic.",
     "Do not pay a growling shield a coin, and never strike it afterward.",
@@ -1694,7 +1696,9 @@ class Dungeon
     food = sandwiches + floor.(@sandwiches)
     @caged = { eggs: eggs.size, critters: caught.select { |m| critter?(m) }.map(&:name) }
     haul = caught.map { |m| a_name(m.name) }
-    haul << egg_count(eggs).sub(/ \(.*/, "") if eggs.any?
+    quail_eggs, other_eggs = eggs.partition { |e| !e.dodo }
+    haul << "#{quail_eggs.size} Quail #{quail_eggs.size == 1 ? "egg" : "eggs"}" if quail_eggs.any?
+    haul << "#{other_eggs.size} other #{other_eggs.size == 1 ? "egg" : "eggs"}" if other_eggs.any?
     haul << "#{coins} gold" if coins.positive?
     haul << "#{food} #{food == 1 ? "sandwich" : "sandwiches"}" if food.positive?
     say "The bars slam down behind you. Your haul: #{haul.empty? ? "nothing but yourself" : and_list(haul)}."

@@ -1299,9 +1299,9 @@ class Dungeon
   attr_reader :take_question
 
   # Something lying dormant that a tap gets nothing out of, and a knapsack could hold: an item, a shield, or a
-  # dropped weapon
+  # dropped weapon. Nothing with a brain, though: it has its own say in the matter
   def takeable?(m)
-    m.pacifist && !m.disguised_potion &&
+    m.pacifist && !m.disguised_potion && !brain?(m) &&
       (PACKABLE.key?(m.name) || SHIELDS.include?(m.name) || WEAPONS.any? { |w| w[:name] == m.name })
   end
 

@@ -6335,6 +6335,16 @@ class DungeonTest < Minitest::Test
     assert_same potion, @game.take_question
   end
 
+  def test_nothing_with_a_brain_is_offered_for_the_taking
+    arrange_arena
+    arrange_set :facing, [1, 0]
+    assert_get(:monsters) << arrange_thing(6, 5, "༻", "shield", 100, 0..0, pacifist: true, int: 10)
+
+    @game.tap
+
+    assert_nil @game.take_question, "a shield that can think isn't loot"
+  end
+
   def test_an_item_too_heavy_for_the_backpack_says_what_weighs_you_down
     arrange_arena
     arrange_set :facing, [1, 0]

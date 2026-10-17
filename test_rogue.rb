@@ -3735,7 +3735,7 @@ class DungeonTest < Minitest::Test
     goblin = arrange_monster(6, 5, hp: 100, int: 0, aggressive: false).last # no brain, so it won't flee on
     @game.tap
     assert_equal [7, 5], [goblin.x, goblin.y]
-    assert_equal "You push the goblin.", last_log
+    assert_equal "You push the goblin. Also, the goblin is too big for your backpack.", last_log
   end
 
   def test_a_tap_in_the_open_is_only_a_tap
@@ -3744,7 +3744,7 @@ class DungeonTest < Minitest::Test
     goblin = arrange_monster(6, 5, hp: 100, aggressive: false).last
     @game.tap
     assert_equal [6, 5], [goblin.x, goblin.y]
-    assert_equal "You tap the goblin.", last_log
+    assert_equal "You tap the goblin. Also, the goblin is too big for your backpack.", last_log
   end
 
   def test_a_push_against_a_wall_is_only_a_tap
@@ -3753,7 +3753,7 @@ class DungeonTest < Minitest::Test
     goblin = arrange_monster(6, 5, hp: 100, aggressive: false).last
     @game.tap
     assert_equal [6, 5], [goblin.x, goblin.y]
-    assert_equal "You tap the goblin.", last_log
+    assert_equal "You tap the goblin. Also, the goblin is too big for your backpack.", last_log
   end
 
   def test_hitting_a_creature_in_a_hall_makes_it_flee_out_of_it
@@ -4591,7 +4591,7 @@ class DungeonTest < Minitest::Test
     arrange_hallway
     troll = arrange_troll(6, 5, hit: 0..0).last
     @game.tap
-    assert_includes @game.log, "You push the Troll."
+    assert_includes @game.log, "You push the Troll. Also, the Troll is too big for your backpack."
     assert_instance_of Dungeon::FleeingState, state_of(troll)
     assert_equal [8, 5], [troll.x, troll.y], "pushed to 7, 5, it flees a step further"
 
@@ -6323,13 +6323,38 @@ class DungeonTest < Minitest::Test
     end
   end
 
+  # --- tapping an item offers it to you ---
+
+  def test_tapping_an_unresponsive_item_offers_it
+    arrange_arena
+    arrange_set :facing, [1, 0]
+    potion = add_potion(6, 5).last
+
+    @game.tap
+
+    assert_same potion, @game.take_question
+  end
+
+  def test_an_item_too_heavy_for_the_backpack_says_what_weighs_you_down
+    arrange_arena
+    arrange_set :facing, [1, 0]
+    assert_get(:knapsack)[:weapons] << Dungeon::WEAPONS.find { |w| w[:name] == "swords" }
+    assert_get(:knapsack)[:gold] = 2_700 # 54 pounds of coin, with 6 of swords: the 60 are full
+    assert_get(:monsters) << arrange_thing(6, 5, "(", "toolbag", 3, 0..0, pacifist: true)
+
+    @game.tap
+
+    assert_nil @game.take_question, "no offer it couldn't keep"
+    assert_includes @game.log, "Your backpack is too heavy for this toolbag due to the swords."
+  end
+
   def test_tapping_is_not_violence
     arrange_arena
     goblin = arrange_monster(6, 5, hp: 100, hit: 0..0, aggressive: false).last
     @game.tap
     assert_equal 100, goblin.hp
     refute goblin.aggressive, "not provoked"
-    assert_equal "You tap the goblin.", last_log
+    assert_equal "You tap the goblin. Also, the goblin is too big for your backpack.", last_log
   end
 
   def test_tapping_a_wall_or_empty_air_just_disappears
@@ -6349,7 +6374,7 @@ class DungeonTest < Minitest::Test
     arrange_monster(6, 5, hp: 100, hit: 0..0, aggressive: false)
     arrange_monster(9, 5, hp: 100, hit: 0..0)
     @game.tap
-    assert_equal "You tap the goblin.", last_log
+    assert_equal "You tap the goblin. Also, the goblin is too big for your backpack.", last_log
     assert_equal [8, 5], [assert_get(:monsters).last.x, assert_get(:monsters).last.y]
   end
 
@@ -7456,17 +7481,60 @@ class DosBoxTest < Minitest::Test
     assert_equal "Your knapsack is empty.", prompt_line
   end
 
-  def test_dot_repeats_a_key_pressed_three_times
+  def test_three_of_a_sideways_arrow_offer_a_zip
     keys "l", "l", "l"
-    assert_equal "R repeats that key", prompt_line
-    keys "."
-    assert_equal [11, 5], [assert_get(:px), assert_get(:py)]
+
+    assert_equal "zip right? (Y/n): ", prompt_line
+  end
+
+  def test_up_and_down_arrows_offer_no_zip
+    keys "j", "j", "j"
+
+    assert_equal "? for the keys", prompt_line
+  end
+
+  def test_enter_zips_to_just_before_the_edge
+    keys "l", "l", "l", "\r"
+
+    assert_equal [W - 1, 5], [assert_get(:px), assert_get(:py)]
+    assert_equal "? for the keys", prompt_line, "the offer is spent"
+  end
+
+  def test_n_declines_the_zip
+    keys "h", "h", "h", "n"
+
+    assert_equal [2, 5], [assert_get(:px), assert_get(:py)]
+    assert_equal "? for the keys", prompt_line
+  end
+
+  def test_a_zip_stops_before_a_sleeper_comes_into_sight
+    assert_get(:monsters) << arrange_thing(40, 5, "g", "goblin", 100, 0..0, aggressive: false, asleep: 50)
+
+    keys "l", "l", "l", "y"
+
+    assert_equal [40 - Dungeon::SIGHT - 1, 5], [assert_get(:px), assert_get(:py)], "just out of range"
+  end
+
+  def test_a_zip_stops_before_a_door
+    assert_get(:monsters) << arrange_thing(20, 5, "#", "door", 30, 0..0, pacifist: true)
+
+    keys "l", "l", "l", "y"
+
+    assert_equal [14, 5], [assert_get(:px), assert_get(:py)]
+  end
+
+  def test_a_zip_stops_at_a_turn
+    (0...16).each { |x| assert_get(:map)[4][x] = assert_get(:map)[6][x] = "#" } # a corridor to x 15, then open
+
+    keys "l", "l", "l", "y"
+
+    assert_equal [16, 5], [assert_get(:px), assert_get(:py)], "where the walls fall away"
   end
 
   def test_f_taps_the_way_you_face
     assert_get(:monsters) << arrange_thing(6, 5, "g", "goblin", 100, 0..0, aggressive: false)
     keys "f"
-    assert_equal "You tap the goblin.", game.log.last
+    assert_equal "You tap the goblin. Also, the goblin is too big for your backpack.", game.log.last
     keys "?"
     assert(@dos.lines.any? { |l| l == "f: tap right" }, "the keys list names the tap")
     keys "h"

@@ -476,9 +476,10 @@ class Dungeon
     "Do not bribe doors with money to get them to open.",
     "Do not offer sandwiches to locked doors while Imps are watching.",
     "Never pick a lock with the contents of an unattended Toolbag.",
-    "Do not bring Dodo or Axebeak eggs into the Safe Room.",  #  the joke is nothing enforces if you do
+    "Bring Dodo and Axebeak eggs into the Safe Room too. Whatever.",  #  the joke is nothing enforces if you do
     "Do not activate the Safe Room ring while a Troll is lurking inside the\nsecurity perimeter.",
     "Never hold a specimen's egg up to a candle to see what is growing in it.",
+    "Do not use any corridor in the plenum that is too narrow for two people;\nit's not certified for foot traffic.",
     "Do not corner anything with a brain in a narrow corridor; it will panic.",
     "Do not pay a growling shield a coin, and never strike it afterward.",
     "Do not tap F lab equipment to see whether it wants to come home with you.",
@@ -1225,23 +1226,23 @@ class Dungeon
       if gaseous? || mist?(m)
         say "Your tap passes right through the #{m.name}."
       elsif m.name == "door" && m.jammed
-        say "You tap the door. It's jammed shut; you'll have to bash through it."
+        tap_say m, "You tap the door. It's jammed shut; you'll have to bash through it."
       elsif m.name == "door" && !door_machine(m).state.is_a?(OpenState)
-        say "You tap the door. It rattles, but it's locked."
+        tap_say m, "You tap the door. It rattles, but it's locked."
       elsif m.name == "door"
         @monsters.delete(m)
-        say "You tap the door, and it swings open."
+        tap_say m, "You tap the door, and it swings open."
       elsif m.name == "sandwich"
         unwrap(m, 1)
       elsif tight_spot?(m) && !m.stuck.to_i.positive? && pushable_to?(to = [x + @facing[0], y + @facing[1]])
         m.x, m.y = to
-        say "You push the #{m.name}."
+        tap_say m, "You push the #{m.name}."
         brain?(m) ? scare(m) : provoke_hunter(m, StateEvent::PUSH)
         tread(m)
       else
-        say "You tap the #{m.name}."
+        tap_say m, "You tap the #{m.name}."
         provoke_hunter(m, StateEvent::TAP)
-        @take_question = m if takeable?(m) # it doesn't so much as rattle, so it might as well be yours
+        offer_to_take(m) if takeable?(m) # it doesn't so much as rattle, so it might as well be yours
       end
     elsif [x, y] == @cage&.dig(:plate)
       press_plate(StateEvent::TAP)
@@ -1251,6 +1252,10 @@ class Dungeon
     end
     end_turn
   end
+
+  # What a tap says, and, for anything that would never go in a backpack, that too; but never a door, which
+  # answers for itself
+  def tap_say(m, text) = say("#{text}#{" Also, the #{m.name} is too big for your backpack." unless takeable?(m) || m.name == "door"}")
 
   # A thingage is in a tight spot, as in a hallway or a corner, when walls close in on all but two of its sides at
   # most, so a tap against it pushes it on a square instead
@@ -1300,7 +1305,32 @@ class Dungeon
       (PACKABLE.key?(m.name) || SHIELDS.include?(m.name) || WEAPONS.any? { |w| w[:name] == m.name })
   end
 
-  # Answers "Put it in your knapsack? (y/N)": only a definite yes takes it, which takes a turn; anything else
+  # A tapped item that didn't respond is offered to the player, "Put this X in your backpack? (y/N)", unless it
+  # wouldn't fit, when they're told so instead, and what's weighing them down most
+  def offer_to_take(m)
+    return @take_question = m if room_for?(packed_pounds(m))
+
+    say "Your backpack is too heavy for this #{m.name} due to the #{heaviest_packed}."
+  end
+
+  # What a thing lying about would weigh, packed
+  def packed_pounds(m)
+    return pounds(PACKABLE[m.name]) if PACKABLE.key?(m.name)
+    return Dungeon.pounds(Dungeon.packable(m.name)) if SHIELDS.include?(m.name)
+
+    weapon_pounds(m.weapon || { name: m.name })
+  end
+
+  # The name of the single heaviest thing in the knapsack
+  def heaviest_packed
+    things = @knapsack.filter_map { |slot, n| [item_noun(slot), pounds(slot)] if n.is_a?(Integer) && n.positive? }
+    things += @knapsack[:weapons].map { |w| [w[:name], weapon_pounds(w)] }
+    things += @knapsack[:shields].map { |sh| [sh[:name], Dungeon.pounds(Dungeon.packable(sh[:name]))] }
+    things << ["egg", Dungeon.pounds(EGG_POUNDS)] if @knapsack[:eggs].any?
+    things.max_by(&:last)&.first
+  end
+
+  # Answers "Put this X in your backpack? (y/N)": only a definite yes takes it, which takes a turn; anything else
   # leaves it lying there, and the question goes either way
   def take_it(yes)
     over? and return
@@ -3516,8 +3546,55 @@ class Dungeon
 
     # Whether the rest key will repeat the last key, for a front end to say so
     def repeat_ready? = @streak.to_i >= REPEAT_AFTER && !@offering && !over?
+
+    # "left" or "right" once the player has pressed the same sideways arrow three times running, offering to zip
+    # that way; else nil. Only sideways: an up or down arrow, pressed as often, offers nothing
+    def zip_question
+      name, (dx, dy) = @last_press
+      return unless name == :move && dy.zero? && !dx.zero? && @streak.to_i >= REPEAT_AFTER
+      return if over? || @offering || @stairs_question || @take_question
+
+      dx.negative? ? "left" : "right"
+    end
+
+    # Declines the offer to zip: the run of presses starts over
+    def decline_zip = @streak = 0
+
+    # Zips the way the last sideways arrow went, a step at a time, stopping just before anything worth stopping for:
+    # a wall, a door, a creature, or an item in the way; a turn, where the floor opens or closes to either side; a
+    # creature about to come into sight, even a sleeping one, so it stays just out of range; stairs or the cage's
+    # plate; or anything that happens on the way, from a blow to a question
+    def zip
+      way = zip_question or return
+      dx = way == "left" ? -1 : 1
+      @streak = 0
+      ZIP_LIMIT.times do
+        nx = @px + dx
+        break if wall?(nx, @py) || monster_at(nx, @py) || STAIRS.key?(@map[@py][nx]) || [nx, @py] == @cage&.dig(:plate)
+        break if coming_into_sight?(nx, @py)
+
+        sides = open_sides
+        before = situation
+        move(dx, 0)
+        break if over? || @stairs_question || @take_question || situation != before || open_sides != sides
+      end
+      @streak = 0
+    end
   end
   prepend Repeating
+
+  # The most squares one zip runs
+  ZIP_LIMIT = VIEWPORT_WIDTH
+
+  # Whether stepping to x, y would bring some living creature into sight that isn't in sight now; furniture and
+  # items only stop a zip once they're right in the way
+  def coming_into_sight?(x, y)
+    within = ->(m, cx, cy) { (m.x - cx).abs <= SIGHT && (m.y - cy).abs <= SIGHT }
+    @monsters.any? { |m| m.hp.positive? && critter?(m) && within.(m, x, y) && !within.(m, @px, @py) }
+  end
+
+  # Which of the squares above and below the player are open floor: a change in it is a turn
+  def open_sides = [-1, 1].map { |dy| !wall?(@px, @py + dy) }
 end
 
 # The movement pad both front ends draw: label, dx, dy, and the browser keys that press it
@@ -3688,6 +3765,7 @@ class WebGame
       when "/give_chosen" then @game.give_chosen
       when "/stairs" then @game.take_stairs(params["answer"] == "yes")
       when "/take" then @game.take_it(params["answer"] == "yes")
+      when "/zip" then params["answer"] == "yes" ? @game.zip : @game.decline_zip
       when "/give"
         item = params["item"].to_s.to_sym
         Dungeon::GIFTS.key?(item) or return [404, {}, "Not found"]
@@ -3818,10 +3896,15 @@ class WebGame
                  %(<form method="post" action="/stairs?answer=no"><button data-keys="n" style="width: auto">No (n)</button></form></div>)
              end
     take = if (thing = @game.take_question)
-             %(<div class="stairs">Put the #{h thing.name} in your knapsack? ) +
+             %(<div class="stairs">Put this #{h thing.name} in your backpack? ) +
                %(<form method="post" action="/take?answer=yes"><button data-keys="y" style="width: auto">Yes (y)</button></form>) +
                %(<form method="post" action="/take?answer=no"><button data-keys="n" style="width: auto">No (N)</button></form></div>)
            end
+    zip = if (way = @game.zip_question)
+            %(<div class="stairs">zip #{way}? ) +
+              %(<form method="post" action="/zip?answer=yes"><button data-keys="y Enter" style="width: auto">Yes (Y)</button></form>) +
+              %(<form method="post" action="/zip?answer=no"><button data-keys="n" style="width: auto">No (n)</button></form></div>)
+          end
 
     <<~HTML
       <!DOCTYPE html>
@@ -3857,7 +3940,7 @@ class WebGame
         <div class="below">
           <div class="controls">
             #{%(<form method="post" action="/throw"><button data-keys="t" style="width: auto">throw (t)</button></form>) if @game.can_hurl?}
-            #{stairs}#{take}
+            #{stairs}#{take}#{zip}
             <div class="pad-row">
               <div class="pad">#{buttons.join}</div>
               <div class="controls">
@@ -4028,6 +4111,10 @@ class DosBox
     return play_again(key) if @game.over? || @error
     return @game.take_stairs(%w[y Y].include?(key)) if @game.stairs_question && %w[y Y n].include?(key)
     return @game.take_it(key == "y") if @game.take_question # only a definite y; any other key is a no
+    if @game.zip_question
+      return @game.zip if %W[y Y \r \n].include?(key) # Enter, or a yes, zips
+      return @game.decline_zip if %w[n N].include?(key)
+    end
 
     case key
     when "i" then @game.inventory
@@ -4158,12 +4245,14 @@ class DosBox
     return "#{PROMPTS.values.to_h[@pending]} (#{letters}, Esc cancels)" if @pending
     return "#{ending} Play again? (y/n)" if @error || @game.over?
     return "You want to go #{@game.stairs_question}? (y/n)" if @game.stairs_question
-    return "Put the #{@game.take_question.name} in your knapsack? (y/N)" if @game.take_question
+    return "Put this #{@game.take_question.name} in your backpack? (y/N)" if @game.take_question
     return @note if @note
     return "Then an arrow sends it that way, or R keeps it" if @game.log.last.to_s.end_with?("which way?")
     return "o: use the tools in the Toolbag to open the door" if @game.tools_ready?
 
-    @game.repeat_ready? ? "R repeats that key" : "? for the keys"
+    return "zip #{@game.zip_question}? (Y/n): " if @game.zip_question
+
+    "? for the keys"
   end
 
   # How the game ended, for the play-again offer

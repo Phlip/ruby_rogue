@@ -481,6 +481,7 @@ class Dungeon
     "Do not activate the Safe Room ring while a Troll is lurking inside the\nsecurity perimeter.",
     "Never hold a specimen's egg up to a candle to see what is growing in it.",
     "Never use any cleaning fluid or industrial adhesive for any off-label\nactivities.",
+    "After de-extincting the Dodo, the Committee voted to re-extinct it. Please\ndisregard any Dodos you encounter.",
     "Do not use any corridor in the plenum that is too narrow for two people;\nit's not certified for foot traffic.",
     "Do not corner anything with a brain in a narrow corridor; it will panic.",
     "Do not pay a growling shield a coin, and never strike it afterward.",

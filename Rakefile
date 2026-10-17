@@ -37,10 +37,12 @@ desc "Run every test in test_rogue.rb; a frog croaks if they pass, a kitten mews
 task :test do
   ENV['QUIET'] = '1'
 
-  ruby "test_rogue.rb" do |ok, status|
-    play(ok ? "frog2" : "kitten")
-    ok or abort "The tests failed (exit status #{status.exitstatus})."
-  end
+  # The run's output tees through tee_sounds.rb, which plays a sound for each E, F, and S as the dots print
+  require 'open3'
+  Dir.chdir(__dir__)
+  status = Open3.pipeline([RbConfig.ruby, "test_rogue.rb"], [RbConfig.ruby, "tee_sounds.rb"]).first
+  play(status.success? ? "frog2" : "kitten")
+  status.success? or abort "The tests failed (exit status #{status.exitstatus})."
 
   sh 'figlet tests passed'
 end

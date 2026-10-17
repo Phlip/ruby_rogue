@@ -83,7 +83,7 @@ Press `?` in the game for the full list.
 | Key                           | Does                         |
 | ----------------------------- | ---------------------------- |
 | `hjklyubn`, arrows, or keypad | move (walk into something to attack it) |
-| `.` or `5`                    | rest                         |
+| `R` (or `.` or `5`)           | rest                         |
 | `f`                           | tap whatever you're facing; in a hallway or corner, push it a square |
 | `i`                           | inventory                    |
 | `w`                           | wield                        |

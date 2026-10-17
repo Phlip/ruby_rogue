@@ -28,6 +28,70 @@ end
 
 class Dungeon
 
+  class ThingState
+    def on_entry(*); end
+    def on_exit(*); end
+  end
+
+  # Each state's on_entry is handed the game, the creature, and who it pursues now: a hunter's prey, :ego for
+  # the player, or nil. A quiet one only remembers who that is; an enraged one goes after them
+  class QuietState < ThingState
+    def on_entry(_game, hunter, target)
+      hunter.aggressive = false
+      hunter.pursuit_target = target
+    end
+  end
+
+  class EnragedState < ThingState
+    def on_entry(_game, hunter, target)
+      hunter.aggressive = true
+      hunter.pursuit_target = target
+    end
+  end
+
+  # A fleeing creature only remembers who it flees; it does nothing but get away from them
+  class FleeingState < ThingState
+    def on_entry(_game, creature, target)
+      creature.pursuit_target = target
+    end
+  end
+
+  # A tapped quiet creature turns to face the player but won't engage; pushed or hit, one in any state turns on
+  # the player, giving up any prey it chased; a quiet hunter that sees its prey goes straight for it, and
+  # calming walks an enraged one back to quiet. Pushed or hit in a tight spot, a creature with a brain flees
+  # instead, and once it's clear, it turns on the player
+  STATE_TRANSITIONS = {
+    [QuietState,   StateEvent::TAP]      => QuietState,
+    [QuietState,   StateEvent::PUSH]     => EnragedState,
+    [QuietState,   StateEvent::HIT]      => EnragedState,
+    [QuietState,   StateEvent::SEE_PREY] => EnragedState,
+    [EnragedState, StateEvent::PUSH]     => EnragedState,
+    [EnragedState, StateEvent::HIT]      => EnragedState,
+    [EnragedState, StateEvent::CALM]     => QuietState,
+    [QuietState,   StateEvent::FLEE]     => FleeingState,
+    [EnragedState, StateEvent::FLEE]     => FleeingState,
+    [FleeingState, StateEvent::FLEE]     => FleeingState,
+    [FleeingState, StateEvent::SAFE]     => EnragedState,
+  }.freeze
+
+  # The Safe Room cage's plate, the o, is snapped or not. Snapping it, by stepping onto it or tapping it,
+  # drops the bars and springs the trap; doing either again lifts them. Each state's on_entry is handed the
+  # game, which does the work
+  class UnsnappedState < ThingState
+    def on_entry(game, _plate) = game.lift_bars
+  end
+
+  class SnappedState < ThingState
+    def on_entry(game, _plate) = game.spring_trap
+  end
+
+  CAGE_TRANSITIONS = {
+    [UnsnappedState, StateEvent::STEP_ON] => SnappedState,
+    [UnsnappedState, StateEvent::TAP]     => SnappedState,
+    [SnappedState,   StateEvent::STEP_ON] => UnsnappedState,
+    [SnappedState,   StateEvent::TAP]     => UnsnappedState,
+  }.freeze
+
   # cr (challenge rating) is the first depth a kind turns up on, and na (number appearing) caps how many of it
   # one level holds. na: 1 makes a kind unique and out-of-band: random spawning skips it, so it only turns up
   # where the game places it on purpose. out_of_band does the same for a kind with an na above 1.
@@ -44,16 +108,12 @@ class Dungeon
   module DoorLock
     # A state's chores: on_entry as the machine enters it, on_exit as it leaves. Each is handed whatever the
     # machine's transit was, such as the game and the thingage the machine belongs to
-    class State
-      def on_entry(*); end
-      def on_exit(*); end
-    end
 
-    class LockState < State; end
-    class UnlockingState < State; end
+    class LockState < ThingState; end
+    class UnlockingState < ThingState; end
 
     # What opening was for: action, which each kind of open state overrides
-    class OpenState < State
+    class OpenState < ThingState
       def action(*); end
     end
 
@@ -69,65 +129,6 @@ class Dungeon
       [UnlockingState, StateEvent::REMOVE_KEY] => LockState,
       [UnlockingState, StateEvent::TIMER]      => OpenState,
       [OpenState,      StateEvent::KEY]        => LockState,
-    }.freeze
-
-    # Each state's on_entry is handed the game, the creature, and who it pursues now: a hunter's prey, :ego for
-    # the player, or nil. A quiet one only remembers who that is; an enraged one goes after them
-    class QuietState < State
-      def on_entry(_game, hunter, target)
-        hunter.aggressive = false
-        hunter.pursuit_target = target
-      end
-    end
-
-    class EnragedState < State
-      def on_entry(_game, hunter, target)
-        hunter.aggressive = true
-        hunter.pursuit_target = target
-      end
-    end
-
-    # A fleeing creature only remembers who it flees; it does nothing but get away from them
-    class FleeingState < State
-      def on_entry(_game, creature, target)
-        creature.pursuit_target = target
-      end
-    end
-
-    # A tapped quiet creature turns to face the player but won't engage; pushed or hit, one in any state turns on
-    # the player, giving up any prey it chased; a quiet hunter that sees its prey goes straight for it, and
-    # calming walks an enraged one back to quiet. Pushed or hit in a tight spot, a creature with a brain flees
-    # instead, and once it's clear, it turns on the player
-    STATE_TRANSITIONS = {
-      [QuietState,   StateEvent::TAP]      => QuietState,
-      [QuietState,   StateEvent::PUSH]     => EnragedState,
-      [QuietState,   StateEvent::HIT]      => EnragedState,
-      [QuietState,   StateEvent::SEE_PREY] => EnragedState,
-      [EnragedState, StateEvent::PUSH]     => EnragedState,
-      [EnragedState, StateEvent::HIT]      => EnragedState,
-      [EnragedState, StateEvent::CALM]     => QuietState,
-      [QuietState,   StateEvent::FLEE]     => FleeingState,
-      [EnragedState, StateEvent::FLEE]     => FleeingState,
-      [FleeingState, StateEvent::FLEE]     => FleeingState,
-      [FleeingState, StateEvent::SAFE]     => EnragedState,
-    }.freeze
-
-    # The Safe Room cage's plate, the o, is snapped or not. Snapping it, by stepping onto it or tapping it,
-    # drops the bars and springs the trap; doing either again lifts them. Each state's on_entry is handed the
-    # game, which does the work
-    class UnsnappedState < State
-      def on_entry(game, _plate) = game.lift_bars
-    end
-
-    class SnappedState < State
-      def on_entry(game, _plate) = game.spring_trap
-    end
-
-    CAGE_TRANSITIONS = {
-      [UnsnappedState, StateEvent::STEP_ON] => SnappedState,
-      [UnsnappedState, StateEvent::TAP]     => SnappedState,
-      [SnappedState,   StateEvent::STEP_ON] => UnsnappedState,
-      [SnappedState,   StateEvent::TAP]     => UnsnappedState,
     }.freeze
 
     # Starts in its initial state, locked unless told otherwise, and moves along its table: the old state's
@@ -178,15 +179,15 @@ class Dungeon
       transitions: doorLikeTransitions },
     { glyph: "R", name: "rat",      na:  8, cr: 1, hp:  3, hit: 1..2, ac: 10, str:  7, dex: 15, con: 11, int:  2, wis: 10, cha:  4, aggressive: true, eats: true,
       transitions: doorLikeTransitions },
-    { glyph: "🐿️", name: "squirrel",      na:  8, cr: 1, hp:  3, hit: 1..2, ac: 10, str:  7, dex: 15, con: 11, int:  2, wis: 10, cha:  4, curious: true, eats: true,
+    { glyph: "🐿️", name: "squirrel",      na:  8, cr: 1, hp:  3, hit: 1..2, ac: 10, str:  7, dex: 15, con: 11, int:  2, wis: 10, cha:  4, curious: true, moody: true, eats: true,
       transitions: doorLikeTransitions },
-    { glyph: "C", name: "coyote",   na:  5, cr: 3, hp:  3, hit: 1..2, ac: 10, str: 17, dex: 15, con: 11, int: 16, wis: 15, cha: 14, aggressive: false, eats: true,
+    { glyph: "C", name: "Coyote",   na:  5, cr: 3, hp:  3, hit: 1..2, ac: 10, str: 17, dex: 15, con: 11, int: 16, wis: 15, cha: 14, aggressive: false, eats: true,
       transitions: doorLikeTransitions },
     { glyph: "G", name: "goblin",   na:  8, cr: 2, hp:  6, hit: 1..4, ac: 10, str:  8, dex: 17, con: 10, int: 13, wis: 15, cha: 10, greedy: 0.5, eats: true,
       transitions: doorLikeTransitions },
     { glyph: "O", name: "orc",      na:  5, cr: 4, hp: 10, hit: 2..6, ac: 15, str: 14, dex: 12, con: 17, int: 15, wis: 10, cha: 10, eats: true,
       transitions: doorLikeTransitions },
-    { glyph: "T", name: "troll",    na:  2, cr: 5, hp: 18, hit: 3..8, ac: 15, str: 16, dex: 10, con: 18, int: 10, wis: 10, cha: 10, eats: true,
+    { glyph: "T", name: "Troll",    na:  2, cr: 5, hp: 18, hit: 3..8, ac: 15, str: 16, dex: 10, con: 18, int: 10, wis: 10, cha: 10, eats: true,
       transitions: doorLikeTransitions },
     { glyph: "#", name: "wall",     na: 17, cr: 1, hp:  3, hit: 0..0, ac: 10, str: 18, dex:  0, con: 18, int:  0, wis:  0, cha:  0, pacifist: true,
       transitions: doorLikeTransitions },
@@ -216,7 +217,7 @@ class Dungeon
       transitions: doorLikeTransitions },
     { glyph: "!", name: "empty potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
       transitions: doorLikeTransitions },
-    { glyph: "~", name: "sandwich",   na: 20, cr: 4, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 1,
+    { glyph: "%", name: "sandwich",   na: 20, cr: 4, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 1,
       transitions: {[LockState,      StateEvent::KEY]        => UnlockingState,
                     [UnlockingState, StateEvent::REMOVE_KEY] => LockState,
                     [UnlockingState, StateEvent::TIMER]      => SandwichOpenState,
@@ -236,6 +237,8 @@ class Dungeon
     },
     { glyph: "o", name: "cage plate", na: 1, cr: 5, hp: 1, hit: 0..0, ac: 10, str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0, pacifist: true, out_of_band: true,
       transitions: CAGE_TRANSITIONS },
+    { glyph: "(", name: "toolbag",  na: 2, cr: 1, hp: 3, hit: 0..0, ac: 5, str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0, pacifist: true, packable: 2,
+      transitions: doorLikeTransitions },
     { glyph: "I", name: "Imp",      na:  4, cr: 2, hp:  3, hit: 1..2, ac: 12, str:  6, dex: 16, con:  8, int:  8, wis:  8, cha:  6, pacifist: true,
       transitions: doorLikeTransitions },
     { glyph: "D", name: "Dodo",     na:  3, cr: 4, hp:  6, hit: 1..2, ac:  8, str:  8, dex:  6, con: 10, int:  2, wis:  2, cha:  6, pacifist: true,
@@ -284,7 +287,7 @@ class Dungeon
   #  potion of cursed reckless speed thrown at energized enemy enrages them against your nemesis for you
   #  potion of cursed reckless taken by Ego fails all wisdom use checks for energy conservation against Constitution
 
-  #  a goblin, coyote, or rat assistant makes possible a large following.
+  #  a goblin, Coyote, or rat assistant makes possible a large following.
   #  otherwise they just slow you down
 
   # orcs cannot be bribed not to hunt axebeaks - they pass the bribes along to axe beak hunting crews
@@ -349,11 +352,16 @@ class Dungeon
   # met lists who has met a Quail: :ego for the player, else a thingage's object_id. asleep counts down the rounds a
   # potion of sleep keeps it from acting, and disguised_potion is the POTIONS slot of a potion posing as a creature.
   # state is the STATE_TRANSITIONS machine of a hunter or a piece of furniture, kept apart from machine, a door's
-  # lock. pursuit_target is who its state has it after: a hunter's prey, :ego for the player, or nil
+  # lock. pursuit_target is who its state has it after: a hunter's prey, :ego for the player, or nil. devoted marks
+  # a Dodo born to follow the player. max_hp is the most hit points resting brings it back to, and struck marks a
+  # round it attacked someone, and touched one someone tapped, unwrapped, or hit it, so either way it didn't rest.
+  # jammed marks a door a Toolbag failed on, stuck shut until it's bashed through. unhurt counts its rounds in a
+  # row without losing a hit point, last_hp being what it had at the end of the last one
 
   Thingage = Struct.new(:x, :y, :glyph, :name, :hp, :hit, :str, :dex, :con, :int, :wis, :cha, :pacifist, :spurned, :greedy, :fed, :ally, :coins, :aggressive,
                         :hasted, :gaseous, :farsighted, :nesting, :sugar, :starving, :slowed, :lagging, :weapon, :locked, :machine, :plate_bound, :met, :asleep, :stuck,
-                        :disguised_potion, :pursuit_target, :state)
+                        :disguised_potion, :pursuit_target, :state, :devoted, :max_hp, :struck, :touched, :jammed,
+                        :unhurt, :last_hp)
   ABILITIES = %i[str dex con int wis cha].freeze
 
   # The D&D ability modifier: 10 and 11 give +0, and every two points up or down moves it by one.
@@ -392,7 +400,7 @@ class Dungeon
   # The hero's armor class: the Ego row's. Nothing reads it in combat yet
   HERO_AC = PLAYER[:ac]
 
-  attr_reader :hp, :max_hp, :ac, :abilities, :blood_sugar, :knapsack, :depth, :log, :wielded, :ring, :xp, :hero_level
+  attr_reader :hp, :max_hp, :ac, :abilities, :blood_sugar, :knapsack, :depth, :log, :wielded, :ring, :experience_points, :hero_level
   # The name the hero gave, for their plaque; nil when the front end never asked
   attr_accessor :hero_name
 
@@ -414,7 +422,7 @@ class Dungeon
                   sleep_potions: 0, glue_potions: 0, slip_potions: 0, empty_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0,
                   candles: 0, laced_potions: 0, laced_speed_potions: 0, laced_gas_potions: 0, laced_slow_potions: 0,
                   laced_healing_potions: 0, laced_sleep_potions: 0, laced_glue_potions: 0, laced_slip_potions: 0, laced_empty_potions: 0, eggs: [], weapons: [], shields: [], wands: [],
-                  slip_wands: [] }
+                  slip_wands: [], toolbags: 0 }
     @ring = nil
     @hasted = 0
     @slowed = 0
@@ -427,7 +435,7 @@ class Dungeon
     @start_depth = level
     @caged = { eggs: 0, critters: [] }
     @levels = {}
-    @xp = 0
+    @experience_points = 0
     @hero_level = 1
     @log = ["You descend into the dark#{" to depth #{level}" if level > 1}. Find the stairs (>)."]
     build_level
@@ -437,27 +445,25 @@ class Dungeon
   # The opening story, on the console's splash screen before a hero's first game: wrapped by hand to fit 80 columns
   PREFACE = [
     "        9",
-    "      (}",
+    "      (}       The Situation",
     "     /|",
     "    / )",
     "     /",
     "  ~~~~\\~~~",
-    "\n",
-    "\tThe Situation:",
     "\n",
     "A rival mad scientist has framed you for the demise of a large flightless quail",
     "species; blackmailing you to return a viable family of the endangered, useless",
     "critters, which seem to lack a survival instinct. The only known specimens now",
     "shelter in bunkers below an illegal genetic research facility during World War 4.5.",
     "Owing to a direct hit to the control bunker, all surviving humans have evacuated",
-    "the premises and are unaware of your endeavors, and have the only passcards.",
+    "the premises and are unaware of your endeavors, and they have the only passcards.",
     "\n",
     "Your task is to acquire lab resources to improvise a way into the bunkers, obtain",
     "one quail egg and one viable adult, and get them to this ring: o. Step on that ring",
     "to activate the Safe Room with the specimens inside it. On the way you will",
-    "encounter drugged & sleeping genetic experiments, and robotic doors. Do not, under",
-    "any circumstances, consume their experimental food supplements, infiltrate locked",
-    "areas, or abuse the subjects' experimental emergency restraint systems.",
+    "encounter drugged & sleeping genetic experiments, and armed security doors. Do not,",
+    "under any circumstances, consume their experimental food supplements, infiltrate",
+    "locked areas, or abuse the subjects' experimental emergency restraint systems.",
   ].freeze
 
   # The game ends when the player dies, or springs the cage's trap on themselves and whatever else is inside;
@@ -522,7 +528,11 @@ class Dungeon
     slip_wands: { kind: :slip_wand, name: "wand of slipperiness" },
   }.freeze
 
-  def self.d2x2 = rand(1..2) + rand(1..2)
+  # The one roller every dice helper calls: count dice of sides faces each, summed, as a d2x2 is two d2
+  def self.dice(count, sides) = Array.new(count) { rand(1..sides) }.sum
+
+  def self.d2x2 = dice(2, 2)
+  def self.d3x3 = dice(3, 3)
 
   # The chance a level has a random plate, a teleportation trap; it never has more than one, so fewer than one a
   # level on average
@@ -604,7 +614,7 @@ class Dungeon
   # and hurl themselves at the player once within DISGUISE_RANGE
   DISGUISED_SLEEP_CHANCE = 0.5
   DISGUISE_RANGE = 3
-  def self.d4x3 = rand(1..4) + rand(1..4) + rand(1..4)
+  def self.d4x3 = dice(3, 4)
 
   # A potion of glue, drunk, slows its drinker for SLOW_ROUNDS like slowness. Thrown, it sticks whoever catches it
   # in place for 2d2 rounds. A potion of slipperiness frees its drinker, or whoever catches it, from glue. Wherever
@@ -639,12 +649,15 @@ class Dungeon
   # that potion; thrown up to THROW_RANGE or kicked up to KICK_RANGE, it bursts where it stops and gives its
   # potion's power to everyone in a BURST by BURST square area: four 5-foot squares a side, 20 by 20 feet
   CANDLES = { candles: { row: "candle", name: "candle", glyph: "i" } }.freeze
+
+  # A Toolbag, lying about like any item, works the lock of a locked door the player stands beside
+  TOOLS = { toolbags: { row: "toolbag", name: "Toolbag", glyph: "(" } }.freeze
   LACED = POTIONS.keys.to_h { |slot| [:"laced_#{slot}", slot] }.freeze
   BURST = 4
   KICK_RANGE = 3
 
   # Thingages that walking into packs instead of attacks, with the knapsack slot each goes in and its full name
-  ITEMS = POTIONS.merge(SCROLLS).merge(RINGS).merge(CANDLES).freeze
+  ITEMS = POTIONS.merge(SCROLLS).merge(RINGS).merge(CANDLES).merge(TOOLS).freeze
   PACKABLE = ITEMS.to_h { |slot, i| [i[:row], slot] }.freeze
   ITEM_NAMES = ITEMS.transform_values { |i| i[:name] }.freeze
 
@@ -733,6 +746,8 @@ class Dungeon
     end
     n = @knapsack[:candles]
     packed << [n == 1 ? "i candle" : "#{n} i candles", :candles] if n.positive?
+    n = @knapsack[:toolbags]
+    packed << [n == 1 ? "( Toolbag" : "#{n} ( Toolbags", :toolbags] if n.positive?
     LACED.each do |slot, potion|
       n = @knapsack[slot]
       packed << ["#{n == 1 ? "i candle" : "#{n} i candles"} laced with #{POTIONS[potion][:name]}", slot] if n.positive?
@@ -1144,6 +1159,37 @@ class Dungeon
     end_turn
   end
 
+  # The chance the tools in a Toolbag open a locked door; otherwise they jam it shut for good, until it's bashed
+  # through
+  TOOLS_CHANCE = 0.5
+
+  # A locked door, not yet jammed, in one of the eight squares around the player, when there's a Toolbag in the
+  # knapsack to work it with
+  def tools_door
+    @knapsack[:toolbags].positive? or return nil
+    @monsters.find { |m| m.name == "door" && m.locked && !m.jammed && (m.x - @px).abs <= 1 && (m.y - @py).abs <= 1 }
+  end
+
+  # Whether there's a locked door beside the player for their Toolbag, for a front end to offer it
+  def tools_ready? = !over? && !tools_door.nil?
+
+  # Works the tools in the Toolbag on the locked door beside the player: half the time the lock gives and the door
+  # swings open, and half the time the tools jam it shut. Either way it takes a turn, and the Toolbag is kept
+  def use_tools
+    over? and return
+    (door = tools_door) or return say("There's no locked door beside you for the Toolbag.")
+
+    door.touched = true
+    if rand < TOOLS_CHANCE
+      @monsters.delete(door)
+      say "You use the tools in the Toolbag, the lock gives, and the door swings open."
+    else
+      door.jammed = true
+      say "The tools slip and jam the lock. The door is stuck shut; you'll have to bash through it."
+    end
+    end_turn
+  end
+
   # Taps whatever lies the way the player faces, without violence; tapping takes a turn. An unlocked door swings
   # open, a locked one only rattles, and anyone else just feels the tap
   def tap
@@ -1154,9 +1200,12 @@ class Dungeon
     x = @px + @facing[0]
     y = @py + @facing[1]
     if (m = monster_at(x, y))
+      m.touched = true unless gaseous? || mist?(m)
       if gaseous? || mist?(m)
         say "Your tap passes right through the #{m.name}."
-      elsif m.name == "door" && !door_machine(m).state.is_a?(DoorLock::OpenState)
+      elsif m.name == "door" && m.jammed
+        say "You tap the door. It's jammed shut; you'll have to bash through it."
+      elsif m.name == "door" && !door_machine(m).state.is_a?(OpenState)
         say "You tap the door. It rattles, but it's locked."
       elsif m.name == "door"
         @monsters.delete(m)
@@ -1188,7 +1237,7 @@ class Dungeon
   # Whether a thingage has a brain to be scared with: any intelligence at all, unlike a wall, a door, or an item
   def brain?(m) = m.int.to_i.positive?
 
-  def fleeing?(m) = m.state&.state.is_a?(DoorLock::FleeingState)
+  def fleeing?(m) = m.state&.state.is_a?(FleeingState)
 
   # Pushed or hit in a tight spot, a creature with a brain flees the player
   def scare(m)
@@ -1308,7 +1357,7 @@ class Dungeon
     end_turn
     return if over?
 
-    DoorLock::SandwichOpenState.new.action(self, nil)
+    SandwichOpenState.new.action(self, nil)
   end
 
   # Below this, the player wants a sandwich
@@ -1428,7 +1477,7 @@ class Dungeon
     @traps[free_spot(slicker)] = { kind: :slip_wand, seen: false, charges: WAND_CHARGES } if slicker
     @rooms.drop(1).each do |room|
       rand(0..2).times { @treasure[free_spot(room)] = rand(5..20) * @depth }
-      @sandwiches[free_spot(room)] = 1 if rand(3).zero?
+      @sandwiches[free_spot(room)] = 1 if rand < ROOM_SANDWICH_CHANCE * sandwich_odds
       rand(0..2).times { spawn_monster(room) }
     end
 
@@ -1491,12 +1540,12 @@ class Dungeon
   CAGE_PLATE_ROW = THINGAGES.find { |k| k[:name] == "cage plate" }
 
   def cage_plate
-    @cage[:thing] ||= Thingage.new(*@cage[:plate], CAGE_PLATE_ROW[:glyph], CAGE_PLATE_ROW[:name], CAGE_PLATE_ROW[:hp], CAGE_PLATE_ROW[:hit],
-                                   *CAGE_PLATE_ROW.values_at(*ABILITIES), true)
-                              .tap { |t| t.machine = DoorLock::Machine.new(CAGE_PLATE_ROW[:transitions], DoorLock::UnsnappedState) }
+    @cage[:arrange_thing] ||= Thingage.new(*@cage[:plate], CAGE_PLATE_ROW[:glyph], CAGE_PLATE_ROW[:name], CAGE_PLATE_ROW[:hp], CAGE_PLATE_ROW[:hit],
+                                           *CAGE_PLATE_ROW.values_at(*ABILITIES), true)
+                                      .tap { |t| t.machine = Machine.new(CAGE_PLATE_ROW[:transitions], UnsnappedState) }
   end
 
-  def cage_sprung? = !!@cage && cage_plate.machine.state.is_a?(DoorLock::SnappedState)
+  def cage_sprung? = !!@cage && cage_plate.machine.state.is_a?(SnappedState)
 
   # Stepping onto or tapping the plate moves it along its table, unless a threat loose in the unsnapped cage
   # keeps it from budging
@@ -1555,7 +1604,7 @@ class Dungeon
   SCORE_PER_CHICK = 100
   SCORE_PER_DEPTH = 50
 
-  def final_score = @chicks.to_i * SCORE_PER_CHICK + @depth * SCORE_PER_DEPTH + gold + @xp
+  def final_score = @chicks.to_i * SCORE_PER_CHICK + @depth * SCORE_PER_DEPTH + gold + @experience_points
   public :final_score
 
   # A win that earns a plaque also puts the hero's name and final score in heroes.xml; a hall that can't be
@@ -1568,12 +1617,12 @@ class Dungeon
     nil
   end
 
-  # A danger inside the cage's perimeter that keeps its plate from springing: any troll, or a coyote in its
+  # A danger inside the cage's perimeter that keeps its plate from springing: any troll, or a Coyote in its
   # enraged state, until the player neutralizes it, killing it, winning it over, feeding it, or putting it to sleep
   def cage_threat
     @monsters.find do |m|
       in_trap?(m.x, m.y) && m.hp.positive? && !friend?(m) && !m.asleep.to_i.positive? &&
-        (m.name == "troll" || (m.name == "coyote" && m.state&.state.is_a?(DoorLock::EnragedState)))
+        (m.name == "Troll" || (m.name == "Coyote" && m.state&.state.is_a?(EnragedState)))
     end
   end
 
@@ -1684,8 +1733,10 @@ class Dungeon
   # name, has its hit points, scores, and temper, and wields the weapon, hitting for its range. It lies dormant
   # until woken, then fights as that creature, weapon in hand; defeating it drops the weapon
   def spawn_monster(room, kind = nil, at: nil)
+    chosen = kind
     kind ||= THINGAGES.select { |k| k[:na] > 1 && !k[:out_of_band] && k[:cr] <= @depth && @population[k[:name]] < k[:na] }.sample
     (kind && kind[:name] != PLAYER_KIND) or return
+    return if !chosen && kind[:name] == "sandwich" && rand >= sandwich_odds # deeper, a sandwich turns up less
 
     @population[kind[:name]] += 1
     x, y = at || free_spot(room)
@@ -1699,11 +1750,13 @@ class Dungeon
                          .tap { |t| t.aggressive = body[:aggressive] == true }
                          .tap { |t| t.weapon = weapon }
                          .tap { |t| t.disguised_potion = disguised }
+                         .tap { |t| t.devoted = rand < DODO_DEVOTED_CHANCE if t.name == "Dodo" }
+                         .tap { |t| t.max_hp = t.hp }
   end
 
   # The creatures a dormant weapon cloaks itself as
-  # TODO  make this work:  CLOAKS = %w[rat 🐿 wren coyote goblin troll axebeak].freeze
-  CLOAKS = %w[rat squirrel wren coyote goblin troll axebeak].freeze
+  # TODO  make this work:  CLOAKS = %w[rat 🐿 wren Coyote goblin troll axebeak].freeze
+  CLOAKS = %w[rat squirrel wren Coyote goblin Troll Axebeak].freeze
 
   # The cloak of the appropriate challenge rating for a depth: the toughest whose cr the depth has reached, or,
   # shallower than all of t4hem, the mildest
@@ -1732,6 +1785,7 @@ class Dungeon
   # pacifism to fight
   def attack(foe)
     dmg = rand(weapon_hit)
+    foe.touched = true
     return unwrap(foe, dmg) if foe.name == "sandwich"
     return capture(foe) if foe.ally && useful?(foe)
 
@@ -1748,6 +1802,7 @@ class Dungeon
 
       say "You defeat the #{foe.name}!"
       explode(foe) if foe.name == "Quail"
+      drop_dodo_sandwich(foe) if foe.name == "Dodo"
     elsif foe.pacifist && !foe.spurned
       foe.spurned = true
       say "You hit the #{foe.name} for #{dmg}.#{" It stops following you." if follower?(foe)}"
@@ -2084,9 +2139,14 @@ class Dungeon
   # back. Anyone else just keeps it
   def receive(taker, item)
     @knapsack[item] -= 1
-    return appease(taker, item) if FURNITURE.include?(taker.name) && state_machine(taker).state.is_a?(DoorLock::EnragedState)
+    return appease(taker, item) if FURNITURE.include?(taker.name) && state_machine(taker).state.is_a?(EnragedState)
     return win_over(taker) if item == :gold && useful?(taker) && agitated?(taker)
 
+    if taker.name == "door" && taker.jammed
+      @knapsack[item] += 1
+      return "won't take it, being jammed shut, so you keep it"
+    end
+    return coin_lock(taker) if taker.name == "door" && item == :gold && taker.locked
     return imp_opens(taker) if taker.name == "door" && item == :sandwiches && taker.locked
 
     if taker.name == "door"
@@ -2105,7 +2165,7 @@ class Dungeon
       taker.spurned = false
       taker.nesting = false
       "pockets it and sides with you, hoping for more"
-    elsif item == :gold && taker.name == "squirrel" && state_machine(taker).state.is_a?(DoorLock::EnragedState)
+    elsif item == :gold && taker.name == "squirrel" && state_machine(taker).state.is_a?(EnragedState)
       taker.coins = taker.coins.to_i + 1
       state_machine(taker).transit(StateEvent::CALM, self, taker, nil)
       "pockets it and calms down, curious again"
@@ -2119,6 +2179,22 @@ class Dungeon
   end
 
   def eater?(m) = EATERS.include?(m.name)
+
+  # The chance a coin opens a locked door, and, when it doesn't, that the door won't take it, so the player keeps
+  # it; otherwise the door pockets the coin and stays locked
+  COIN_LOCK_CHANCE = 0.25
+  COIN_KEPT_CHANCE = 0.5
+
+  def coin_lock(door)
+    if rand < COIN_LOCK_CHANCE
+      @monsters.delete(door)
+      return "pockets it, the lock clicks, and the door swings open"
+    end
+    return "pockets it, but the lock holds" unless rand < COIN_KEPT_CHANCE
+
+    @knapsack[:gold] += 1
+    "won't take it, and the lock holds, so you keep your coin"
+  end
 
   # The chance a locked door, offered a sandwich, draws an Imp to it
   IMP_CHANCE = 0.25
@@ -2229,7 +2305,7 @@ class Dungeon
   # A door's lock, built from its row's transitions table. A door that spawned unlocked has already had its key
   # turned and its timer run out, so its machine stands open; a locked one stays locked
   def door_machine(door)
-    door.machine ||= DoorLock::Machine.new(THINGAGES.find { |k| k[:name] == "door" }[:transitions]).tap do |machine|
+    door.machine ||= Machine.new(THINGAGES.find { |k| k[:name] == "door" }[:transitions]).tap do |machine|
       unless door.locked
         machine.transit(StateEvent::KEY)
         machine.transit(StateEvent::TIMER)
@@ -2239,7 +2315,7 @@ class Dungeon
 
   # A sandwich lying about has a lock for its wrapping, built from its row's transitions table
   def food_machine(food)
-    food.machine ||= DoorLock::Machine.new(THINGAGES.find { |k| k[:name] == "sandwich" }[:transitions])
+    food.machine ||= Machine.new(THINGAGES.find { |k| k[:name] == "sandwich" }[:transitions])
   end
 
   # Taps and blows wear a sandwich's wrapping down along its table. The first touch starts unwrapping it (KEY),
@@ -2247,14 +2323,15 @@ class Dungeon
   # open sandwich is eating it, when the player is peckish: KEY again, leaving SandwichOpenState for the lock, so
   # its on_exit runs its action
   def unwrap(food, damage)
+    food.touched = true
     machine = food_machine(food)
-    if machine.state.is_a?(DoorLock::OpenState)
+    if machine.state.is_a?(OpenState)
       peckish? or return say("The sandwich is open and edible, but your blood sugar isn't low enough to want it.")
 
       return machine.transit(StateEvent::KEY, self, food)
     end
 
-    machine.transit(StateEvent::KEY, self, food) if machine.state.is_a?(DoorLock::LockState)
+    machine.transit(StateEvent::KEY, self, food) if machine.state.is_a?(LockState)
     food.hp -= damage
     return say("You work at the sandwich's wrapping.") if food.hp.positive?
 
@@ -2361,6 +2438,23 @@ class Dungeon
     steps << "#{dx.abs} #{dx.positive? ? "east" : "west"}" unless dx.zero?
     steps << "#{dy.abs} #{dy.positive? ? "south" : "north"}" unless dy.zero?
     steps.join(" and ")
+  end
+
+  # The chance a room past the first has a sandwich lying in it, on the first level; deeper, sandwich_odds cuts
+  # it, and a randomly spawned wrapped sandwich, by SANDWICH_DEPTH_FACTOR for each level down
+  ROOM_SANDWICH_CHANCE = 1 / 3.0
+  SANDWICH_DEPTH_FACTOR = 0.9
+
+  def sandwich_odds = SANDWICH_DEPTH_FACTOR**(@depth - 1)
+
+  # The chance a Dodo the player kills leaves a sandwich where it fell
+  DODO_SANDWICH_CHANCE = 1 / 3.0
+
+  def drop_dodo_sandwich(dodo)
+    rand < DODO_SANDWICH_CHANCE or return
+
+    @sandwiches[[dodo.x, dodo.y]] = @sandwiches.fetch([dodo.x, dodo.y], 0) + 1
+    say "The Dodo leaves a sandwich behind."
   end
 
   # Strews the sandwiches over open floor around where the Quail fell, piling any extras on its own spot
@@ -2588,8 +2682,8 @@ class Dungeon
     calmed = was.count { |m| !@monsters.include?(m) || !agitated?(m) }
     calmed.positive? or return
 
-    @xp += calmed * XP_PER_CALMING
-    while @xp >= @hero_level * XP_PER_LEVEL
+    @experience_points += calmed * XP_PER_CALMING
+    while @experience_points >= @hero_level * XP_PER_LEVEL
       @hero_level += 1
       refill_wands
       say(rand < 0.5 ? "Welcome to level #{@hero_level}!" :
@@ -2627,6 +2721,7 @@ class Dungeon
     end
     slip
     thin_gas
+    recover
     hunger
   end
 
@@ -2664,6 +2759,8 @@ class Dungeon
 
   # Every monster takes its turn, a hasted one two, and a slowed one only every other round
   def monsters_act
+    @monsters.each { |m| m.max_hp ||= m.hp; m.struck = false }
+    stood = @monsters.to_h { |m| [m, [m.x, m.y]] }.compare_by_identity
     @monsters.dup.each do |m|
       next if m.hp <= 0 # slain by an ally earlier this turn
       next if m.asleep.to_i.positive?
@@ -2679,6 +2776,38 @@ class Dungeon
         return if over?
       end
     end
+    rest_monsters(stood)
+  end
+
+  # Every RECOVERY_STEPS rounds in a row without losing a hit point, the hero and every critter quietly recover a
+  # d2 of them, never past their most. Losing any, however, starts the count over
+  RECOVERY_STEPS = 7
+
+  def recover
+    @unhurt = @last_hp && @hp < @last_hp ? 0 : @unhurt.to_i + 1
+    @hp = [@hp + Dungeon.dice(1, 2), @max_hp].min if @hp.positive? && @unhurt.positive? && (@unhurt % RECOVERY_STEPS).zero?
+    @last_hp = @hp
+    @monsters.each do |m|
+      next unless m.hp.positive?
+
+      m.max_hp ||= m.hp
+      m.unhurt = m.last_hp && m.hp < m.last_hp ? 0 : m.unhurt.to_i + 1
+      m.hp = [m.hp + Dungeon.dice(1, 2), m.max_hp].min if m.unhurt.positive? && (m.unhurt % RECOVERY_STEPS).zero?
+      m.last_hp = m.hp
+    end
+  end
+
+  # When you rest, they rest: anyone still standing where they stood when the round began, having attacked no one
+  # and been touched by no one, asleep, glued, or just biding its time, recovers a hit point, up to its max_hp.
+  # Then the round's touches are forgotten
+  def rest_monsters(stood)
+    @monsters.each do |m|
+      next unless stood.key?(m) && stood[m] == [m.x, m.y] && !m.struck && !m.touched
+      next unless m.hp.positive? && m.max_hp && m.hp < m.max_hp
+
+      m.hp += 1
+    end
+    @monsters.each { |m| m.touched = false }
   end
 
   # Monsters within sight, or anywhere for a farsighted one, chase the player and strike when adjacent. Friends
@@ -2698,6 +2827,7 @@ class Dungeon
     dx = @px - m.x
     dy = @py - m.y
     return if (dx.abs > SIGHT || dy.abs > SIGHT) && !m.farsighted
+    return if follower?(m) && [dx.abs, dy.abs].max == 1 # a Quail beside the player, diagonally too, stays put
 
     m.sugar ||= MAX_BLOOD_SUGAR if eater?(m) # its first act wakes it, and its blood sugar starts running down
 
@@ -2707,6 +2837,7 @@ class Dungeon
       return say("The #{m.name} taps you.") if curious?(m) && !mist?(m) && !gaseous?
       return if m.pacifist || friend?(m) || mist?(m) || gaseous?
 
+      m.struck = true
       dmg = blow(m)
       with = " with its #{m.weapon[:name]}" if m.weapon
       return say("The #{m.name} hits you#{with} for #{dmg}, but you take no damage.") if godMode?
@@ -2720,7 +2851,7 @@ class Dungeon
       return if m.stuck.to_i.positive? # glued in place: it strikes from where it stands, too
 
       step = dx.abs >= dy.abs ? [dx <=> 0, 0] : [0, dy <=> 0]
-      nx, ny = (follower?(m) && path_step(m)) || [m.x + step[0], m.y + step[1]]
+      nx, ny = (follower?(m) && path_step(m, diagonal: true)) || [m.x + step[0], m.y + step[1]]
       return if wall?(nx, ny) || monster_at(nx, ny) || [nx, ny] == [@px, @py]
 
       m.x, m.y = nx, ny
@@ -2837,13 +2968,13 @@ class Dungeon
     end_turn
   end
 
-  # Who a rat or an Axebeak leads: a rat leads the player; an Axebeak leads the nearest coyote, or the player once
+  # Who a rat or an Axebeak leads: a rat leads the player; an Axebeak leads the nearest Coyote, or the player once
   # it's been provoked
   def lure_target(m)
     case m.name
     when "rat" then m.aggressive ? [@px, @py] : nil
     when "Axebeak"
-      coyote = @monsters.select { |c| c.name == "coyote" && c.hp.positive? }.min_by { |c| (c.x - m.x).abs + (c.y - m.y).abs }
+      coyote = @monsters.select { |c| c.name == "Coyote" && c.hp.positive? }.min_by { |c| (c.x - m.x).abs + (c.y - m.y).abs }
       coyote ? [coyote.x, coyote.y] : (m.aggressive ? [@px, @py] : nil)
     end
   end
@@ -2876,8 +3007,16 @@ class Dungeon
     true
   end
 
-  # Each hunter's prey: a living Quail horrifies a troll, and coyotes and Axebeaks are each other's nemesis
-  PREY = { "troll" => "Quail", "coyote" => "Axebeak" }.freeze
+  # The committee's decision on who is whose relative prey: no row's own business, but a ruling between kinds. A
+  # rat goes after a squirrel, a living Quail horrifies a troll, an Axebeak is a Coyote's nemesis, and a Dodo, the
+  # opposite of every instinct, goes after the troll. Anyone not on it hunts nothing
+  PREY = {
+    "rat" => "squirrel",
+    "Troll" => "Quail",
+    "Coyote" => "Axebeak",
+    "Dodo" => "Troll" }.freeze
+
+  def prey_of(m) = PREY[m.name]
 
   # The alarms as the player's hit points or blood sugar run out, each sound of a list playing at once: three
   # overlapping errors at 3, two at 2, a bat at 1, and one error at 0
@@ -2915,16 +3054,16 @@ class Dungeon
 
   # A hunter's or a piece of furniture's state, starting quiet
   def state_machine(m)
-    m.state ||= DoorLock::Machine.new(DoorLock::STATE_TRANSITIONS, DoorLock::QuietState)
+    m.state ||= Machine.new(STATE_TRANSITIONS, QuietState)
   end
 
-  # Who what the player does moves along the state table: the hunters, and for now the squirrel, so a coin can
-  # calm an angry one back to curious
-  MOODY = (PREY.keys + %w[squirrel]).freeze
-
-  # What the player does to a hunter or a squirrel moves its state along, pointing it at the player
+  # What the player does to a hunter, or to a moody kind like the squirrel, whose row says so, so a coin can
+  # calm an angry one back to curious, moves its state along, pointing it at the player
   def provoke_hunter(m, event)
-    state_machine(m).transit(event, self, m, :ego) if MOODY.include?(m.name)
+    return if m.pacifist # a Dodo hunts trolls, but nothing the player does ever turns it on them
+
+    moody = prey_of(m) || THINGAGES.find { |k| k[:name] == m.name }&.dig(:moody)
+    state_machine(m).transit(event, self, m, :ego) if moody
   end
 
   # The prey a hunter is after, if any. A hunter whose prey is gone calms down, and a quiet one that sees its
@@ -2933,9 +3072,9 @@ class Dungeon
     machine = state_machine(m)
     prey = m.pursuit_target
     machine.transit(StateEvent::CALM, self, m, nil) if prey.is_a?(Thingage) && !(prey.hp.positive? && @monsters.include?(prey))
-    if machine.state.is_a?(DoorLock::QuietState)
+    if machine.state.is_a?(QuietState)
       near = ->(q) { (q.x - m.x).abs <= SIGHT && (q.y - m.y).abs <= SIGHT }
-      seen = @monsters.select { |q| q.name == PREY[m.name] && q.hp.positive? && near.(q) }
+      seen = @monsters.select { |q| q.name == prey_of(m) && q.hp.positive? && near.(q) }
       (prey = seen.min_by { |q| (q.x - m.x).abs + (q.y - m.y).abs }) and machine.transit(StateEvent::SEE_PREY, self, m, prey)
     end
     m.pursuit_target if m.pursuit_target.is_a?(Thingage)
@@ -2944,17 +3083,19 @@ class Dungeon
   # A hunter leaves everything else to hunt down the prey its state has it after, finding its way round walls like
   # the Quail does, and eats it. False when there's no prey to hunt
   def hunt_prey(m)
-    PREY.key?(m.name) && !mist?(m) or return false
+    prey_of(m) && !mist?(m) or return false
 
     prey = hunted(m)
     return false unless prey
 
     seen = ->(x, y) { (x - @px).abs <= SIGHT && (y - @py).abs <= SIGHT }
     if (prey.x - m.x).abs + (prey.y - m.y).abs == 1
+      prey.touched = true
       if prey.name == "Quail" && first_meeting?(prey, m)
         say "The #{m.name} taps the Quail." if seen.(prey.x, prey.y)
         return true
       end
+      m.struck = true
       dmg = blow(m)
       prey.hp -= dmg
       ouch(dmg)
@@ -2978,15 +3119,16 @@ class Dungeon
   # Every other critter's survival instincts, and the Dodo's opposite of each, in the order it looks for a
   # chance. Prey keeps clear of an enraged hunter, so a Dodo strikes the hunter, whose HIT turns it on the Dodo
   # instead. The trap-wise steer round traps, so a Dodo walks onto the nearest one. Anything not spoiling for a
-  # fight keeps its distance from the player, so a Dodo walks up and stands beside them. Hitting a Dodo only
-  # spurns it, and it carries on regardless
+  # fight keeps its distance from the player, so a devoted Dodo, one born to follow, walks up and stands beside
+  # them, by the Quail's own diagonal pursuit; the rest never come. Hitting a Dodo only spurns it, and it carries
+  # on regardless
   def dodo_act(m)
     dodo_lay(m)
     near = ->(x, y) { (x - m.x).abs <= SIGHT && (y - m.y).abs <= SIGHT }
     far = ->(x, y) { (x - m.x).abs + (y - m.y).abs }
     hunter = @monsters.select do |h|
-      PREY.key?(h.name) && h.hp.positive? && near.(h.x, h.y) && h.pursuit_target.is_a?(Thingage) &&
-        !h.pursuit_target.equal?(m) && state_machine(h).state.is_a?(DoorLock::EnragedState)
+      h.name == prey_of(m) && h.hp.positive? && near.(h.x, h.y) && h.pursuit_target.is_a?(Thingage) &&
+        !h.pursuit_target.equal?(m) && state_machine(h).state.is_a?(EnragedState)
     end.min_by { |h| far.(h.x, h.y) }
     return dodo_strike(m, hunter) if hunter && far.(hunter.x, hunter.y) == 1
     return dodo_step(m, [hunter.x, hunter.y]) if hunter
@@ -2994,12 +3136,16 @@ class Dungeon
     trap = @traps.to_h.keys.select { |spot| near.(*spot) && spot != [m.x, m.y] }.min_by { |spot| far.(*spot) }
     return dodo_step(m, trap) if trap
 
-    dodo_step(m) if (m.x - @px).abs <= SIGHT && (m.y - @py).abs <= SIGHT
+    dx, dy = (@px - m.x).abs, (@py - m.y).abs
+    dodo_step(m, diagonal: true) if m.devoted && dx <= SIGHT && dy <= SIGHT && [dx, dy].max > 1
   end
 
   # The chance, each time it acts, that a Dodo lays an egg, and that a Dodo's egg is developed
   DODO_LAY_CHANCE = 0.01
   DODO_DEVELOPED_CHANCE = 0.5
+
+  # The chance a Dodo is born devoted, following the player
+  DODO_DEVOTED_CHANCE = 0.5
 
   # Now and then, where a Quail would guard a nest, a Dodo drops an egg wherever it happens to stand, and
   # wanders off. It won't lay on top of another egg
@@ -3012,9 +3158,11 @@ class Dungeon
 
   # A Dodo pecks a hunter, which turns from its prey to the Dodo, unless the peck finishes it
   def dodo_strike(m, hunter)
+    m.struck = true
     seen = (hunter.x - @px).abs <= SIGHT && (hunter.y - @py).abs <= SIGHT
     dmg = blow(m)
     hunter.hp -= dmg
+    hunter.touched = true
     ouch(dmg)
     if hunter.hp.positive?
       state_machine(hunter).transit(StateEvent::HIT, self, hunter, m)
@@ -3027,8 +3175,8 @@ class Dungeon
 
   # A Dodo's step toward a goal square, or toward beside the player, finding its way round walls, then treading
   # on whatever lies there
-  def dodo_step(m, goal = nil)
-    (nx, ny = path_step(m, goal)) or return
+  def dodo_step(m, goal = nil, diagonal: false)
+    (nx, ny = path_step(m, goal, diagonal: diagonal)) or return
     return if monster_at(nx, ny) || [nx, ny] == [@px, @py]
 
     m.x, m.y = nx, ny
@@ -3047,7 +3195,7 @@ class Dungeon
     end
 
     return if m.stuck.to_i.positive?
-    (nx, ny = path_step(m, plate)) or return m.plate_bound = nil
+    (nx, ny = path_step(m, plate, diagonal: true)) or return m.plate_bound = nil
     return if monster_at(nx, ny) || [nx, ny] == [@px, @py]
 
     m.x, m.y = nx, ny
@@ -3056,15 +3204,20 @@ class Dungeon
 
   # The first square of the shortest walk from m to beside the player, around walls and other thingages, or nil
   # when no walk gets there. Everything else steps straight at the player and gets stuck behind corners; only
-  # the Quail is clever enough to find its way round. Given a goal square instead, the walk ends on it
-  def path_step(m, goal = nil, wary: false)
+  # the Quail is clever enough to find its way round. Given a goal square instead, the walk ends on it. A
+  # diagonal walk, the Quail's alone, steps to any of the eight squares around, and peeks one square round a
+  # corner by cutting it diagonally where everyone else must go the long way
+  STEPS = [[1, 0], [-1, 0], [0, 1], [0, -1]].freeze
+  DIAGONAL_STEPS = (STEPS + [[1, 1], [1, -1], [-1, 1], [-1, -1]]).freeze
+
+  def path_step(m, goal = nil, wary: false, diagonal: false)
     return if m.stuck.to_i.positive? # glued in place, it goes nowhere
     start = [m.x, m.y]
     first = { start => nil } # each square reached, mapped to the first step taken toward it
     queue = [start]
     until queue.empty?
       spot = queue.shift
-      [[1, 0], [-1, 0], [0, 1], [0, -1]].each do |dx, dy|
+      (diagonal ? DIAGONAL_STEPS : STEPS).each do |dx, dy|
         nxt = [spot[0] + dx, spot[1] + dy]
         next if first.key?(nxt) || wall?(*nxt)
         next if wary && @traps&.key?(nxt)
@@ -3115,8 +3268,10 @@ class Dungeon
   end
 
   def ally_strike(ally, enemy)
+    ally.struck = true
     dmg = blow(ally)
     enemy.hp -= dmg
+    enemy.touched = true
     ouch(dmg)
     return say("Your #{ally.name} hits the #{enemy.name} for #{dmg}.") if enemy.hp.positive?
 
@@ -3396,6 +3551,7 @@ class WebGame
       when "/rest" then @game.rest
       when "/tap" then @game.tap
       when "/zap" then @game.zap
+      when "/use_tools" then @game.use_tools
       when "/give_coin" then @game.give_coin
       when "/choose"
         slot = @game.contents.map(&:last).find { |s| s.to_s == params["item"] } or return [404, {}, "Not found"]
@@ -3571,6 +3727,7 @@ class WebGame
               <div class="controls">
                 <form method="post" action="/tap"><button data-keys="f" style="width: auto">#{h @game.tap_label} (f)</button></form>
                 <form method="post" action="/zap"><button data-keys="z" style="width: auto">Zap wand (z)</button></form>
+                #{%(<form method="post" action="/use_tools"><button data-keys="o" style="width: auto">Use the tools in the Toolbag to open the door (o)</button></form>) if @game.tools_ready?}
                 <form method="post" action="/throw_chosen"><button data-keys="x" style="width: auto">#{h @game.throw_label} (x)</button></form>
                 <form method="post" action="/give_chosen"><button data-keys="g" style="width: auto">#{h @game.give_label} (g)</button></form>
               </div>
@@ -3636,7 +3793,7 @@ class DosBox
     "Keys",
     "hjklyubn, arrows,",
     "  or keypad: move",
-    ". or 5: rest",
+    "R or r: rest",
     "i: inventory",
     "w: wield",
     "a: use an item",
@@ -3648,6 +3805,7 @@ class DosBox
     "t: throw the gift",
     "f: tap",
     "z: zap the wand",
+    "o: open with Toolbag",
     "s: select an item",
     "x: throw selected",
     "g: give selected",
@@ -3736,6 +3894,8 @@ class DosBox
     when "t" then @game.hurl
     when "f" then @game.tap
     when "z" then @game.zap
+    when "o" then @game.use_tools
+    when "R", "r" then @game.rest # the console's rest key, either case; . and 5 still rest too, as the keypad's middle
     when "x" then @game.throw_chosen
     when "g" then @game.give_chosen
     when "$" then @game.give_coin
@@ -3762,9 +3922,9 @@ class DosBox
   # Plays until the player quits, then exits gracefully
   def play
     require 'io/console'
-    splash($stdin) unless File.exist?(Heroes.file)
+    splash
     @game.hero_name = ask_name($stdin)
-    write "#{ESC}[2J#{ESC}[?25l"
+    write "#{ESC}[2J#{ESC}[?25l" # only now does the game's own screen take over
     $stdin.raw do |input|
       @input = input
       until quit?
@@ -3786,20 +3946,20 @@ class DosBox
     "#{goodbye}The game broke: #{@error.class}: #{@error.message}\n#{@error.backtrace.to_a.first(5).map { |l| "  #{l}\n" }.join}"
   end
 
-  # Before anyone has won, the opening story fills a clear screen, until a key is tapped
-  def splash(input)
-    write "#{ESC}[2J#{ESC}[H#{ESC}[?25l"
-    write "\r\n#{Dungeon::PREFACE.map { |line| "  #{line}\r\n" }.join}\r\n  Tap any key to proceed."
-    input.raw(&:getc)
-    write "#{ESC}[?25h"
+  # The opening story, a page of plain command-line text, as if by puts, before the name prompt; the game's own
+  # screen takes over only after both
+  def splash
+    `figlet Quail on the Run`
+    write "\n#{Dungeon::PREFACE.map { |line| "#{line}\n" }.join}\n"
   end
 
-  # Asks the hero's name on a clear screen, offering the last one, as ['Johnson']: _, which Enter keeps
-  def ask_name(input)
-    write "#{ESC}[2J#{ESC}[H#{ESC}[?25hWhat is your name, hero?#{" ['#{@name}']" if @name}: "
+  # Asks the hero's name, offering the last one, as ['Johnson']: _, which Enter keeps. At the start it's a plain
+  # command-line prompt; playing again, it first clears the game's screen
+  def ask_name(input, clear: false)
+    write "#{ESC}[2J#{ESC}[H#{ESC}[?25h" if clear # playing again: off the game's screen, the cursor back
+    write "What is your name, hero?#{" ['#{@name}']" if @name}: "
     given = Plaque.clean_name(input.gets)
     @name = given unless given.empty?
-    write "#{ESC}[?25l"
     @name
   end
 
@@ -3858,9 +4018,10 @@ class DosBox
     return "#{ending} Play again? (y/n)" if @error || @game.over?
     return "You want to go #{@game.stairs_question}? (y/n)" if @game.stairs_question
     return @note if @note
-    return "Then an arrow sends it that way, or . keeps it" if @game.log.last.to_s.end_with?("which way?")
+    return "Then an arrow sends it that way, or R keeps it" if @game.log.last.to_s.end_with?("which way?")
+    return "o: use the tools in the Toolbag to open the door" if @game.tools_ready?
 
-    @game.repeat_ready? ? ". repeats that key" : "? for the keys"
+    @game.repeat_ready? ? "R repeats that key" : "? for the keys"
   end
 
   # How the game ended, for the play-again offer
@@ -3881,7 +4042,7 @@ class DosBox
 
   def replay
     @game = Dungeon.new(godMode: @godMode, level: @level)
-    @game.hero_name = @input ? @input.cooked { ask_name(@input) } : @name
+    @game.hero_name = @input ? @input.cooked { ask_name(@input, clear: true) } : @name
     @error = nil
     @pending = nil
   end

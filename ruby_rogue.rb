@@ -339,6 +339,8 @@ class Dungeon
   MAX_BLOOD_SUGAR = 100
   STARVE_ROUNDS = 150
   SUGAR_ROUNDS = 10
+  ALLY_COLOR = "#7cc8ff"
+  ENEMY_COLOR = "#ff4d4d"
   HUNGRY_COLOR = "#e8a33d"
 
   # fed counts down the turns a goblin stays friendly after a sandwich; an ally keeps the coins it pockets.
@@ -356,12 +358,13 @@ class Dungeon
   # a Dodo born to follow the player. max_hp is the most hit points resting brings it back to, and struck marks a
   # round it attacked someone, and touched one someone tapped, unwrapped, or hit it, so either way it didn't rest.
   # jammed marks a door a Toolbag failed on, stuck shut until it's bashed through. unhurt counts its rounds in a
-  # row without losing a hit point, last_hp being what it had at the end of the last one
+  # row without losing a hit point, last_hp being what it had at the end of the last one. pleas counts the blows a
+  # door has begged the player to go round it
 
   Thingage = Struct.new(:x, :y, :glyph, :name, :hp, :hit, :str, :dex, :con, :int, :wis, :cha, :pacifist, :spurned, :greedy, :fed, :ally, :coins, :aggressive,
                         :hasted, :gaseous, :farsighted, :nesting, :sugar, :starving, :slowed, :lagging, :weapon, :locked, :machine, :plate_bound, :met, :asleep, :stuck,
                         :disguised_potion, :pursuit_target, :state, :devoted, :max_hp, :struck, :touched, :jammed,
-                        :unhurt, :last_hp)
+                        :unhurt, :last_hp, :pleas)
   ABILITIES = %i[str dex con int wis cha].freeze
 
   # The D&D ability modifier: 10 and 11 give +0, and every two points up or down moves it by one.
@@ -464,6 +467,23 @@ class Dungeon
     "encounter drugged & sleeping genetic experiments, and armed security doors. Do not,",
     "under any circumstances, consume their experimental food supplements, infiltrate",
     "locked areas, or abuse the subjects' experimental emergency restraint systems.",
+  ].freeze
+
+  # The lab's rules, each a hint how to win, phrased as the thing never to do; the splash lists them after the story
+  PREFACE_AMMENDMENTS = [
+    "Never drop experimental liquids in front of ambulatory test subjects.",
+    "Do not interrogate robotic security doors how to bypass them with the\ndiagonal movement keys 7 9 1 3.",
+    "Do not bribe doors with money to get them to open.",
+    "Do not offer sandwiches to locked doors while Imps are watching.",
+    "Never pick a lock with the contents of an unattended Toolbag.",
+    "Do not bring Dodo or Axebeak eggs into the Safe Room.",  #  the joke is nothing enforces if you do
+    "Do not activate the Safe Room ring while a Troll is lurking inside the\nsecurity perimeter.",
+    "Never hold a specimen's egg up to a candle to see what is growing in it.",
+    "Do not corner anything with a brain in a narrow corridor; it will panic.",
+    "Do not pay a growling shield a coin, and never strike it afterward.",
+    "Do not tap F lab equipment to see whether it wants to come home with you.",
+    "Never rest within sight of a wounded heavy; it rests too.",
+    "Do not let Dodos follow you about. Their eggs are not Quail eggs.",
   ].freeze
 
   # The game ends when the player dies, or springs the cage's trap on themselves and whatever else is inside;
@@ -1196,6 +1216,7 @@ class Dungeon
     over? and return
     @throwable = nil
     @stairs_question = nil
+    @take_question = nil
     @offering = nil
     x = @px + @facing[0]
     y = @py + @facing[1]
@@ -1220,6 +1241,7 @@ class Dungeon
       else
         say "You tap the #{m.name}."
         provoke_hunter(m, StateEvent::TAP)
+        @take_question = m if takeable?(m) # it doesn't so much as rattle, so it might as well be yours
       end
     elsif [x, y] == @cage&.dig(:plate)
       press_plate(StateEvent::TAP)
@@ -1268,12 +1290,40 @@ class Dungeon
   # "down" or "up" while the player stands on stairs they've just been asked about, else nil
   attr_reader :stairs_question
 
+  # The thing the player just tapped that didn't respond in any way, while they're asked whether to pocket it
+  attr_reader :take_question
+
+  # Something lying dormant that a tap gets nothing out of, and a knapsack could hold: an item, a shield, or a
+  # dropped weapon
+  def takeable?(m)
+    m.pacifist && !m.disguised_potion &&
+      (PACKABLE.key?(m.name) || SHIELDS.include?(m.name) || WEAPONS.any? { |w| w[:name] == m.name })
+  end
+
+  # Answers "Put it in your knapsack? (y/N)": only a definite yes takes it, which takes a turn; anything else
+  # leaves it lying there, and the question goes either way
+  def take_it(yes)
+    over? and return
+    m = @take_question or return
+    @take_question = nil
+    (yes && @monsters.include?(m)) or return
+
+    if (slot = PACKABLE[m.name])
+      pack(m, slot) or return
+    else
+      @monsters.delete(m)
+      armed?(m) ? seize(m, "take", pack: true) : stow(m, "take")
+    end
+    end_turn
+  end
+
   # Answers the stairs question: yes takes the stairs, and no stays put; either way the question is gone. Taking
   # the stairs is the step that reached them, so answering takes no turn of its own
   def take_stairs(yes)
     over? and return
     way = @stairs_question or return
     @stairs_question = nil
+    @take_question = nil
     return say("You stay where you are.") unless yes
 
     way == "down" ? descend : ascend
@@ -1284,6 +1334,7 @@ class Dungeon
     over? and return
     @throwable = nil
     @stairs_question = nil
+    @take_question = nil
     @facing = [dx, dy] unless dx.zero? && dy.zero?
     if (item = @offering)
       return fling_candle(item, dx, dy) if LACED.key?(item)
@@ -1298,7 +1349,13 @@ class Dungeon
     # A bad keystroke just disappears: bumping a wall turns the player to face it, and nothing else, not even a turn
     return if wall?(nx, ny)
 
-    if (foe = monster_at(nx, ny))
+    foe = monster_at(nx, ny)
+    if foe && potion_slot(foe) && !gaseous? && !mist?(foe) && !stuck?
+      pack(foe, PACKABLE[foe.name]) or return # a full knapsack says so, and costs no turn
+      foe = nil # overrun: packed, and the player steps on where it lay
+    end
+
+    if foe
       gaseous? and return say("You drift against the #{foe.name}, but you can't touch it.")
 
       if mist?(foe)
@@ -1337,6 +1394,7 @@ class Dungeon
     over? and return
     @throwable = nil
     @stairs_question = nil
+    @take_question = nil
     if @offering
       item = @offering
       @offering = nil
@@ -1346,6 +1404,7 @@ class Dungeon
     @hp = [@hp + 1, @max_hp].min
     found = beside.map { |m| a_name(m.name) }
     say "You catch your breath and find #{found.empty? ? "nothing" : and_list(found)} beside you."
+    @hero_rested = true # so everyone rests this round
     end_turn
   end
 
@@ -1378,15 +1437,43 @@ class Dungeon
 
   # The map as rows of [glyph, hungry] squares, for a front end that draws it a square at a time
   def cells
-    Array.new(VIEWPORT_HEIGHT) { |y| Array.new(VIEWPORT_WIDTH) { |x| [glyph_at(x, y), hungry_at?(x, y)] } }
+    Array.new(VIEWPORT_HEIGHT) { |y| Array.new(VIEWPORT_WIDTH) { |x| [glyph_at(x, y), tint_at(x, y)] } }
   end
 
-  # The map as rows of [text, hungry] runs: the glyphs, split where a hungry creature is drawn, so a front end
-  # can color those in HUNGRY_COLOR
+  # The map as rows of [text, tint] runs: the glyphs, split wherever the tint changes, so a front end can color
+  # each run
   def map_runs
     cells.map do |row|
       row.chunk_while { |a, b| a[1] == b[1] }.map { |run| [run.map(&:first).join, run.first[1]] }
     end
+  end
+
+  # The POTIONS slot of a potion lying about, or nil for anything else
+  def potion_slot(m) = POTIONS.find { |_, p| p[:row] == m.name }&.first
+
+  # Whether m can step onto x, y: open floor with no one there, or only a potion, which it crushes underfoot and
+  # takes the effect of, as if the potion had been thrown at it
+  def tread_clear?(m, x, y)
+    (o = monster_at(x, y)) or return true
+    (slot = potion_slot(o)) or return false
+
+    @monsters.delete(o)
+    effect = empower(m, slot)
+    say "The #{m.name} steps on the #{POTIONS[slot][:name]}, and it breaks. #{effect}" if (x - @px).abs <= SIGHT && (y - @py).abs <= SIGHT
+    true
+  end
+
+  # How a square is tinted: :hungry for a hungry creature, the player included, in HUNGRY_COLOR; else :ally for
+  # the player and their friends, in ALLY_COLOR; :enemy for anyone out to get them, in ENEMY_COLOR; else nil, a
+  # neutral or no one at all, in the ordinary ink. A creature tints its square only while it's what's drawn there
+  def tint_at(x, y)
+    return :hungry if hungry_at?(x, y)
+    return :ally if [x, y] == [@px, @py]
+
+    (m = monster_at(x, y)) && glyph_at(x, y) == m.glyph or return nil
+    return :ally if friend?(m)
+
+    :enemy if agitated?(m)
   end
 
   # Everything alive or magic in the eight squares around the player: what resting searches out,
@@ -1476,7 +1563,7 @@ class Dungeon
     slicker = @rooms.drop(1).sample if rand < SLIP_WAND_CHANCE
     @traps[free_spot(slicker)] = { kind: :slip_wand, seen: false, charges: WAND_CHARGES } if slicker
     @rooms.drop(1).each do |room|
-      rand(0..2).times { @treasure[free_spot(room)] = rand(5..20) * @depth }
+      GOLD_PILES_PER_ROOM.times { @treasure[free_spot(room)] = rand(GOLD_PER_PILE) * @depth if rand < GOLD_PILE_CHANCE }
       @sandwiches[free_spot(room)] = 1 if rand < ROOM_SANDWICH_CHANCE * sandwich_odds
       rand(0..2).times { spawn_monster(room) }
     end
@@ -1818,7 +1905,33 @@ class Dungeon
     end
     return unless foe.hp.positive?
 
+    door_hint(foe) if foe.name == "door"
     cornered ? scare(foe) : provoke_hunter(foe, StateEvent::HIT)
+  end
+
+  # The numeric keypad's key for each diagonal step
+  KEYPAD = { [-1, -1] => 7, [1, -1] => 9, [-1, 1] => 1, [1, 1] => 3 }.freeze
+
+  # How many blows a door begs before it spells out the key
+  PLEAS_BEFORE_KEYS = 2
+
+  # A door hit head-on, with an open diagonal square stepping past it, forward and to the player's left or else
+  # right, squeaks after each blow for the player to go round it instead: politely at first, then naming the
+  # numeric keypad's key for the step. Nothing to say when both ways round are blocked
+  def door_hint(door)
+    fx, fy = @facing
+    fx.zero? ^ fy.zero? or return # hit diagonally, it has no way round to suggest
+
+    side, (sx, sy) = { "left" => [fy, -fx], "right" => [-fy, fx] }.find do |_, (sx, sy)|
+      step = [@px + fx + sx, @py + fy + sy]
+      !wall?(*step) && !monster_at(*step)
+    end
+    side or return
+
+    door.pleas = door.pleas.to_i + 1
+    return say("The door squeaks: \"Pass to the #{side}, please.\"") if door.pleas <= PLEAS_BEFORE_KEYS
+
+    say "The door squeaks: \"Pass to the #{side} using #{KEYPAD[[fx + sx, fy + sy]]} on your numeric keypad.\""
   end
 
   # A potion disguised as a creature, once the player is within DISGUISE_RANGE, drops the disguise and hurls itself
@@ -2440,6 +2553,12 @@ class Dungeon
     steps.join(" and ")
   end
 
+  # Gold piles: each room past the first has up to GOLD_PILES_PER_ROOM, each there on GOLD_PILE_CHANCE, a little
+  # under one a room on average, and each holds GOLD_PER_PILE coins for each level down
+  GOLD_PILES_PER_ROOM = 2
+  GOLD_PILE_CHANCE = 0.46
+  GOLD_PER_PILE = 4..17
+
   # The chance a room past the first has a sandwich lying in it, on the first level; deeper, sandwich_odds cuts
   # it, and a randomly spawned wrapped sandwich, by SANDWICH_DEPTH_FACTOR for each level down
   ROOM_SANDWICH_CHANCE = 1 / 3.0
@@ -2780,7 +2899,7 @@ class Dungeon
   end
 
   # Every RECOVERY_STEPS rounds in a row without losing a hit point, the hero and every critter quietly recover a
-  # d2 of them, never past their most. Losing any, however, starts the count over
+  # d2 of them, never past their most; a door never does. Losing any, however, starts the count over
   RECOVERY_STEPS = 7
 
   def recover
@@ -2789,6 +2908,7 @@ class Dungeon
     @last_hp = @hp
     @monsters.each do |m|
       next unless m.hp.positive?
+      next if m.name == "door" # a wall as actor never recovers, quietly or otherwise
 
       m.max_hp ||= m.hp
       m.unhurt = m.last_hp && m.hp < m.last_hp ? 0 : m.unhurt.to_i + 1
@@ -2797,17 +2917,25 @@ class Dungeon
     end
   end
 
-  # When you rest, they rest: anyone still standing where they stood when the round began, having attacked no one
-  # and been touched by no one, asleep, glued, or just biding its time, recovers a hit point, up to its max_hp.
-  # Then the round's touches are forgotten
+  # When you rest, they rest: on a round the hero rests, everyone recovers a hit point, up to its max_hp, whatever
+  # it did. Any other round, only those still standing where they stood when it began, having attacked no one and
+  # been touched by no one, asleep, glued, or just biding their time, do. A door never rests either way: it's a
+  # wall as actor, plugging its doorway. Then the round's touches, and the hero's rest, are forgotten
   def rest_monsters(stood)
     @monsters.each do |m|
-      next unless stood.key?(m) && stood[m] == [m.x, m.y] && !m.struck && !m.touched
+      next if m.name == "door"
+
+      if @hero_rested
+        # everyone rests
+      else
+        next unless stood.key?(m) && stood[m] == [m.x, m.y] && !m.struck && !m.touched
+      end
       next unless m.hp.positive? && m.max_hp && m.hp < m.max_hp
 
       m.hp += 1
     end
     @monsters.each { |m| m.touched = false }
+    @hero_rested = false
   end
 
   # Monsters within sight, or anywhere for a farsighted one, chase the player and strike when adjacent. Friends
@@ -2852,7 +2980,7 @@ class Dungeon
 
       step = dx.abs >= dy.abs ? [dx <=> 0, 0] : [0, dy <=> 0]
       nx, ny = (follower?(m) && path_step(m, diagonal: true)) || [m.x + step[0], m.y + step[1]]
-      return if wall?(nx, ny) || monster_at(nx, ny) || [nx, ny] == [@px, @py]
+      return if wall?(nx, ny) || [nx, ny] == [@px, @py] || !tread_clear?(m, nx, ny)
 
       m.x, m.y = nx, ny
       tread(m) or return
@@ -3109,7 +3237,7 @@ class Dungeon
           sound EATING_SOUND
         end
       end
-    elsif (nx, ny = path_step(m, [prey.x, prey.y])) && !monster_at(nx, ny) && [nx, ny] != [@px, @py]
+    elsif (nx, ny = path_step(m, [prey.x, prey.y])) && [nx, ny] != [@px, @py] && tread_clear?(m, nx, ny)
       m.x, m.y = nx, ny
       tread(m)
     end
@@ -3177,7 +3305,7 @@ class Dungeon
   # on whatever lies there
   def dodo_step(m, goal = nil, diagonal: false)
     (nx, ny = path_step(m, goal, diagonal: diagonal)) or return
-    return if monster_at(nx, ny) || [nx, ny] == [@px, @py]
+    return if [nx, ny] == [@px, @py] || !tread_clear?(m, nx, ny)
 
     m.x, m.y = nx, ny
     tread(m)
@@ -3196,7 +3324,7 @@ class Dungeon
 
     return if m.stuck.to_i.positive?
     (nx, ny = path_step(m, plate, diagonal: true)) or return m.plate_bound = nil
-    return if monster_at(nx, ny) || [nx, ny] == [@px, @py]
+    return if [nx, ny] == [@px, @py] || !tread_clear?(m, nx, ny)
 
     m.x, m.y = nx, ny
     tread(m)
@@ -3224,7 +3352,7 @@ class Dungeon
         return first[spot] || nxt if nxt == goal
         next if goal && nxt == [@px, @py]
         return first[spot] if nxt == [@px, @py]
-        next if monster_at(*nxt)
+        next if (o = monster_at(*nxt)) && !potion_slot(o) # a potion is no obstacle: whoever goes that way crushes it
 
         first[nxt] = first[spot] || nxt
         queue << nxt
@@ -3559,6 +3687,7 @@ class WebGame
       when "/throw_chosen" then @game.throw_chosen
       when "/give_chosen" then @game.give_chosen
       when "/stairs" then @game.take_stairs(params["answer"] == "yes")
+      when "/take" then @game.take_it(params["answer"] == "yes")
       when "/give"
         item = params["item"].to_s.to_sym
         Dungeon::GIFTS.key?(item) or return [404, {}, "Not found"]
@@ -3631,7 +3760,7 @@ class WebGame
   # The map's rows, with each hungry creature wrapped in a span that colors it
   def map_html
     @game.map_runs.map do |runs|
-      runs.map { |text, hungry| hungry ? %(<span class="hungry">#{h text}</span>) : h(text) }.join
+      runs.map { |text, tint| tint ? %(<span class="#{tint}">#{h text}</span>) : h(text) }.join
     end.join("\n")
   end
 
@@ -3688,6 +3817,11 @@ class WebGame
                  %(<form method="post" action="/stairs?answer=yes"><button data-keys="y" style="width: auto">Yes (y)</button></form>) +
                  %(<form method="post" action="/stairs?answer=no"><button data-keys="n" style="width: auto">No (n)</button></form></div>)
              end
+    take = if (thing = @game.take_question)
+             %(<div class="stairs">Put the #{h thing.name} in your knapsack? ) +
+               %(<form method="post" action="/take?answer=yes"><button data-keys="y" style="width: auto">Yes (y)</button></form>) +
+               %(<form method="post" action="/take?answer=no"><button data-keys="n" style="width: auto">No (N)</button></form></div>)
+           end
 
     <<~HTML
       <!DOCTYPE html>
@@ -3709,6 +3843,8 @@ class WebGame
           .panel { display: flex; flex-direction: column; gap: 4px; }
           .knapsack { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
           .hungry { color: #{Dungeon::HUNGRY_COLOR}; }
+          .ally { color: #{Dungeon::ALLY_COLOR}; }
+          .enemy { color: #{Dungeon::ENEMY_COLOR}; }
         </style>
       </head>
       <body style="width: 100%;">
@@ -3721,7 +3857,7 @@ class WebGame
         <div class="below">
           <div class="controls">
             #{%(<form method="post" action="/throw"><button data-keys="t" style="width: auto">throw (t)</button></form>) if @game.can_hurl?}
-            #{stairs}
+            #{stairs}#{take}
             <div class="pad-row">
               <div class="pad">#{buttons.join}</div>
               <div class="controls">
@@ -3767,6 +3903,10 @@ class DosBox
           "#" => "▒", "." => "·", ">" => "≡", "$" => "☼", "%" => "♣", "🐿️" => "s", "🐿" => "s" }.freeze
   SHIELDS = %w[༺ 𓆩 ༻].freeze
   WEAPON = "↑"
+
+  # The console's colors for a tinted square: bright yellow hungry, light blue the player and their allies, and
+  # bright red their enemies; a neutral keeps the console's own ink
+  TINTS = { hungry: "1;33", ally: "1;34", enemy: "1;31" }.freeze
 
   # The OEM glyphs in code page 437's low, control-code range, which a DOS console still draws rather than obeys
   LOW_GLYPHS = { "☺" => "\x01", "♣" => "\x05", "☼" => "\x0F", "↑" => "\x18" }.freeze
@@ -3856,7 +3996,7 @@ class DosBox
   def lines
     panel = panel_lines
     map = @game.cells.map do |row|
-      row.map { |glyph, hungry| hungry ? "#{ESC}[1;33m#{oem(glyph)}#{ESC}[0m" : oem(glyph) }.join
+      row.map { |glyph, tint| (ink = TINTS[tint]) ? "#{ESC}[#{ink}m#{oem(glyph)}#{ESC}[0m" : oem(glyph) }.join
     end
     [status] + panel + map + Array.new(4) { |i| @game.log[i].to_s } + plaque_lines + [prompt]
   end
@@ -3887,6 +4027,7 @@ class DosBox
     return @help = !@help if key == "?"
     return play_again(key) if @game.over? || @error
     return @game.take_stairs(%w[y Y].include?(key)) if @game.stairs_question && %w[y Y n].include?(key)
+    return @game.take_it(key == "y") if @game.take_question # only a definite y; any other key is a no
 
     case key
     when "i" then @game.inventory
@@ -3949,8 +4090,8 @@ class DosBox
   # The opening story, a page of plain command-line text, as if by puts, before the name prompt; the game's own
   # screen takes over only after both
   def splash
-    `figlet Quail on the Run`
-    write "\n#{Dungeon::PREFACE.map { |line| "#{line}\n" }.join}\n"
+    write "\n#{Dungeon::PREFACE.map { |line| "#{line}\n" }.join}"
+    write "#{Dungeon::PREFACE_AMMENDMENTS.sample}\n\n" # one rule each game, picked at random
   end
 
   # Asks the hero's name, offering the last one, as ['Johnson']: _, which Enter keeps. At the start it's a plain
@@ -4017,6 +4158,7 @@ class DosBox
     return "#{PROMPTS.values.to_h[@pending]} (#{letters}, Esc cancels)" if @pending
     return "#{ending} Play again? (y/n)" if @error || @game.over?
     return "You want to go #{@game.stairs_question}? (y/n)" if @game.stairs_question
+    return "Put the #{@game.take_question.name} in your knapsack? (y/N)" if @game.take_question
     return @note if @note
     return "Then an arrow sends it that way, or R keeps it" if @game.log.last.to_s.end_with?("which way?")
     return "o: use the tools in the Toolbag to open the door" if @game.tools_ready?

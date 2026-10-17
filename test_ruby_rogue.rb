@@ -1,4 +1,4 @@
-# Run with: ruby test_rogue.rb
+# Run with: ruby test_ruby_rogue.rb
 
 require 'minitest/autorun'
 

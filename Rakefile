@@ -2,7 +2,7 @@
   # a Rakefile is a command line aggregator
 
 # rake test
-#   runs every test in test_rogue.rb
+#   runs every test in test_ruby_rogue.rb
 #
 # rake ship eva thang is gonna be all right
 #   runs every test, and only if they all pass, commits everything changed (all but .idea/) with the rest of the
@@ -33,14 +33,14 @@ def play(name)
   # Process.detach(spawn(player, file, %i[out err] => File::NULL))
 end
 
-desc "Run every test in test_rogue.rb; a frog croaks if they pass, a kitten mews if they fail"
+desc "Run every test in test_ruby_rogue.rb; a frog croaks if they pass, a kitten mews if they fail"
 task :test do
   ENV['QUIET'] = '1'
 
   # The run's output tees through tee_sounds.rb, which plays a sound for each E, F, and S as the dots print
   require 'open3'
   Dir.chdir(__dir__)
-  status = Open3.pipeline([RbConfig.ruby, "test_rogue.rb"], [RbConfig.ruby, "tee_sounds.rb"]).first
+  status = Open3.pipeline([RbConfig.ruby, "test_ruby_rogue.rb"], [RbConfig.ruby, "tee_sounds.rb"]).first
   play(status.success? ? "frog2" : "kitten")
   status.success? or abort "The tests failed (exit status #{status.exitstatus})."
 
@@ -75,7 +75,7 @@ task ship: [:banner, :test] do
   message = words.drop((words.index("ship") || words.size) + 1).join(" ")
   abort "Usage: rake ship your commit message here, no quotes needed" if message.empty?
 
-  # ruby "test_rogue.rb" do |ok, status|
+  # ruby "test_ruby_rogue.rb" do |ok, status|
   #   play(ok ? 'frog' : 'dogs')
   #   ok or abort "The tests failed (exit status #{status.exitstatus}), so nothing was committed or pushed."
   # end

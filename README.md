@@ -99,7 +99,7 @@ Press `?` in the game for the full list.
 ```
 rake play                    # play in this console
 rake god                     # play in god mode
-rake test                    # run test_rogue.rb (Minitest)
+rake test                    # run test_ruby_rogue.rb (Minitest)
 rake ship your message here  # run the tests; only if they pass, commit everything and push
 rake claude                  # open Claude Code here; words after it become the first prompt
 ```

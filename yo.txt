@@ -7,15 +7,15 @@ SS...........................F.............................F....................
 Finished in 22.612001s, 33.7431 runs/s, 269259.9873 assertions/s.
 
   1) Failure:
-DungeonTest#test_slain_quail_explodes_into_one_to_five_sandwiches_around_it [test_rogue.rb:1861]:
+DungeonTest#test_slain_quail_explodes_into_one_to_five_sandwiches_around_it [test_ruby_rogue.rb:1861]:
 Expected /The Quail explodes into [1-5] sandwich/ to match "WARNING: the Quail has never attacked you! 2 more blows and it will cost you.".
 
   2) Failure:
-DungeonTest#test_hitting_a_neutral_goblin_turns_it_aggressive [test_rogue.rb:1369]:
+DungeonTest#test_hitting_a_neutral_goblin_turns_it_aggressive [test_ruby_rogue.rb:1369]:
 Expected /\AYou hit the goblin for \d\. It turns on you!\z/ to match "WARNING: the goblin has never attacked you! 2 more blows and it will cost you.".
 
   3) Failure:
-DungeonTest#test_a_bow_goes_into_the_knapsack_even_with_empty_hands [test_rogue.rb:2152]:
+DungeonTest#test_a_bow_goes_into_the_knapsack_even_with_empty_hands [test_ruby_rogue.rb:2152]:
 --- expected
 +++ actual
 @@ -1 +1 @@
@@ -24,7 +24,7 @@ DungeonTest#test_a_bow_goes_into_the_knapsack_even_with_empty_hands [test_rogue.
 
 
   4) Failure:
-DungeonTest#test_a_weapon_too_heavy_to_pack_is_left_behind [test_rogue.rb:5800]:
+DungeonTest#test_a_weapon_too_heavy_to_pack_is_left_behind [test_ruby_rogue.rb:5800]:
 --- expected
 +++ actual
 @@ -1 +1 @@
@@ -33,7 +33,7 @@ DungeonTest#test_a_weapon_too_heavy_to_pack_is_left_behind [test_rogue.rb:5800]:
 
 
   5) Failure:
-DungeonTest#test_defeating_a_weapon_seizes_it [test_rogue.rb:2120]:
+DungeonTest#test_defeating_a_weapon_seizes_it [test_ruby_rogue.rb:2120]:
 --- expected
 +++ actual
 @@ -1 +1 @@
@@ -42,7 +42,7 @@ DungeonTest#test_defeating_a_weapon_seizes_it [test_rogue.rb:2120]:
 
 
   6) Failure:
-DungeonTest#test_seizing_a_pair_says_them [test_rogue.rb:2263]:
+DungeonTest#test_seizing_a_pair_says_them [test_ruby_rogue.rb:2263]:
 --- expected
 +++ actual
 @@ -1 +1 @@
@@ -51,13 +51,13 @@ DungeonTest#test_seizing_a_pair_says_them [test_rogue.rb:2263]:
 
 
   7) Failure:
-DungeonTest#test_a_monster_taking_a_blow_chirps_a_short_bat [test_rogue.rb:4078]:
+DungeonTest#test_a_monster_taking_a_blow_chirps_a_short_bat [test_ruby_rogue.rb:4078]:
 and a blow of nothing on the hero is silent.
 Expected: ["bat_hit"]
   Actual: ["bat_hit", "alert"]
 
   8) Failure:
-DungeonTest#test_hitting_a_quail_knocks_it_back_with_the_quails_behind_it [test_rogue.rb:1830]:
+DungeonTest#test_hitting_a_quail_knocks_it_back_with_the_quails_behind_it [test_ruby_rogue.rb:1830]:
 --- expected
 +++ actual
 @@ -1 +1 @@
@@ -66,7 +66,7 @@ DungeonTest#test_hitting_a_quail_knocks_it_back_with_the_quails_behind_it [test_
 
 
   9) Failure:
-DungeonTest#test_killing_a_monster_removes_it [test_rogue.rb:1655]:
+DungeonTest#test_killing_a_monster_removes_it [test_ruby_rogue.rb:1655]:
 --- expected
 +++ actual
 @@ -1 +1 @@

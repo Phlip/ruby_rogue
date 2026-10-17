@@ -1,6 +1,6 @@
 # A tee for the test run: everything on stdin goes straight through to stdout, a character at a time, and while
 # Minitest's progress line is printing, the first E (an error), the first F (a failure), and the first S (a skip)
-# each play their own sound through aplay, once; later ones are quiet. Usage: ruby test_rogue.rb | ruby tee_sounds.rb
+# each play their own sound through aplay, once; later ones are quiet. Usage: ruby test_ruby_rogue.rb | ruby tee_sounds.rb
 
 SOUNDS = File.join(__dir__, "sounds")
 EFFECTS = { "E" => "error", "F" => "car_horn", "S" => "cowbell" }.freeze

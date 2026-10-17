@@ -217,7 +217,7 @@ class Dungeon
       transitions: doorLikeTransitions },
     { glyph: "!", name: "empty potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
       transitions: doorLikeTransitions },
-    { glyph: "%", name: "sandwich",   na: 20, cr: 4, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 1,
+    { glyph: "%", name: "sandwich",   na: 20, cr: 4, out_of_band: true, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 1,
       transitions: {[LockState,      StateEvent::KEY]        => UnlockingState,
                     [UnlockingState, StateEvent::REMOVE_KEY] => LockState,
                     [UnlockingState, StateEvent::TIMER]      => SandwichOpenState,
@@ -425,7 +425,7 @@ class Dungeon
                   sleep_potions: 0, glue_potions: 0, slip_potions: 0, empty_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0,
                   candles: 0, laced_potions: 0, laced_speed_potions: 0, laced_gas_potions: 0, laced_slow_potions: 0,
                   laced_healing_potions: 0, laced_sleep_potions: 0, laced_glue_potions: 0, laced_slip_potions: 0, laced_empty_potions: 0, eggs: [], weapons: [], shields: [], wands: [],
-                  slip_wands: [], toolbags: 0 }
+                  slip_wands: [], toolbags: 0, tough_sandwiches: [] }
     @ring = nil
     @hasted = 0
     @slowed = 0
@@ -473,7 +473,7 @@ class Dungeon
   PREFACE_AMMENDMENTS = [
     "Never drop experimental liquids in front of ambulatory test subjects.",
     "Do not interrogate robotic security doors how to bypass them with the\ndiagonal movement keys 7 9 1 3.",
-    "Do not bribe doors with money to get them to open.",
+    "Do not bribe doors with money to get them to open; their govt contractor\nwill be notified.",
     "Do not offer sandwiches to locked doors while Imps are watching.",
     "Never pick a lock with the contents of an unattended Toolbag.",
     "Do not hotwire a door's openness status by offering a bribe from your\ncredit card or any cash on hand.",
@@ -481,13 +481,21 @@ class Dungeon
     "Do not activate the Safe Room ring while a Troll is lurking inside the\nsecurity perimeter.",
     "Never hold a specimen's egg up to a candle to see what is growing in it.",
     "Never use any cleaning fluid or industrial adhesive for any off-label\nactivities.",
+    "Never sample any of the degenerate foodstuffs left down there because the\nconstruction workers left in a hurry. It's probably contaminated by now.",
     "After de-extincting the Dodo, the Committee voted to re-extinct it. Please\ndisregard any Dodos you encounter.",
     "Do not use any corridor in the plenum that is too narrow for two people;\nit's not certified for foot traffic.",
+    "Overfeeding or arming wildlife will incur severe civil and criminal penalties.",
+    "Tampering with any expensive hardware in the facility is a billable offense.",
+    "Place any loose sharps in appropriately labeled biological recycling material\nbins please and syringes.",
     "Do not corner anything with a brain in a narrow corridor; it will panic.",
+    "You have a three week supply of proton pills. Do not consume anything local.",
     "Do not pay a growling shield a coin, and never strike it afterward.",
+    "Use power-only USB cables if you must recharge locally.",
     "Do not tap F lab equipment to see whether it wants to come home with you.",
+    "The Coyotes and Axebeaks are NOT copyrighted! ~~*^$##.",
     "Never rest within sight of a wounded heavy; it rests too.",
     "Do not let Dodos follow you about. Their eggs are not Quail eggs.",
+    "There is no truth to the rumor that the government contractor who installed\nthe doors allowed any of them to take bribes.",
   ].freeze
 
   # The game ends when the player dies, or springs the cage's trap on themselves and whatever else is inside;
@@ -721,7 +729,8 @@ class Dungeon
   # Pounds in the knapsack now
   def load
     counted = @knapsack.sum { |slot, n| n.is_a?(Integer) ? n * pounds(slot) : 0 }
-    counted + @knapsack[:eggs].size * Dungeon.pounds(EGG_POUNDS) + @knapsack[:weapons].sum { |w| weapon_pounds(w) } +
+    counted + @knapsack[:eggs].size * Dungeon.pounds(EGG_POUNDS) + @knapsack[:tough_sandwiches].size * pounds(:sandwiches) +
+      @knapsack[:weapons].sum { |w| weapon_pounds(w) } +
       @knapsack[:shields].sum { |s| Dungeon.pounds(Dungeon.packable(s[:name])) }
   end
 
@@ -741,7 +750,8 @@ class Dungeon
   def offer(item)
     over? and return
     @throwable = nil
-    @knapsack[item].zero? and return say("You have no #{item} to give.")
+    (@knapsack[item].zero? && !(item == :sandwiches && @knapsack[:tough_sandwiches].any?)) and
+      return say("You have no #{item} to give.")
 
     @offering = item
     say "Give #{GIFTS[item]} which way?#{" Rest to eat it yourself." if item == :sandwiches}"
@@ -1201,6 +1211,12 @@ class Dungeon
   # swings open, and half the time the tools jam it shut. Either way it takes a turn, and the Toolbag is kept
   def use_tools
     over? and return
+    if !tools_door && @knapsack[:toolbags].positive? &&
+       (ajar = @monsters.find { |m| m.name == "door" && !m.locked && !m.jammed && (m.x - @px).abs <= 1 && (m.y - @py).abs <= 1 })
+      @monsters.delete(ajar) # unlocked all along: it needs no tools, just the bag's rattle
+      say "As you open the toolbag, the door swings ajar."
+      return end_turn
+    end
     (door = tools_door) or return say("There's no locked door beside you for the Toolbag.")
 
     door.touched = true
@@ -1221,6 +1237,7 @@ class Dungeon
     @throwable = nil
     @stairs_question = nil
     @take_question = nil
+    @stow_question = nil
     @offering = nil
     x = @px + @facing[0]
     y = @py + @facing[1]
@@ -1333,12 +1350,31 @@ class Dungeon
     things.max_by(&:last)&.first
   end
 
+  # The wrapped sandwich the player just started on, while they're asked whether to stow it for later
+  attr_reader :stow_question
+
+  # Answers "Stow sandwich in knapsack for later? (y/N)": only a definite yes stows it, wrapping and all, which
+  # takes a turn. A stowed sandwich is a tough one: the knapsack remembers it, and its weight, but never shows it,
+  # nor counts it among the sandwiches
+  def stow_it(yes)
+    over? and return
+    food = @stow_question or return
+    @stow_question = nil
+    (yes && @monsters.include?(food)) or return
+
+    @monsters.delete(food)
+    @knapsack[:tough_sandwiches] << food.hp # its wrapping still to work through
+    say "You stow the sandwich, wrapping and all."
+    end_turn
+  end
+
   # Answers "Put this X in your backpack? (y/N)": only a definite yes takes it, which takes a turn; anything else
   # leaves it lying there, and the question goes either way
   def take_it(yes)
     over? and return
     m = @take_question or return
     @take_question = nil
+    @stow_question = nil
     (yes && @monsters.include?(m)) or return
 
     if (slot = PACKABLE[m.name])
@@ -1357,6 +1393,7 @@ class Dungeon
     way = @stairs_question or return
     @stairs_question = nil
     @take_question = nil
+    @stow_question = nil
     return say("You stay where you are.") unless yes
 
     way == "down" ? descend : ascend
@@ -1368,6 +1405,7 @@ class Dungeon
     @throwable = nil
     @stairs_question = nil
     @take_question = nil
+    @stow_question = nil
     @facing = [dx, dy] unless dx.zero? && dy.zero?
     if (item = @offering)
       return fling_candle(item, dx, dy) if LACED.key?(item)
@@ -1393,6 +1431,8 @@ class Dungeon
 
       if mist?(foe)
         say "Your blow passes right through the misty #{foe.name}."
+      elsif foe.name == "toolbag" && @knapsack[:toolbags].positive?
+        return say("You already carry a Toolbag, so you leave this one be.") # one's plenty; no turn
       elsif (slot = PACKABLE[foe.name])
         pack(foe, slot) or return # a full knapsack says so, and costs no turn
       elsif foe.name == "Quail" && first_meeting?(foe, :ego)
@@ -1428,6 +1468,7 @@ class Dungeon
     @throwable = nil
     @stairs_question = nil
     @take_question = nil
+    @stow_question = nil
     if @offering
       item = @offering
       @offering = nil
@@ -1445,11 +1486,27 @@ class Dungeon
   # as open, so eating takes a turn and then does what leaving SandwichOpenState does: its action
   def eat
     peckish? or return say("Your blood sugar isn't low enough to want a sandwich.")
+    return work_tough_sandwich if @knapsack[:sandwiches].zero? && @knapsack[:tough_sandwiches].any?
 
     end_turn
     return if over?
 
     SandwichOpenState.new.action(self, nil)
+  end
+
+  # With only tough sandwiches left, eating wastes turns on a wrapping first: each turn works it a point, while the
+  # dungeon carries on, and the turn it gives way, the sandwich is eaten
+  def work_tough_sandwich
+    @knapsack[:tough_sandwiches][0] -= 1
+    if @knapsack[:tough_sandwiches][0].positive?
+      say "You work at a tough sandwich's wrapping."
+      return end_turn
+    end
+
+    @knapsack[:tough_sandwiches].shift
+    @knapsack[:sandwiches] += 1
+    say "The tough sandwich's wrapping gives way."
+    eat
   end
 
   # Below this, the player wants a sandwich
@@ -1600,6 +1657,7 @@ class Dungeon
       @sandwiches[free_spot(room)] = 1 if rand < ROOM_SANDWICH_CHANCE * sandwich_odds
       rand(0..2).times { spawn_monster(room) }
     end
+    stock_sandwiches
 
     # A potion of sight turns up on about half the levels, whatever its place in the depth ladder
     room = @rooms.drop(1).sample
@@ -1855,10 +1913,8 @@ class Dungeon
   # name, has its hit points, scores, and temper, and wields the weapon, hitting for its range. It lies dormant
   # until woken, then fights as that creature, weapon in hand; defeating it drops the weapon
   def spawn_monster(room, kind = nil, at: nil)
-    chosen = kind
     kind ||= THINGAGES.select { |k| k[:na] > 1 && !k[:out_of_band] && k[:cr] <= @depth && @population[k[:name]] < k[:na] }.sample
     (kind && kind[:name] != PLAYER_KIND) or return
-    return if !chosen && kind[:name] == "sandwich" && rand >= sandwich_odds # deeper, a sandwich turns up less
 
     @population[kind[:name]] += 1
     x, y = at || free_spot(room)
@@ -2010,6 +2066,9 @@ class Dungeon
   # Offering to empty floor doesn't, and readies the throw button for that item and direction instead
   def give(item, dx, dy)
     @offering = nil
+    if item == :sandwiches && @knapsack[:sandwiches].zero?
+      return say("Your only sandwiches are still wrapped; you'd have to eat one to unwrap it.")
+    end
     taker = monster_at(@px + dx, @py + dy)
     
     unless taker
@@ -2479,9 +2538,13 @@ class Dungeon
       return machine.transit(StateEvent::KEY, self, food)
     end
 
-    machine.transit(StateEvent::KEY, self, food) if machine.state.is_a?(LockState)
+    first = machine.state.is_a?(LockState)
+    machine.transit(StateEvent::KEY, self, food) if first
     food.hp -= damage
-    return say("You work at the sandwich's wrapping.") if food.hp.positive?
+    if food.hp.positive?
+      @stow_question = food if first && room_for?(pounds(:sandwiches)) # a full knapsack isn't asked
+      return say("You work at the sandwich's wrapping.")
+    end
 
     machine.transit(StateEvent::TIMER, self, food)
     say "The sandwich's wrapping gives way. It's open, and edible."
@@ -2595,11 +2658,30 @@ class Dungeon
   GOLD_PER_PILE = 4..17
 
   # The chance a room past the first has a sandwich lying in it, on the first level; deeper, sandwich_odds cuts
-  # it, and a randomly spawned wrapped sandwich, by SANDWICH_DEPTH_FACTOR for each level down
+  # it by SANDWICH_DEPTH_FACTOR for each level down
   ROOM_SANDWICH_CHANCE = 1 / 3.0
   SANDWICH_DEPTH_FACTOR = 0.9
 
   def sandwich_odds = SANDWICH_DEPTH_FACTOR**(@depth - 1)
+
+  # From SANDWICH_STOCK_DEPTH, where the wrapped ones begin, each level is stocked with SANDWICH_STOCK sandwiches on
+  # average, one fewer for each level further down, and none once that runs out
+  SANDWICH_STOCK_DEPTH = 4
+  SANDWICH_STOCK = 7.5
+
+  def sandwich_stock = [SANDWICH_STOCK - (@depth - SANDWICH_STOCK_DEPTH), 0].max
+
+  # Tops the level up to its stock with wrapped sandwiches, in rooms past the first: as many whole ones as the loose
+  # sandwiches fall short by, and one more on the chance of the fraction left over, so a level averages its stock
+  def stock_sandwiches
+    @depth >= SANDWICH_STOCK_DEPTH or return
+    short = sandwich_stock - @sandwiches.values.sum
+    short.positive? or return
+
+    wrapped = short.floor + (rand < short - short.floor ? 1 : 0)
+    row = THINGAGES.find { |k| k[:name] == "sandwich" }
+    wrapped.times { spawn_monster(@rooms.drop(1).sample || @rooms.first, row) }
+  end
 
   # The chance a Dodo the player kills leaves a sandwich where it fell
   DODO_SANDWICH_CHANCE = 1 / 3.0
@@ -3770,6 +3852,7 @@ class WebGame
       when "/give_chosen" then @game.give_chosen
       when "/stairs" then @game.take_stairs(params["answer"] == "yes")
       when "/take" then @game.take_it(params["answer"] == "yes")
+      when "/stow" then @game.stow_it(params["answer"] == "yes")
       when "/zip" then params["answer"] == "yes" ? @game.zip : @game.decline_zip
       when "/give"
         item = params["item"].to_s.to_sym
@@ -3905,6 +3988,11 @@ class WebGame
                %(<form method="post" action="/take?answer=yes"><button data-keys="y" style="width: auto">Yes (y)</button></form>) +
                %(<form method="post" action="/take?answer=no"><button data-keys="n" style="width: auto">No (N)</button></form></div>)
            end
+    stow = if @game.stow_question
+             %(<div class="stairs">Stow sandwich in knapsack for later? ) +
+               %(<form method="post" action="/stow?answer=yes"><button data-keys="y" style="width: auto">Yes (y)</button></form>) +
+               %(<form method="post" action="/stow?answer=no"><button data-keys="n" style="width: auto">No (N)</button></form></div>)
+           end
     zip = if (way = @game.zip_question)
             %(<div class="stairs">zip #{way}? ) +
               %(<form method="post" action="/zip?answer=yes"><button data-keys="y Enter" style="width: auto">Yes (Y)</button></form>) +
@@ -3945,7 +4033,7 @@ class WebGame
         <div class="below">
           <div class="controls">
             #{%(<form method="post" action="/throw"><button data-keys="t" style="width: auto">throw (t)</button></form>) if @game.can_hurl?}
-            #{stairs}#{take}#{zip}
+            #{stairs}#{take}#{stow}#{zip}
             <div class="pad-row">
               <div class="pad">#{buttons.join}</div>
               <div class="controls">
@@ -4116,6 +4204,7 @@ class DosBox
     return play_again(key) if @game.over? || @error
     return @game.take_stairs(%w[y Y].include?(key)) if @game.stairs_question && %w[y Y n].include?(key)
     return @game.take_it(key == "y") if @game.take_question # only a definite y; any other key is a no
+    return @game.stow_it(key == "y") if @game.stow_question
     if @game.zip_question
       return @game.zip if %W[y Y \r \n].include?(key) # Enter, or a yes, zips
       return @game.decline_zip if %w[n N].include?(key)
@@ -4251,6 +4340,7 @@ class DosBox
     return "#{ending} Play again? (y/n)" if @error || @game.over?
     return "You want to go #{@game.stairs_question}? (y/n)" if @game.stairs_question
     return "Put this #{@game.take_question.name} in your backpack? (y/N)" if @game.take_question
+    return "Stow sandwich in knapsack for later? (y/N)" if @game.stow_question
     return @note if @note
     return "Then an arrow sends it that way, or R keeps it" if @game.log.last.to_s.end_with?("which way?")
     return "o: use the tools in the Toolbag to open the door" if @game.tools_ready?

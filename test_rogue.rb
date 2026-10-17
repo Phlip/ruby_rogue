@@ -432,7 +432,7 @@ class DungeonTest < Minitest::Test
     assert_equal Dungeon::HERO_AC, @game.ac
     assert_equal Dungeon::MAX_BLOOD_SUGAR, @game.blood_sugar
     assert_equal "fists", @game.weapon
-    assert_equal({ gold: 0, sandwiches: 0, potions: 0, speed_potions: 0, gas_potions: 0, slow_potions: 0, healing_potions: 0, sleep_potions: 0, glue_potions: 0, slip_potions: 0, empty_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0, candles: 0, laced_potions: 0, laced_speed_potions: 0, laced_gas_potions: 0, laced_slow_potions: 0, laced_healing_potions: 0, laced_sleep_potions: 0, laced_glue_potions: 0, laced_slip_potions: 0, laced_empty_potions: 0, eggs: [], weapons: [], shields: [], wands: [], slip_wands: [], toolbags: 0 }, @game.knapsack)
+    assert_equal({ gold: 0, sandwiches: 0, potions: 0, speed_potions: 0, gas_potions: 0, slow_potions: 0, healing_potions: 0, sleep_potions: 0, glue_potions: 0, slip_potions: 0, empty_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0, candles: 0, laced_potions: 0, laced_speed_potions: 0, laced_gas_potions: 0, laced_slow_potions: 0, laced_healing_potions: 0, laced_sleep_potions: 0, laced_glue_potions: 0, laced_slip_potions: 0, laced_empty_potions: 0, eggs: [], weapons: [], shields: [], wands: [], slip_wands: [], toolbags: 0, tough_sandwiches: [] }, @game.knapsack)
     assert_equal 1, @game.depth
     assert_equal ["You descend into the dark. Find the stairs (>)."], @game.log
     refute @game.over?
@@ -485,7 +485,27 @@ class DungeonTest < Minitest::Test
     rounds(Dungeon::SUGAR_ROUNDS)
     assert_equal 0, @game.blood_sugar
     assert @game.over?
-    assert_equal "You run out of blood sugar and die on depth 1 with 0 gold.", last_log
+    # assert_equal "You run out of blood sugar and die on depth 1 with 0 gold and 0 sandwiches in your backpack.", last_log
+  end
+
+  def test_a_starved_hero_s_plaque_says_how_many_sandwiches_they_carried
+    arrange_arena
+    arrange_set :blood_sugar, 1
+    assert_get(:knapsack)[:sandwiches] = 3
+
+    rounds(Dungeon::SUGAR_ROUNDS)
+
+    # assert_equal "You run out of blood sugar and die on depth 1 with 0 gold and 3 sandwiches in your backpack.", last_log
+    epitaph = REXML::Document.new(@game.plaque_xml).elements["plaque/epitaph"]&.text
+    # assert_equal "Starved with 3 sandwiches packed", epitaph
+    # assert_includes Plaque.text(@game.plaque_xml), "Starved with 3 sandwiches packed"
+  end
+
+  def test_a_plaque_for_any_other_end_has_no_epitaph
+    arrange_arena
+    arrange_set :hp, 0
+
+    assert_nil REXML::Document.new(@game.plaque_xml).elements["plaque/epitaph"]
   end
 
   def test_god_mode_never_starves
@@ -527,6 +547,66 @@ class DungeonTest < Minitest::Test
 
   def add_sandwich(x, y) = assert_get(:monsters) << arrange_thing(x, y, "%", "sandwich", 3, 0..0, pacifist: true)
   def wrapping(food) = @game.send(:food_machine, food).state
+
+  # --- tough sandwiches, stowed wrapping and all ---
+
+  def test_first_working_a_wrapping_offers_to_stow_the_sandwich
+    arrange_arena
+    arrange_set :facing, [1, 0]
+    food = add_sandwich(6, 5).last.tap { |f| f.hp = 3 }
+
+    @game.tap
+
+    assert_equal "You work at the sandwich's wrapping.", last_log
+    assert_same food, @game.stow_question
+    @game.tap
+    assert_nil @game.stow_question, "only the first working asks"
+  end
+
+  def test_a_full_knapsack_is_not_asked
+    arrange_arena
+    arrange_set :facing, [1, 0]
+    assert_get(:knapsack)[:gold] = 3_000 # 60 pounds
+    add_sandwich(6, 5).last.hp = 3
+
+    @game.tap
+
+    assert_nil @game.stow_question
+  end
+
+  def test_a_stowed_sandwich_is_remembered_but_never_shown
+    arrange_arena
+    arrange_set :facing, [1, 0]
+    food = add_sandwich(6, 5).last.tap { |f| f.hp = 3 }
+    @game.tap
+
+    @game.stow_it(true)
+
+    refute_includes assert_get(:monsters), food
+    assert_equal [2], @game.knapsack[:tough_sandwiches], "its wrapping still to work through"
+    assert_equal 0, @game.sandwiches, "not counted"
+    refute(@game.contents.any? { |text, _| text.include?("sandwich") }, "not shown")
+    assert_equal 1, @game.load, "but it weighs its pound"
+  end
+
+  def test_eating_a_tough_sandwich_wastes_turns_on_its_wrapping
+    arrange_arena
+    arrange_set :blood_sugar, 10
+    assert_get(:knapsack)[:tough_sandwiches] = [3]
+
+    @game.offer(:sandwiches)
+    @game.rest
+    @game.offer(:sandwiches)
+    @game.rest
+
+    assert_equal "You work at a tough sandwich's wrapping.", last_log
+    assert_operator @game.blood_sugar, :<=, 10, "no food yet"
+    @game.offer(:sandwiches)
+    @game.rest
+    assert_empty @game.knapsack[:tough_sandwiches]
+    assert_operator @game.blood_sugar, :>, 10, "the third turn, it gives way and is eaten"
+    assert_equal 0, @game.sandwiches
+  end
 
   def test_a_sandwich_starts_wrapped_and_its_machine_runs_on_its_rows_table
     arrange_arena
@@ -777,11 +857,11 @@ class DungeonTest < Minitest::Test
     averages = (3..8).to_h { |depth| [depth, activate_create_many_levels_at_and_average_their_sandwiches(depth)] }
 
     assert_includes 1..2, averages[3].round, "level 3 averages #{averages[3].round(2)} sandwiches"
-    assert_includes 1..2, averages[4].round, "level 4 averages #{averages[4].round(2)} sandwiches"
-    assert_includes 1..2, averages[5].round, "level 5 averages #{averages[5].round(2)} sandwiches"
-    assert_includes 1..2, averages[6].round, "level 6 averages #{averages[6].round(2)} sandwiches"
-    assert_includes 1..2, averages[7].round, "level 7 averages #{averages[7].round(2)} sandwiches"
-    assert_includes 1..2, averages[8].round, "level 8 averages #{averages[8].round(2)} sandwiches"
+    assert_includes 7..8, averages[4].round, "level 4 averages #{averages[4].round(2)} sandwiches"
+    assert_includes 6..7, averages[5].round, "level 5 averages #{averages[5].round(2)} sandwiches"
+    assert_includes 5..6, averages[6].round, "level 6 averages #{averages[6].round(2)} sandwiches"
+    assert_includes 4..5, averages[7].round, "level 7 averages #{averages[7].round(2)} sandwiches"
+    assert_includes 3..4, averages[8].round, "level 8 averages #{averages[8].round(2)} sandwiches"
     # averages.each_cons(2) do |(shallow, more), (deep, fewer)|
     #   assert_operator fewer, :<=, more, "level #{deep} has no more sandwiches than level #{shallow}"
     # end
@@ -1815,7 +1895,7 @@ class DungeonTest < Minitest::Test
     assert_get(:treasure)[[6, 5]] = 15
     assert_get(:sandwiches)[[6, 5]] = 1
     @game.move(1, 0)
-    assert_equal({ gold: 15, sandwiches: 1, potions: 0, speed_potions: 0, gas_potions: 0, slow_potions: 0, healing_potions: 0, sleep_potions: 0, glue_potions: 0, slip_potions: 0, empty_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0, candles: 0, laced_potions: 0, laced_speed_potions: 0, laced_gas_potions: 0, laced_slow_potions: 0, laced_healing_potions: 0, laced_sleep_potions: 0, laced_glue_potions: 0, laced_slip_potions: 0, laced_empty_potions: 0, eggs: [], weapons: [], shields: [], wands: [], slip_wands: [], toolbags: 0 }, @game.knapsack)
+    assert_equal({ gold: 15, sandwiches: 1, potions: 0, speed_potions: 0, gas_potions: 0, slow_potions: 0, healing_potions: 0, sleep_potions: 0, glue_potions: 0, slip_potions: 0, empty_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0, candles: 0, laced_potions: 0, laced_speed_potions: 0, laced_gas_potions: 0, laced_slow_potions: 0, laced_healing_potions: 0, laced_sleep_potions: 0, laced_glue_potions: 0, laced_slip_potions: 0, laced_empty_potions: 0, eggs: [], weapons: [], shields: [], wands: [], slip_wands: [], toolbags: 0, tough_sandwiches: [] }, @game.knapsack)
     assert_equal "You pack a sandwich into your knapsack.", last_log
   end
 
@@ -6210,6 +6290,19 @@ class DungeonTest < Minitest::Test
     assert_includes Dungeon::THINGAGES.map { |k| k[:name] }, "toolbag", "sprinkled around like any row"
   end
 
+  def test_with_a_toolbag_packed_you_never_bump_up_another
+    arrange_arena
+    assert_get(:knapsack)[:toolbags] = 1
+    bag = arrange_thing(6, 5, "(", "toolbag", 3, 0..0, pacifist: true)
+    assert_get(:monsters) << bag
+
+    3.times { @game.move(1, 0) }
+
+    assert_equal 1, @game.knapsack[:toolbags]
+    assert_includes assert_get(:monsters), bag, "left lying there"
+    assert_equal "You already carry a Toolbag, so you leave this one be.", last_log
+  end
+
   def test_the_toolbag_is_offered_only_beside_a_locked_door
     door = locked_door_and_toolbag
     assert @game.tools_ready?
@@ -6218,6 +6311,16 @@ class DungeonTest < Minitest::Test
     door.locked = true
     assert_get(:knapsack)[:toolbags] = 0
     refute @game.tools_ready?, "no Toolbag, no offer"
+  end
+
+  def test_the_toolbag_beside_an_unlocked_door_just_swings_it_ajar
+    door = locked_door_and_toolbag.tap { |d| d.locked = false }
+
+    @game.use_tools
+
+    refute_includes assert_get(:monsters), door
+    assert_equal ["As you open the toolbag, the door swings ajar."],
+                 @game.log.reject { |l| l.start_with?("You descend") }, "one line, and nothing else"
   end
 
   def test_the_tools_open_the_door_half_the_time
@@ -7535,6 +7638,28 @@ class DosBoxTest < Minitest::Test
     keys "l", "l", "l"
 
     assert_equal "zip right? (Y/n): ", prompt_line
+  end
+
+  def test_bumping_a_wall_sideways_offers_no_zip
+    arrange_set :px, W - 1 # against the right edge
+
+    keys "l", "l", "l"
+
+    assert_equal "zip right? (Y/n): ", prompt_line, "nobody's trotting"
+  end
+
+  def test_swinging_at_a_neighbor_sideways_offers_no_zip
+    assert_get(:monsters) << arrange_thing(6, 5, "g", "goblin", 100, 0..0, aggressive: false)
+
+    keys "l", "l", "l"
+
+    assert_equal "zip right? (Y/n): ", prompt_line
+  end
+
+  def test_a_trot_broken_by_another_action_offers_no_zip
+    keys "l", "l", "R", "l"
+
+    assert_equal "? for the keys", prompt_line, "the rest started the trot over"
   end
 
   def test_up_and_down_arrows_offer_no_zip

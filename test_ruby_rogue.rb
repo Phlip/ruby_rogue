@@ -520,6 +520,43 @@ class DungeonTest < Minitest::Test
     refute @game.over?
   end
 
+  def test_falling_to_15_12_9_and_4_blood_sugar_faints_you_for_d3_rounds
+    [16, 13, 10, 5].each do |sugar|
+      arrange_arena
+      arrange_set :blood_sugar, sugar
+      arrange_set :sugar_clock, 0
+
+      activate_rounds_passing(Dungeon::SUGAR_ROUNDS)
+
+      assert_includes @game.log, "Your blood sugar falls to #{sugar - 1}, and you faint!"
+      assert_equal "You wake up.", last_log
+      assert_includes (Dungeon::SUGAR_ROUNDS + 1)..(Dungeon::SUGAR_ROUNDS + 3), assert_get(:sugar_clock), "d3 rounds went on without you"
+    end
+  end
+
+  def test_other_blood_sugars_never_faint_you
+    arrange_arena
+    arrange_set :blood_sugar, 14
+    arrange_set :sugar_clock, 0
+
+    activate_rounds_passing(Dungeon::SUGAR_ROUNDS)
+
+    assert_equal 13, @game.blood_sugar
+    refute(@game.log.any? { |line| line.include?("faint") })
+    assert_equal Dungeon::SUGAR_ROUNDS, assert_get(:sugar_clock)
+  end
+
+  def test_the_monsters_carry_on_while_you_lie_fainted
+    arrange_arena
+    arrange_set :blood_sugar, 16
+    arrange_set :sugar_clock, Dungeon::SUGAR_ROUNDS - 1
+    arrange_monster(9, 5, hp: 100, hit: 0..0)
+
+    activate_rounds_passing(1)
+
+    assert_operator assert_get(:monsters).first.x, :<=, 7, "it took its step, then more while you were out"
+  end
+
   def test_the_alarms_sound_as_blood_sugar_runs_out
     played = []
     Dungeon.sound_player = ->(name) { played << name }

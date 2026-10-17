@@ -2599,6 +2599,7 @@ class Dungeon
   def sugar_drops
     @blood_sugar -= 1
     alarm(@blood_sugar)
+    faint if FAINT_SUGAR.include?(@blood_sugar)
     return unless hungry? && !godMode?
 
     @hp = 0
@@ -3036,6 +3037,14 @@ class Dungeon
       say(rand < 0.5 ? "Welcome to level #{@hero_level}!" :
                        "Welcome to level #{@hero_level}; your new proficiency bonus is #{@hero_level / 2}.")
     end
+  end
+
+  # Falling to each of these blood sugars, the hero faints for d3 rounds, while life goes on around them
+  FAINT_SUGAR = [15, 12, 9, 4].freeze
+
+  def faint
+    @asleep = [@asleep.to_i, Dungeon.d3].max
+    say "Your blood sugar falls to #{@blood_sugar}, and you faint!"
   end
 
   # A sleeping player sleeps on, a round at a time, while everyone else carries on, then wakes

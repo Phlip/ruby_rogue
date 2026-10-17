@@ -169,13 +169,13 @@ class Dungeon
       name: "weapon", na: 1, cr: 1, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 10, con: 18, int: 18, wis: 10, cha: 10,  pacifist: 0.75,
       transitions: doorLikeTransitions },
     { glyph: "𓆩", # light shield causes d6 damage + str or dex or int benefits, one damage event per round is halved
-      name: "light shield", na: 10, cr: 3, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 10, con: 18, int: 18, wis: 10, cha: 10,  pacifist: 0.66, packable: 3,
+      name: "light shield", na: 10, cr: 3, hp: 18, hit: 1..4, ac: 20, str: 12, dex: 10, con: 18, int: 18, wis: 10, cha: 10,  pacifist: 0.66, packable: 3,
       transitions: doorLikeTransitions },
     { glyph: "༒",  #  double-damage to anyone who is currently aggressive to Ego
       name: "weapon", na: 10, cr: 1, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 10, con: 18, int: 18, wis: 10, cha: 10,  pacifist: 0.65,
       transitions: doorLikeTransitions },
     { glyph: "༻", # shield causes damage yet doubles your protection
-      name: "shield", na: 10, cr: 1, hp: 18, hit: 2..12, ac: 20, str: 18, dex: 18, con: 18, int: 10, wis:  1, cha: 10,  pacifist: 0.5, packable: 6,
+      name: "shield", na: 10, cr: 1, hp: 18, hit: 1..4, ac: 20, str: 12, dex: 18, con: 18, int: 10, wis:  1, cha: 10,  pacifist: 0.5, packable: 6,
       transitions: doorLikeTransitions },
     { glyph: "R", name: "rat",      na:  8, cr: 1, hp:  3, hit: 1..2, ac: 10, str:  7, dex: 15, con: 11, int:  2, wis: 10, cha:  4, aggressive: true, eats: true,
       transitions: doorLikeTransitions },
@@ -359,12 +359,13 @@ class Dungeon
   # round it attacked someone, and touched one someone tapped, unwrapped, or hit it, so either way it didn't rest.
   # jammed marks a door a Toolbag failed on, stuck shut until it's bashed through. unhurt counts its rounds in a
   # row without losing a hit point, last_hp being what it had at the end of the last one. pleas counts the blows a
-  # door has begged the player to go round it
+  # door has begged the player to go round it. struck_hero marks a creature that has ever attacked the player, and
+  # wrongs counts the blows the player dealt it while it was still innocent
 
   Thingage = Struct.new(:x, :y, :glyph, :name, :hp, :hit, :str, :dex, :con, :int, :wis, :cha, :pacifist, :spurned, :greedy, :fed, :ally, :coins, :aggressive,
                         :hasted, :gaseous, :farsighted, :nesting, :sugar, :starving, :slowed, :lagging, :weapon, :locked, :machine, :plate_bound, :met, :asleep, :stuck,
                         :disguised_potion, :pursuit_target, :state, :devoted, :max_hp, :struck, :touched, :jammed,
-                        :unhurt, :last_hp, :pleas)
+                        :unhurt, :last_hp, :pleas, :struck_hero, :wrongs)
   ABILITIES = %i[str dex con int wis cha].freeze
 
   # The D&D ability modifier: 10 and 11 give +0, and every two points up or down moves it by one.
@@ -403,9 +404,23 @@ class Dungeon
   # The hero's armor class: the Ego row's. Nothing reads it in combat yet
   HERO_AC = PLAYER[:ac]
 
-  attr_reader :hp, :max_hp, :ac, :abilities, :blood_sugar, :knapsack, :depth, :log, :wielded, :ring, :experience_points, :hero_level
-  # The name the hero gave, for their plaque; nil when the front end never asked
-  attr_accessor :hero_name
+  attr_reader :max_hp, :ac, :abilities, :blood_sugar, :knapsack, :depth, :log, :wielded, :ring, :experience_points, :hero_level
+  # Hit points as shown: never below none, though a killing blow can take the count itself further
+  def hp = [@hp, 0].max
+
+  # The name the hero gave, for their plaque and the opening line; nil when the front end never asked
+  attr_reader :hero_name
+
+  # Naming the hero, while the log still holds only its opening line, puts the name in it too: the front ends ask
+  # the name after the game is built
+  def hero_name=(name)
+    named = @log == [opening_line]
+    @hero_name = name
+    @log = [opening_line] if named
+  end
+
+  # The log's first line: the hero, by name, going down into the dark
+  def opening_line = "#{@hero_name.to_s.empty? ? "The hero" : @hero_name} descends into the darkness#{" to depth #{@depth}" if @depth > 1}."
 
   # In god mode the player takes no damage; everything else still can. Like a monster's from its row, the
   # player's hit points are the Ego row's plus its con modifier, though never fewer than 1. A game can start at a
@@ -440,7 +455,7 @@ class Dungeon
     @levels = {}
     @experience_points = 0
     @hero_level = 1
-    @log = ["You descend into the dark#{" to depth #{level}" if level > 1}. Find the stairs (>)."]
+    @log = [opening_line]
     build_level
     take_stock
   end
@@ -476,18 +491,21 @@ class Dungeon
     "Do not bribe doors with money to get them to open; their govt contractor\nwill be notified.",
     "Do not offer sandwiches to locked doors while Imps are watching.",
     "You have signed an NDA for every experimental tool you will be using that\n"+
-      "voids your liability if you depart from the warantee terms.",
+      "voids your liability if you depart from the warrantee terms.",
     "Never pick a lock with the contents of an unattended Toolbag.",
+    "The \"credit card on the door hasp bolt\" trick only works in B movies.",
     "Do not hotwire a door's openness status by offering a bribe from your\ncredit card or any cash on hand.",
     "Bring Dodo and Axebeak eggs into the Safe Room too. Whatever.",  #  the joke is nothing enforces if you do
     "Do not activate the Safe Room ring while a Troll is lurking inside the\nsecurity perimeter.",
     "Never hold a specimen's egg up to a candle to see what is growing in it.",
+    "And remember the hardware has feelings too.",
+    "And remember the hardware has feelings too. But the experimental subjects DON'T!",
     "Never use any cleaning fluid or industrial adhesive for any off-label\nactivities.",
     "Never sample any of the degenerate foodstuffs left down there because the\nconstruction workers left in a hurry. It's probably contaminated by now.",
     "After de-extincting the Dodo, the Committee voted to re-extinct it. Please\ndisregard any Dodos you encounter.",
     "Do not use any corridor in the plenum that is too narrow for two people;\nit's not certified for foot traffic.",
     "Overfeeding or arming wildlife will incur severe civil and criminal penalties.",
-    "Tampering with any expensive hardware in the facility is a billable offense.",
+    "Tampering with any expensive hardware in the facility is a billable offense and\nno off label use you scabs.",
     "Do not interfere with the test subjects' culinary or monetary conditioning.",
     "Place any loose sharps in appropriately labeled biological recycling material\nbins please and syringes.",
     "Do not corner anything with a brain in a narrow corridor; it will panic.",
@@ -1278,7 +1296,10 @@ class Dungeon
 
   # What a tap says, and, for anything that would never go in a backpack, that too; but never a door, which
   # answers for itself
-  def tap_say(m, text) = say("#{text}#{" Also, the #{m.name} is too big for your backpack." unless takeable?(m) || m.name == "door"}")
+  def tap_say(m, text) = say("#{text}#{" Also, the #{m.name} is too big for your backpack." unless takeable?(m) || kit?(m) || m.name == "door"}")
+
+  # A shield or a weapon: kit that does go in the knapsack, once it's beaten or won over, however alive it is now
+  def kit?(m) = SHIELDS.include?(m.name) || WEAPONS.any? { |w| w[:name] == m.name }
 
   # A thingage is in a tight spot, as in a hallway or a corner, when walls close in on all but two of its sides at
   # most, so a tap against it pushes it on a square instead
@@ -1811,7 +1832,8 @@ class Dungeon
 
   # A living creature, rather than furniture, an item, or a weapon or shield lying about
   def critter?(m)
-    !(FURNITURE + SHIELDS + %w[weapon sandwich]).include?(m.name) && !PACKABLE.key?(m.name) && !m.weapon && !m.disguised_potion
+    !(FURNITURE + SHIELDS + %w[weapon sandwich]).include?(m.name) && !PACKABLE.key?(m.name) && !m.weapon && !m.disguised_potion &&
+      WEAPONS.none? { |w| w[:name] == m.name }
   end
 
   # A finished game earns a plaque on the wall of fallen heroes, unless it was played as a god or started deep
@@ -1965,6 +1987,41 @@ class Dungeon
   # The first hit on a pacifist also spurns it; the second on a piece of furniture enrages it, giving up its
   # pacifism to fight
   def attack(foe)
+    # Innocent: it never struck you, and wasn't out to get you before you started on it. Shoving past in a thin hall
+    # is no crime, though: you gotta move someone. The warning comes before the blow, so the blow has the last word
+    innocent = critter?(foe) && !foe.struck_hero && (!foe.aggressive || foe.wrongs.to_i.positive?) &&
+               !tight_spot?(foe) && !mist?(foe) && !gaseous?
+    wrong_innocent(foe) if innocent
+    attack_blow(foe)
+    return unless innocent && foe.hp <= 0
+    return if (foe.wrongs % INNOCENT_BLOWS).zero? # this very blow already cost you
+
+    dock_innocent("killing", foe) # warned, and you killed it anyway
+  end
+
+  # Every third blow on the same innocent costs this share of the hero's experience
+  INNOCENT_BLOWS = 3
+  INNOCENT_PENALTY = 0.05
+
+  # A blow on a creature that has never attacked the player, out in the open, warns them, loudly, every time, and
+  # every INNOCENT_BLOWS of them costs INNOCENT_PENALTY of their experience
+  def wrong_innocent(foe)
+    foe.wrongs = foe.wrongs.to_i + 1
+    sound "alert"
+    left = INNOCENT_BLOWS - foe.wrongs % INNOCENT_BLOWS
+    return say("WARNING: the #{foe.name} has never attacked you! #{left} more #{left == 1 ? "blow" : "blows"} and it will cost you.") if left < INNOCENT_BLOWS
+
+    dock_innocent("harming", foe)
+  end
+
+  # Takes INNOCENT_PENALTY of the hero's experience for what they did to an innocent, and says so
+  def dock_innocent(deed, foe)
+    cost = (@experience_points * INNOCENT_PENALTY).round
+    @experience_points -= cost
+    say "SHAME: #{deed} the innocent #{foe.name} costs you #{cost} XP."
+  end
+
+  def attack_blow(foe)
     dmg = rand(weapon_hit)
     foe.touched = true
     return unwrap(foe, dmg) if foe.name == "sandwich"
@@ -3082,6 +3139,7 @@ class Dungeon
       return if m.pacifist || friend?(m) || mist?(m) || gaseous?
 
       m.struck = true
+      m.struck_hero = true # no longer innocent
       dmg = blow(m)
       with = " with its #{m.weapon[:name]}" if m.weapon
       return say("The #{m.name} hits you#{with} for #{dmg}, but you take no damage.") if godMode?
@@ -4313,7 +4371,7 @@ class DosBox
     g = @game
     banner = g.outcome.empty? ? "" : "#{ESC}[7m #{g.outcome} #{ESC}[0m "
     "#{banner}#{"GOD MODE  " if g.godMode?}#{"#{g.effects}  " unless g.effects.empty?}HP #{g.hp}/#{g.max_hp}  AC #{g.ac}  " \
-      "Weapon #{g.weapon}  Blood sugar #{g.blood_sugar}  Gold #{g.gold}  Sandwiches #{g.sandwiches}  #{g.load_text}  Depth #{g.depth}"
+      "Weapon #{g.weapon}  Gold #{g.gold}  Sandwiches #{g.sandwiches}  #{g.load_text}  Depth #{g.depth}"
   end
 
   # The knapsack, each entry lettered for the prompts, or the keys while ? shows them, the tap key named for the
@@ -4327,9 +4385,10 @@ class DosBox
     # The tap, Throw, and Give keys are always on show, as the other views always show their buttons
     buttons = ["f: #{@game.tap_label}", "x: #{@game.throw_label}", "g: #{@game.give_label}"]
     packed = @game.contents
-    return ["Knapsack: empty", "? lists the keys"] + buttons if packed.empty?
+    stats = "XP: #{@game.experience_points}  Blood sugar #{@game.blood_sugar}"
+    return ["Empty knapsack  #{stats}", "? lists the keys"] + buttons if packed.empty?
 
-    ["Knapsack:"] + packed.each_with_index.map do |(text, slot), i|
+    ["Knapsack: #{stats}"] + packed.each_with_index.map do |(text, slot), i|
       "#{(97 + i).chr}) #{"(*) " if @game.chosen == slot}#{text}"
     end + buttons
   end

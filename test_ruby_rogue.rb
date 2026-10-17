@@ -1547,7 +1547,9 @@ class DungeonTest < Minitest::Test
     arrange_arena_corner
     (1..H - 2).each { |y| assert_get(:map)[y][7] = "#" } # the wall now runs floor to ceiling
     arrange_quail(8, 3)
+
     3.times { @game.rest }
+
     q = assert_get(:monsters).first
     assert_equal [8, 3], [q.x, q.y]
   end
@@ -1598,7 +1600,9 @@ class DungeonTest < Minitest::Test
     arrange_arena(px: 1, py: 1)
     arrange_monster(9, 1, hp: 100, hit: 0..0)
     log = @game.log.dup
+
     @game.move(-1, 0)
+
     assert_equal [1, 1], player
     assert_equal log, @game.log, "no message"
     assert_equal [9, 1], [assert_get(:monsters).first.x, assert_get(:monsters).first.y], "and no turn passes"
@@ -1624,6 +1628,7 @@ class DungeonTest < Minitest::Test
     assert_equal "$", @game.rows[5][6]
 
     @game.move(1, 0)
+
     assert_equal 15, @game.gold
     assert_empty assert_get(:treasure)
     assert_equal "You find 15 gold!", last_log
@@ -1671,7 +1676,9 @@ class DungeonTest < Minitest::Test
   def test_weak_adjacent_monster_hits_the_player
     arrange_arena
     arrange_monster(5, 6, hp: 100, hit: 3..3, str: 10)
+
     @game.rest
+
     assert_equal 17, @game.hp # resting heals nothing at full health, then the hit lands
     assert_equal "The goblin hits you for 3.", last_log
   end

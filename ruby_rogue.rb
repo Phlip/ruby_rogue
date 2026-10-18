@@ -366,12 +366,12 @@ class Dungeon
   # door has begged the player to go round it. struck_hero marks a creature that has ever attacked the player, and
   # wrongs counts the blows the player dealt it while it was still innocent. phantom counts the hit points an
   # experimental friend has taken from the player, nil on anything real, and hoard the coins a gold mimic was
-  # passing itself off as
+  # passing itself off as. band is the experimental friends conjured together with this one
 
   Thingage = Struct.new(:x, :y, :glyph, :name, :hp, :hit, :str, :dex, :con, :int, :wis, :cha, :pacifist, :spurned, :greedy, :fed, :ally, :coins, :aggressive,
                         :hasted, :gaseous, :farsighted, :nesting, :sugar, :starving, :slowed, :lagging, :weapon, :locked, :machine, :plate_bound, :met, :asleep, :stuck,
                         :disguised_potion, :pursuit_target, :state, :devoted, :max_hp, :struck, :touched, :jammed,
-                        :unhurt, :last_hp, :pleas, :struck_hero, :wrongs, :phantom, :hoard)
+                        :unhurt, :last_hp, :pleas, :struck_hero, :wrongs, :phantom, :hoard, :band)
   ABILITIES = %i[str dex con int wis cha].freeze
 
   # The D&D ability modifier: 10 and 11 give +0, and every two points up or down moves it by one.
@@ -674,15 +674,17 @@ class Dungeon
   # drinker for GAS_ROUNDS. Healing restores the player to full, and a monster, which has no full, by HEAL_HP
   SPEED_ROUNDS = 10
 
-  # A potion of hallucination passes itself off as one of these, the same one all game. Drunk, it conjures an
-  # experimental friend every PHANTOM_EVERY rounds for HALLUCINATION_ROUNDS, up to PHANTOM_RANGE squares away,
-  # already on the player's trail. Tapped, struck, handed something, or once it has taken PHANTOM_HP from the
-  # player, a friend dissipates
+  # A potion of hallucination passes itself off as one of these, the same one all game. Drunk, it conjures a band of
+  # PHANTOM_BAND experimental friends, all of one kind and clustered together, at once and then every PHANTOM_EVERY
+  # rounds for the rest of HALLUCINATION_ROUNDS, up to PHANTOM_RANGE squares away, already on the player's trail. Struck, handed something,
+  # one in PHANTOM_TAP_CHANCE taps, or once one has taken PHANTOM_HP from the player, the whole band dissipates
   HALLUCINATION_ALIASES = ["potion of healing", "potion of gain strength", "potion of water"].freeze
   HALLUCINATION_ROUNDS = 300
   PHANTOM_EVERY = 30
   PHANTOM_RANGE = 15
   PHANTOM_HP = 2
+  PHANTOM_BAND = 3
+  PHANTOM_TAP_CHANCE = 1.0 / 3
 
   # What the player calls a potion: its full name, unless it's passing itself off as another
   def potion_name(slot) = slot == :hallucination_potions ? @potion_alias : POTIONS[slot][:name]
@@ -854,9 +856,10 @@ class Dungeon
     packed
   end
 
-  # Lists the knapsack in the log; looking takes no turn and leaves any readied gift waiting
+  # Lists the knapsack in the log, each entry with the letter that picks it at a prompt, e.g. "b. 2 sandwiches";
+  # gold and the Toolbag, which no prompt uses, go unlettered. Looking takes no turn and leaves any readied gift waiting
   def inventory
-    packed = contents.map(&:first)
+    packed = contents.each_with_index.map { |(text, slot), i| %i[gold toolbags].include?(slot) ? text : "#{(97 + i).chr}. #{text}" }
     return say("Your knapsack is empty.") if packed.empty?
 
     say "Your knapsack holds #{and_list(packed)}."
@@ -918,6 +921,7 @@ class Dungeon
       "It's empty. Nothing happens."
     when :hallucination_potions
       @hallucinating = HALLUCINATION_ROUNDS
+      conjure_friends(in_your_face: true) # the first band turns up at once, right beside the drinker
       "This is really a potion of experimental friends. Prepare to meet some!"
     end
   end
@@ -1297,7 +1301,7 @@ class Dungeon
     @offering = nil
     x = @px + @facing[0]
     y = @py + @facing[1]
-    return end_turn if dispel(monster_at(x, y))
+    return end_turn if monster_at(x, y)&.phantom && phantom_tap? && dispel(monster_at(x, y))
 
     if (m = monster_at(x, y))
       m.touched = true unless gaseous? || mist?(m)
@@ -3118,7 +3122,7 @@ class Dungeon
     say "You speed back up." if slowed? && (@slowed -= 1).zero?
     say "You become solid again." if gaseous? && (@gaseous -= 1).zero?
     say "You pull free of the glue." if stuck? && (@stuck -= 1).zero?
-    conjure_friend if @hallucinating.positive? && ((@hallucinating -= 1) % PHANTOM_EVERY).zero?
+    conjure_friends if @hallucinating.positive? && (@hallucinating -= 1).positive? && (@hallucinating % PHANTOM_EVERY).zero?
     @monsters.each do |m|
       m.hasted -= 1 if m.hasted.to_i.positive?
       m.slowed -= 1 if m.slowed.to_i.positive?
@@ -3134,21 +3138,26 @@ class Dungeon
     hunger
   end
 
-  # An experimental friend: a fighting kind this depth has reached, on open floor within PHANTOM_RANGE of the
-  # player, already enraged and on their trail from anywhere. It never counts toward the level's population
-  def conjure_friend
+  # A band of experimental friends: PHANTOM_BAND of one fighting kind this depth has reached, clustered on open floor
+  # within PHANTOM_RANGE of the player, already enraged and on their trail from anywhere. They never count toward the
+  # level's population, and each knows its band. The first band, in_your_face, crowds the squares nearest the player
+  def conjure_friends(in_your_face: false)
     kinds = THINGAGES.select { |k| k[:cr] <= @depth && !k[:pacifist] && k[:hit]&.max.to_i.positive? && !k[:out_of_band] &&
                                    k[:name] != PLAYER_KIND && !(FURNITURE + SHIELDS + %w[weapon sleep\ potion]).include?(k[:name]) }
     spots = (@py - PHANTOM_RANGE..@py + PHANTOM_RANGE).flat_map { |y| (@px - PHANTOM_RANGE..@px + PHANTOM_RANGE).map { |x| [x, y] } }
                                                       .select { |x, y| open_floor?(x, y) }
-    (kind = kinds.sample) && (spot = spots.sample) or return
+    (kind = kinds.sample) && (cx, cy = in_your_face ? [@px, @py] : spots.sample) or return
 
-    friend = spawn_monster(nil, kind, at: spot).last
-    @population[kind[:name]] -= 1
-    friend.phantom = 0
-    friend.farsighted = true
-    friend.state = Machine.new(STATE_TRANSITIONS, EnragedState)
-    friend.state.state.on_entry(self, friend, :ego)
+    band = []
+    spots.min_by(PHANTOM_BAND) { |x, y| [(x - cx).abs, (y - cy).abs].max }.each do |spot|
+      friend = spawn_monster(nil, kind, at: spot).last
+      @population[kind[:name]] -= 1
+      friend.phantom = 0
+      friend.band = band << friend
+      friend.farsighted = true
+      friend.state = Machine.new(STATE_TRANSITIONS, EnragedState)
+      friend.state.state.on_entry(self, friend, :ego)
+    end
   end
 
   # Open floor an experimental friend can appear on: no wall, stairs, cage plate, or anyone already there
@@ -3156,14 +3165,20 @@ class Dungeon
     !wall?(x, y) && [x, y] != [@px, @py] && !STAIRS.key?(@map[y][x]) && [x, y] != @cage&.dig(:plate) && !monster_at(x, y)
   end
 
-  # An experimental friend the player has reacted to suddenly isn't there; false for anything real
+  # An experimental friend the player has reacted to suddenly isn't there, and neither is the rest of its band;
+  # false for anything real
   def dispel(m)
     m&.phantom or return false
 
-    @monsters.delete(m)
-    say "The #{m.name} suddenly turns around and dissipates like smoke!"
+    gone = (m.band || [m]).select { |f| @monsters.include?(f) }
+    @monsters -= gone
+    say(gone.size == 1 ? "The #{m.name} suddenly turns around and dissipates like smoke!" :
+                         "The #{gone.size} #{m.name}s suddenly turn around and dissipate like smoke!")
     true
   end
+
+  # Whether this tap on an experimental friend is the one in PHANTOM_TAP_CHANCE that dispels its band
+  def phantom_tap? = rand < PHANTOM_TAP_CHANCE
 
   # Each slippery square counts down to its next slip, d3 rounds apart; then whoever stands on it slips off
   def slip

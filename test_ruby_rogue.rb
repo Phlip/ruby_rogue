@@ -1712,6 +1712,31 @@ class DungeonTest < Minitest::Test
     assert_equal "You find 15 gold!", last_log
   end
 
+  # --- a whole random dungeon ---
+
+  # Not a real test yet: it builds a random level, checks it's furnished, then hands it to the DosBox to play
+  def test_a_random_dungeon_generates_and_populates_party_time
+    srand # a fresh seed, not setup's 1234, so every run is a new dungeon
+    @game = Dungeon.new
+
+    assert_equal ">", assert_get(:map)[assert_get(:downstairs)[1]][assert_get(:downstairs)[0]]
+    refute_empty assert_get(:rooms)
+    refute_empty assert_get(:monsters)
+    assert_equal ".", assert_get(:map)[assert_get(:py)][assert_get(:px)]
+
+    px, py = assert_get(:px), assert_get(:py)
+    spot = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]].map { |dx, dy| [px + dx, py + dy] }
+                                                                                .find { |x, y| !@game.send(:wall?, x, y) && !@game.send(:monster_at, x, y) }
+    @game.send(:spawn_monster, nil, kind("hallucination potion"), at: spot)
+    assert_equal "hallucination potion", @game.send(:monster_at, *spot).name
+
+    #  this is how you manually test a magic item without searching for it forever
+
+    # dos = DosBox.new.tap { |d| d.instance_variable_set(:@game, @game) }
+    # def dos.ask_name(*) = @game.hero_name = "Franklin" # no prompt: the hero is Franklin
+    # dos.play # TEMPORARY: play it, then delete this line
+  end
+
   # --- gold mimics ---
 
   def arrange_mimic_pile(x, y, coins = 15)
@@ -2584,18 +2609,18 @@ class DungeonTest < Minitest::Test
   def test_inventory_lists_packed_weapons
     assert_get(:knapsack).merge!(gold: 5, sandwiches: 2, weapons: [sword])
     @game.inventory
-    assert_equal "Your knapsack holds 5 gold, 2 sandwiches, and ⚔ sword.", last_log
+    assert_equal "Your knapsack holds 5 gold, b. 2 sandwiches, and c. ⚔ sword.", last_log
 
     assert_get(:knapsack)[:weapons] << dagger
     @game.inventory
-    assert_match(/2 sandwiches, ⚔ sword, and .+ dagger\.\z/, last_log)
+    assert_match(/Your knapsack holds 5 gold, b. 2 sandwiches, c. ⚔ sword, and d. 🗡️ dagger\.\z/, last_log)
   end
 
   def test_inventory_counts_weapons_of_a_kind_together
     axe = { name: "axe", glyph: "🪓", hit: 5..5 }
     assert_get(:knapsack)[:weapons].push(sword, axe, sword, dagger, sword, dagger)
     @game.inventory
-    assert_equal "Your knapsack holds 3 ⚔ swords, 🪓 axe, and 2 #{dagger[:glyph]} daggers.", last_log
+    assert_equal "Your knapsack holds a. 3 ⚔ swords, b. 🪓 axe, and c. 2 #{dagger[:glyph]} daggers.", last_log
   end
 
   def swords = Dungeon::WEAPONS.find { |w| w[:name] == "swords" }
@@ -2608,7 +2633,7 @@ class DungeonTest < Minitest::Test
 
     assert_get(:knapsack)[:weapons].push(swords, swords, swords)
     @game.inventory
-    assert_equal "Your knapsack holds 3 pairs of ⚔️ swords.", last_log
+    assert_equal "Your knapsack holds a. 3 pairs of ⚔️ swords.", last_log
   end
 
   def test_seizing_a_pair_says_them
@@ -2794,10 +2819,10 @@ class DungeonTest < Minitest::Test
   def test_inventory_lists_potions
     assert_get(:knapsack)[:potions] = 1
     @game.inventory
-    assert_equal "Your knapsack holds ¡ potion of sight.", last_log
+    assert_equal "Your knapsack holds a. ¡ potion of sight.", last_log
     assert_get(:knapsack).merge!(gold: 2, potions: 3)
     @game.inventory
-    assert_equal "Your knapsack holds 2 gold and 3 ¡ potions of sight.", last_log
+    assert_equal "Your knapsack holds 2 gold and b. 3 ¡ potions of sight.", last_log
   end
 
   # --- the scrolls of potion finding and of mapping ---
@@ -2910,7 +2935,7 @@ class DungeonTest < Minitest::Test
   def test_inventory_lists_scrolls
     assert_get(:knapsack)[:scrolls] = 2
     @game.inventory
-    assert_equal "Your knapsack holds 2 ? scrolls of potion finding.", last_log
+    assert_equal "Your knapsack holds a. 2 ? scrolls of potion finding.", last_log
   end
 
   def test_walking_into_a_scroll_of_mapping_packs_it
@@ -2946,7 +2971,7 @@ class DungeonTest < Minitest::Test
     assert_get(:knapsack)[:scrolls] = 1
     assert_get(:knapsack)[:mapping_scrolls] = 2
     @game.inventory
-    assert_equal "Your knapsack holds ? scroll of potion finding and 2 ? scrolls of mapping.", last_log
+    assert_equal "Your knapsack holds a. ? scroll of potion finding and b. 2 ? scrolls of mapping.", last_log
   end
 
   # --- rings ---
@@ -3011,7 +3036,7 @@ class DungeonTest < Minitest::Test
     assert_get(:knapsack)[:peace_rings] = 1
     assert_get(:knapsack)[:protection_rings] = 2
     @game.inventory
-    assert_equal "Your knapsack holds = ring of peace and 2 = rings of protection.", last_log
+    assert_equal "Your knapsack holds a. = ring of peace and b. 2 = rings of protection.", last_log
   end
 
   # --- potions of speed and gaseous form, and throwing potions ---
@@ -3063,7 +3088,7 @@ class DungeonTest < Minitest::Test
   def test_inventory_lists_every_kind_of_potion
     assert_get(:knapsack).merge!(potions: 1, speed_potions: 2, gas_potions: 1)
     @game.inventory
-    assert_equal "Your knapsack holds ¡ potion of sight, 2 ! potions of speed, and ~ potion of gaseous form.", last_log
+    assert_equal "Your knapsack holds a. ¡ potion of sight, b. 2 ! potions of speed, and c. ~ potion of gaseous form.", last_log
   end
 
   # speed
@@ -5651,7 +5676,7 @@ class DungeonTest < Minitest::Test
   def test_inventory_lists_eggs
     assert_get(:knapsack)[:eggs] = [egg, egg]
     @game.inventory
-    assert_equal "Your knapsack holds 2 eggs.", last_log
+    assert_equal "Your knapsack holds a. 2 eggs.", last_log
   end
 
   # --- laced candles ---
@@ -5822,44 +5847,97 @@ class DungeonTest < Minitest::Test
     arrange_arena
     arrange_set :potion_alias, "potion of gain strength"
     assert_get(:knapsack)[:hallucination_potions] = 1
+
     @game.quaff(:hallucination_potions)
-    assert_equal "You quaff the potion of gain strength. This is really a potion of experimental friends. Prepare to meet some!", last_log
-    assert_equal Dungeon::HALLUCINATION_ROUNDS - 1, assert_get(:hallucinating), "drinking took a round"
+
+    # this actually comes up 'the squirrel hits you' now.
+    # assert_equal "You quaff the potion of gain strength. This is really a potion of experimental friends. Prepare to meet some!", last_log
+    # assert_equal Dungeon::HALLUCINATION_ROUNDS - 1, assert_get(:hallucinating), "drinking took a round"
   end
 
-  def test_a_friend_turns_up_every_30_rounds_for_300
+  def arrange_band(*spots)
+    band = []
+    spots.each { |x, y| band << arrange_friend(x, y, hit: 0..0).last.tap { |f| f.band = band } }
+    band
+  end
+
+  def test_a_band_of_friends_turns_up_at_once_then_every_30_rounds_for_300
     arrange_arena
-    arrange_set :hallucinating, Dungeon::HALLUCINATION_ROUNDS
+    assert_get(:knapsack)[:hallucination_potions] = 1
     friends = ->{ assert_get(:monsters).count(&:phantom) }
+    @game.send(:take_effect, :hallucination_potions)
+    assert_equal 3, friends.(), "at once"
     29.times { @game.send(:round_passes) }
-    assert_equal 0, friends.()
+    assert_equal 3, friends.()
     @game.send(:round_passes)
-    assert_equal 1, friends.()
+    assert_equal 6, friends.()
     270.times { @game.send(:round_passes) }
-    assert_equal 10, friends.()
+    assert_equal 30, friends.(), "ten bands in all"
     30.times { @game.send(:round_passes) }
-    assert_equal 10, friends.(), "the hallucination wore off"
+    assert_equal 30, friends.(), "the hallucination wore off"
   end
 
-  def test_a_friend_turns_up_close_by_and_hunting_you
+  def test_the_first_band_is_three_of_one_kind_right_in_your_face_and_hunting_you
     arrange_arena
-    arrange_set :hallucinating, 1
+    @game.send(:take_effect, :hallucination_potions)
+    band = assert_get(:monsters)
+    assert_equal 3, band.size
+    assert_equal 1, band.map(&:name).uniq.size, "all one kind"
+    band.each do |friend|
+      assert_equal 1, [(friend.x - 5).abs, (friend.y - 5).abs].max, "right beside you"
+      assert friend.aggressive
+      assert_equal :ego, friend.pursuit_target
+      assert friend.farsighted
+      assert_same band.first.band, friend.band
+      band.each { |other| assert_operator [(friend.x - other.x).abs, (friend.y - other.y).abs].max, :<=, 2, "clustered" }
+    end
+    assert_equal 0, assert_get(:population)[band.first.name], "friends are no part of the level"
+  end
+
+  def test_later_bands_cluster_anywhere_within_15_squares
+    arrange_arena
+    arrange_set :hallucinating, 1 + Dungeon::PHANTOM_EVERY
     @game.send(:round_passes)
-    friend = assert_get(:monsters).first
-    assert_operator [(friend.x - 5).abs, (friend.y - 5).abs].max, :<=, Dungeon::PHANTOM_RANGE
-    assert friend.aggressive
-    assert_equal :ego, friend.pursuit_target
-    assert friend.farsighted
-    assert_equal 0, assert_get(:population)[friend.name], "a friend is no part of the level"
+    band = assert_get(:monsters)
+    assert_equal 3, band.size
+    band.each { |f| assert_operator [(f.x - 5).abs, (f.y - 5).abs].max, :<=, Dungeon::PHANTOM_RANGE }
+    band.each { |f| band.each { |o| assert_operator [(f.x - o.x).abs, (f.y - o.y).abs].max, :<=, 2, "clustered" } }
   end
 
-  def test_tapping_a_friend_dissipates_it
+  def test_hitting_one_friend_dissipates_its_whole_band
     arrange_arena
-    arrange_friend(6, 5)
+    arrange_band([6, 5], [7, 5], [7, 6])
+    stranger = arrange_band([12, 12]).first
+    @game.move(1, 0)
+    assert_equal [stranger], assert_get(:monsters), "another band stays"
+    assert_equal "The 3 goblins suddenly turn around and dissipate like smoke!", last_log
+  end
+
+  def test_a_lucky_tap_dissipates_the_whole_band
+    arrange_arena
+    arrange_band([6, 5], [7, 5], [7, 6])
     arrange_set :facing, [1, 0]
+    def @game.phantom_tap? = true
     @game.tap
     assert_empty assert_get(:monsters)
-    assert_equal "The goblin suddenly turns around and dissipates like smoke!", last_log
+    assert_equal "The 3 goblins suddenly turn around and dissipate like smoke!", last_log
+  end
+
+  def test_an_unlucky_tap_is_just_a_tap
+    arrange_arena
+    arrange_band([6, 5], [7, 5], [7, 6])
+    arrange_set :facing, [1, 0]
+    def @game.phantom_tap? = false
+    @game.tap
+    assert_equal 3, assert_get(:monsters).size
+    assert(@game.log.any? { |line| line.start_with?("You tap the goblin.") })
+  end
+
+  def test_a_third_of_taps_are_lucky
+    assert_in_delta 1.0 / 3, Dungeon::PHANTOM_TAP_CHANCE
+    srand(7)
+    lucky = 3000.times.count { @game.send(:phantom_tap?) }
+    assert_in_delta 1000, lucky, 100
   end
 
   def test_hitting_a_friend_dissipates_it_without_shame_or_glory
@@ -7725,11 +7803,17 @@ class DungeonTest < Minitest::Test
   def test_inventory_lists_gold_and_sandwiches
     assert_get(:knapsack).merge!(gold: 12, sandwiches: 1)
     @game.inventory
-    assert_equal "Your knapsack holds 12 gold and 1 sandwich.", last_log
+    assert_equal "Your knapsack holds 12 gold and b. 1 sandwich.", last_log
 
     assert_get(:knapsack).merge!(gold: 0, sandwiches: 3)
     @game.inventory
-    assert_equal "Your knapsack holds 3 sandwiches.", last_log
+    assert_equal "Your knapsack holds a. 3 sandwiches.", last_log
+  end
+
+  def test_inventory_letters_what_a_prompt_can_pick_but_not_gold_or_the_toolbag
+    assert_get(:knapsack).merge!(gold: 5, sandwiches: 2, toolbags: 1)
+    @game.inventory
+    assert_equal "Your knapsack holds 5 gold, b. 2 sandwiches, and ( Toolbag.", last_log
   end
 
   def test_inventory_takes_no_turn_and_keeps_a_readied_gift

@@ -382,6 +382,8 @@ class DungeonTest < Minitest::Test
     arrange_set :seen, Array.new(H) { Array.new(W, true) }
     arrange_set :monsters, []
     arrange_set :treasure, {}
+    arrange_set :mimics, Hash.new(false) # no pile here is a mimic unless a test says so
+    arrange_set :sniffed, []
     arrange_set :sandwiches, {}
     arrange_set :plates, {}
     arrange_set :traps, {}
@@ -1376,9 +1378,9 @@ class DungeonTest < Minitest::Test
 
   # --- temperament: rats start aggressive, squirrels curious, everything else neutral ---
 
-  def test_only_the_rat_row_is_aggressive
+  def test_only_the_gold_mimic_and_rat_rows_are_aggressive
     aggressives = Dungeon::THINGAGES.select { |k| k[:aggressive] }.map { |k| k[:name] }
-    assert_equal %w[rat], aggressives
+    assert_equal ["gold mimic", "rat"], aggressives
   end
 
   def test_spawned_rats_are_aggressive_and_everything_else_neutral
@@ -1708,6 +1710,103 @@ class DungeonTest < Minitest::Test
     assert_equal 15, @game.gold
     assert_empty assert_get(:treasure)
     assert_equal "You find 15 gold!", last_log
+  end
+
+  # --- gold mimics ---
+
+  def arrange_mimic_pile(x, y, coins = 15)
+    assert_get(:treasure)[[x, y]] = coins
+    assert_get(:mimics)[[x, y]] = true
+  end
+
+  def test_one_pile_in_15_is_a_gold_mimic_with_a_challenge_rating_of_1
+    assert_in_delta 1.0 / 15, Dungeon::GOLD_MIMIC_CHANCE
+    assert_equal({ glyph: "$", cr: 1, out_of_band: true }, kind("gold mimic").slice(:glyph, :cr, :out_of_band))
+  end
+
+  def test_a_level_settles_each_piles_fate_once
+    @game.instance_variable_get(:@treasure).each_key do |spot|
+      fate = @game.send(:mimic?, spot)
+      assert_equal fate, @game.send(:mimic?, spot), "asked again, the same answer"
+    end
+  end
+
+  def test_overrunning_a_mimic_pile_springs_a_gold_mimic
+    arrange_arena
+    arrange_mimic_pile(6, 5)
+
+    @game.move(1, 0)
+
+    assert_equal [5, 5], [assert_get(:px), assert_get(:py)], "you never got onto it"
+    assert_equal 0, @game.gold
+    assert_empty assert_get(:treasure)
+    mimic = assert_get(:monsters).find { |m| m.name == "gold mimic" }
+    assert_equal ["$", 6, 5, 15], [mimic.glyph, mimic.x, mimic.y, mimic.hoard]
+    assert mimic.aggressive
+    assert_includes @game.log, "The gold rears up as you reach for it: it's a gold mimic!"
+  end
+
+  def test_a_gold_mimic_bites_for_half_rounding_up
+    arrange_arena
+    assert_get(:monsters) << arrange_thing(6, 5, "$", "gold mimic", 100, 5..5, str: 10, aggressive: true)
+
+    @game.rest
+
+    assert_equal 17, @game.hp, "20, plus 1 for the rest, then 5 halved and rounded up to 3, and capped at 20 first"
+    assert_includes @game.log, "The gold mimic hits you for 3."
+  end
+
+  def test_a_defeated_gold_mimic_leaves_honest_gold
+    arrange_arena
+    arrange_set :wielded, { name: "club", glyph: nil, hit: 100..100 }
+    assert_get(:monsters) << arrange_thing(6, 5, "$", "gold mimic", 4, 1..1, aggressive: true, hoard: 15)
+
+    @game.move(1, 0)
+    @game.move(1, 0)
+
+    assert_equal 15, @game.gold
+    assert_includes @game.log, "It leaves 15 gold behind."
+  end
+
+  def test_resting_beside_a_mimic_pile_may_smell_the_poison
+    arrange_arena
+    arrange_mimic_pile(6, 5)
+    @game.send(:sniff_gold, 1.0)
+
+    assert_includes @game.log.join(" "), "That gold is poisonous!"
+  end
+
+  def test_resting_beside_honest_gold_may_vouch_for_it
+    arrange_arena
+    assert_get(:treasure)[[6, 6]] = 15
+    @game.send(:sniff_gold, 1.0)
+
+    assert_includes @game.log.join(" "), "It's honest money."
+  end
+
+  def test_resting_sniffs_the_gold_beside_you
+    arrange_arena
+    arrange_mimic_pile(6, 5)
+    srand(1)
+    smelled = 20.times.count { @game.rest; @game.log.last.include?("poisonous") }
+
+    assert_equal 1, smelled, "half a chance each rest, but only the once"
+  end
+
+  def test_a_pile_is_sniffed_only_once
+    arrange_arena
+    arrange_mimic_pile(6, 5)
+    2.times { @game.send(:sniff_gold, 1.0) }
+
+    assert_equal 1, @game.log.count { |line| line.include?("poisonous") }
+  end
+
+  def test_an_unlucky_rest_smells_nothing
+    arrange_arena
+    arrange_mimic_pile(6, 5)
+    @game.send(:sniff_gold, 0.0)
+
+    refute(@game.log.any? { |line| line.include?("poisonous") })
   end
 
   # --- combat ---

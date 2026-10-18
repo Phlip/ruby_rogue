@@ -177,6 +177,8 @@ class Dungeon
     { glyph: "༻", # shield causes damage yet doubles your protection
       name: "shield", na: 10, cr: 1, hp: 18, hit: 1..4, ac: 20, str: 12, dex: 18, con: 18, int: 10, wis:  1, cha: 10,  pacifist: 0.5, packable: 6,
       transitions: doorLikeTransitions },
+    { glyph: "$", name: "gold mimic", na: 99, cr: 1, out_of_band: true, hp: 4, hit: 1..6, ac: 12, str: 12, dex: 10, con: 12, int: 3, wis: 10, cha: 3, aggressive: true,
+      transitions: doorLikeTransitions },
     { glyph: "R", name: "rat",      na:  8, cr: 1, hp:  3, hit: 1..2, ac: 10, str:  7, dex: 15, con: 11, int:  2, wis: 10, cha:  4, aggressive: true, eats: true,
       transitions: doorLikeTransitions },
     { glyph: "🐿️", name: "squirrel",      na:  8, cr: 1, hp:  3, hit: 1..2, ac: 10, str:  7, dex: 15, con: 11, int:  2, wis: 10, cha:  4, curious: true, moody: true, eats: true,
@@ -363,12 +365,13 @@ class Dungeon
   # row without losing a hit point, last_hp being what it had at the end of the last one. pleas counts the blows a
   # door has begged the player to go round it. struck_hero marks a creature that has ever attacked the player, and
   # wrongs counts the blows the player dealt it while it was still innocent. phantom counts the hit points an
-  # experimental friend has taken from the player, nil on anything real
+  # experimental friend has taken from the player, nil on anything real, and hoard the coins a gold mimic was
+  # passing itself off as
 
   Thingage = Struct.new(:x, :y, :glyph, :name, :hp, :hit, :str, :dex, :con, :int, :wis, :cha, :pacifist, :spurned, :greedy, :fed, :ally, :coins, :aggressive,
                         :hasted, :gaseous, :farsighted, :nesting, :sugar, :starving, :slowed, :lagging, :weapon, :locked, :machine, :plate_bound, :met, :asleep, :stuck,
                         :disguised_potion, :pursuit_target, :state, :devoted, :max_hp, :struck, :touched, :jammed,
-                        :unhurt, :last_hp, :pleas, :struck_hero, :wrongs, :phantom)
+                        :unhurt, :last_hp, :pleas, :struck_hero, :wrongs, :phantom, :hoard)
   ABILITIES = %i[str dex con int wis cha].freeze
 
   # The D&D ability modifier: 10 and 11 give +0, and every two points up or down moves it by one.
@@ -1130,6 +1133,7 @@ class Dungeon
     @knapsack[item] -= 1
     floor = item == :gold ? @treasure : @sandwiches
     floor[[x, y]] = floor.fetch([x, y], 0) + 1
+    @mimics[[x, y]] = false if item == :gold && !@mimics.key?([x, y]) # your own coin is only a coin
     say "You throw #{GIFTS[item]} and it lands on the floor."
     end_turn
   end
@@ -1239,6 +1243,7 @@ class Dungeon
 
       @knapsack[:gold] -= 1
       @treasure[[x, y]] = @treasure.fetch([x, y], 0) + 1
+      @mimics[[x, y]] = false unless @mimics.key?([x, y]) # your own coin is only a coin
       say "No one is there, so the coin lands on the floor."
     end
     end_turn
@@ -1498,6 +1503,8 @@ class Dungeon
       end
     elsif stuck?
       say "You're stuck in the glue."
+    elsif mimic?([nx, ny])
+      spring_mimic(nx, ny)
     else
       @px, @py = nx, ny
       march
@@ -1534,6 +1541,7 @@ class Dungeon
     @hp = [@hp + 1, @max_hp].min
     found = beside.map { |m| a_name(m.name) }
     say "You catch your breath and find #{found.empty? ? "nothing" : and_list(found)} beside you."
+    sniff_gold
     @hero_rested = true # so everyone rests this round
     end_turn
   end
@@ -1702,6 +1710,8 @@ class Dungeon
     @downstairs = [sx, sy]
 
     @treasure = {}
+    @mimics = Hash.new { |mimics, spot| mimics[spot] = rand < GOLD_MIMIC_CHANCE } # each pile's fate, settled when first asked
+    @sniffed = []
     @sandwiches = {}
     @monsters = []
     @detected = []
@@ -2087,6 +2097,7 @@ class Dungeon
       say "You defeat the #{foe.name}!"
       explode(foe) if foe.name == "Quail"
       drop_dodo_sandwich(foe) if foe.name == "Dodo"
+      drop_hoard(foe) if foe.name == GOLD_MIMIC
     elsif foe.pacifist && !foe.spurned
       foe.spurned = true
       say "You hit the #{foe.name} for #{dmg}.#{" It stops following you." if follower?(foe)}"
@@ -2850,6 +2861,47 @@ class Dungeon
     free_spot(@rooms.zip(weights).find { |_, w| (pick -= w).negative? }&.first || @rooms.last)
   end
 
+  # One pile of gold in GOLD_MIMIC_CHANCE is a gold mimic, which rears up as the player reaches for it, and hits
+  # for half its blow. Resting beside a pile, the player has GOLD_SNIFF_CHANCE of telling which it is
+  GOLD_MIMIC = "gold mimic"
+  GOLD_MIMIC_CHANCE = 1.0 / 15
+  GOLD_SNIFF_CHANCE = 0.5
+
+  def mimic?(spot) = @treasure.key?(spot) && @mimics[spot]
+
+  # The pile at x, y rears up into a gold mimic, holding its coins until it's defeated
+  def spring_mimic(x, y)
+    coins = @treasure.delete([x, y])
+    @mimics.delete([x, y])
+    spawn_monster(nil, THINGAGES.find { |k| k[:name] == GOLD_MIMIC }, at: [x, y]).last.hoard = coins
+    say "The gold rears up as you reach for it: it's a gold mimic!"
+  end
+
+  # A defeated gold mimic drops its coins, honest gold now, where it fell
+  def drop_hoard(mimic)
+    spot = [mimic.x, mimic.y]
+    @treasure[spot] = @treasure.fetch(spot, 0) + mimic.hoard.to_i
+    @mimics[spot] = false
+    say "It leaves #{mimic.hoard.to_i} gold behind."
+  end
+
+  # Resting beside piles of gold not yet sniffed may tell, for each, whether it's poisonous
+  def sniff_gold(chance = GOLD_SNIFF_CHANCE)
+    @sniffed ||= []
+    piles = @treasure.keys.select { |x, y| (x - @px).abs <= 1 && (y - @py).abs <= 1 && !@sniffed.include?([x, y]) }
+    piles.each do |spot|
+      next unless rand < chance
+
+      @sniffed << spot
+      say(if @mimics[spot]
+            "As you rest, a sour, coppery reek drifts off the gold beside you. The pile is breathing, slow and " \
+            "patient, the way a thing breathes when it's waiting for a hand. That gold is poisonous!"
+          else
+            "As you rest, the gold beside you just lies there, glinting, smelling of nothing but old pockets. It's honest money."
+          end)
+    end
+  end
+
   # Takes what lies here into the knapsack, as much as it has room for; the rest stays where it lies
   def pick_up
     spot = [@px, @py]
@@ -3237,6 +3289,7 @@ class Dungeon
       m.struck = true
       m.struck_hero = true # no longer innocent
       dmg = blow(m)
+      dmg = (dmg + 1) / 2 if m.name == GOLD_MIMIC # it bites for half, rounding up
       dmg = [dmg, PHANTOM_HP - m.phantom].min if m.phantom # a friend takes no more than PHANTOM_HP in all
       spent = m.phantom && (m.phantom += dmg) >= PHANTOM_HP
       with = " with its #{m.weapon[:name]}" if m.weapon

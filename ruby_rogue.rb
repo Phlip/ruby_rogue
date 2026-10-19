@@ -211,6 +211,8 @@ class Dungeon
       transitions: doorLikeTransitions },
     { glyph: "!", name: "healing potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
       transitions: doorLikeTransitions },
+    { glyph: "¡", name: "water potion", na: 3, cr: 1, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
+      transitions: doorLikeTransitions },
     { glyph: "!", name: "hallucination potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
       transitions: doorLikeTransitions },
     { glyph: "!", name: "sleep potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
@@ -317,7 +319,7 @@ class Dungeon
   #
   # grabbing a stopped weapon wields it - add wield to the top line with the weapon in hand
   #
-  # Gold and sandwiches (%) found on the floor go straight into the knapsack.
+  # Gold and sandwiches (%) found on the floor go straight into the backpack.
   # Eating a sandwich refills blood sugar, not hit points
 
   #  traveling two steps rests you one point
@@ -366,12 +368,13 @@ class Dungeon
   # door has begged the player to go round it. struck_hero marks a creature that has ever attacked the player, and
   # wrongs counts the blows the player dealt it while it was still innocent. phantom counts the hit points an
   # experimental friend has taken from the player, nil on anything real, and hoard the coins a gold mimic was
-  # passing itself off as. band is the experimental friends conjured together with this one
+  # passing itself off as. band is the experimental friends conjured together with this one, and
+  # palsied marks a door a wand of slowness has slowed for good
 
   Thingage = Struct.new(:x, :y, :glyph, :name, :hp, :hit, :str, :dex, :con, :int, :wis, :cha, :pacifist, :spurned, :greedy, :fed, :ally, :coins, :aggressive,
                         :hasted, :gaseous, :farsighted, :nesting, :sugar, :starving, :slowed, :lagging, :weapon, :locked, :machine, :plate_bound, :met, :asleep, :stuck,
                         :disguised_potion, :pursuit_target, :state, :devoted, :max_hp, :struck, :touched, :jammed,
-                        :unhurt, :last_hp, :pleas, :struck_hero, :wrongs, :phantom, :hoard, :band)
+                        :unhurt, :last_hp, :pleas, :struck_hero, :wrongs, :phantom, :hoard, :band, :palsied)
   ABILITIES = %i[str dex con int wis cha].freeze
 
   # The D&D ability modifier: 10 and 11 give +0, and every two points up or down moves it by one.
@@ -390,7 +393,7 @@ class Dungeon
 
   # Each weapon that spawns is one of these; its THINGAGES row only sets how often, how tough, and how peaceful.
   # A pair is two blades wielded together, so its name is already plural. A ranged weapon is never grabbed into
-  # empty hands on defeating it; it goes into the knapsack, to wield when the player chooses
+  # empty hands on defeating it; it goes into the backpack, to wield when the player chooses
 
   WEAPONS = [
     { name: "dagger", glyph: "🗡️", hit: 3..7, packable: 1 },
@@ -399,7 +402,7 @@ class Dungeon
     { name: "axe",    glyph: "🪓", hit: 5..12, packable: 4 },
   ].freeze
 
-  # A ranged weapon is strung while wielded and unstrung in the knapsack. Marching it strung wears the string: the
+  # A ranged weapon is strung while wielded and unstrung in the backpack. Marching it strung wears the string: the
   # first STRUNG_STEPS steps are safe, and after that each step has a SNAP_CHANCE of snapping it, ruining the bow
   STRUNG_STEPS = 50
   SNAP_CHANCE = 0.05
@@ -410,7 +413,7 @@ class Dungeon
   # The hero's armor class: the Ego row's. Nothing reads it in combat yet
   HERO_AC = PLAYER[:ac]
 
-  attr_reader :max_hp, :ac, :abilities, :blood_sugar, :knapsack, :depth, :log, :wielded, :ring, :experience_points, :hero_level
+  attr_reader :max_hp, :ac, :abilities, :blood_sugar, :backpack, :depth, :log, :wielded, :ring, :experience_points, :hero_level
   # Hit points as shown: never below none, though a killing blow can take the count itself further
   def hp = [@hp, 0].max
 
@@ -442,8 +445,8 @@ class Dungeon
     @wielded = FISTS
     @strung_steps = 0
     @facing = [1, 0]
-    @knapsack = { gold: 0, sandwiches: 0, potions: 0, speed_potions: 0, gas_potions: 0, slow_potions: 0, healing_potions: 0,
-                  sleep_potions: 0, glue_potions: 0, slip_potions: 0, empty_potions: 0, hallucination_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0,
+    @backpack = { gold: 0, sandwiches: 0, potions: 0, speed_potions: 0, gas_potions: 0, slow_potions: 0, healing_potions: 0,
+                  sleep_potions: 0, glue_potions: 0, slip_potions: 0, empty_potions: 0, hallucination_potions: 0, water_potions: 0, scrolls: 0, mapping_scrolls: 0, peace_rings: 0, strength_rings: 0, protection_rings: 0,
                   candles: 0, laced_potions: 0, laced_speed_potions: 0, laced_gas_potions: 0, laced_slow_potions: 0,
                   laced_healing_potions: 0, laced_sleep_potions: 0, laced_glue_potions: 0, laced_slip_potions: 0, laced_empty_potions: 0, laced_hallucination_potions: 0, eggs: [], weapons: [], shields: [], wands: [],
                   slip_wands: [], toolbags: 0, tough_sandwiches: [] }
@@ -524,8 +527,12 @@ class Dungeon
     "You have a three week supply of proton pills. Do not consume anything local.",
     "Do not pay a growling shield a coin, and never strike it afterward.",
     "Use power-only USB cables if you must recharge locally.",
+    "Do not exploit union contracts between rival construction crews.",
+    "Construction crews disbursed union terms in advance so all gold is counted.",
+    "Wearing one-size-fits-all armor incorrectly can cause disfigurement.",
     "Do not tap F lab equipment to see whether it wants to come home with you.",
     "The Coyotes and Axebeaks are NOT copyrighted! ~~*^$##.",
+    "Dimensional travel hardware has not been tested on humans.",
     "Never rest within sight of a wounded heavy; it rests too.",
     "Do not let Dodos follow you about. Their eggs are not Quail eggs.",
     "There is no truth to the rumor that the government contractor who installed\nthe doors allowed any of them to take bribes.",
@@ -586,7 +593,7 @@ class Dungeon
   OPPOSITE = { glue: :slippery, slippery: :glue }.freeze
   def self.d3 = rand(1..3)
 
-  # Each kind of wand by knapsack slot: the floor trap it lies about as, and what it does. A packed wand is its
+  # Each kind of wand by backpack slot: the floor trap it lies about as, and what it does. A packed wand is its
   # charges left
   WANDS = {
     wands:      { kind: :wand,      name: "wand of slowness" },
@@ -628,19 +635,19 @@ class Dungeon
   end
 
   def gold
-    @knapsack[:gold]
+    @backpack[:gold]
   end
 
   def sandwiches
-    @knapsack[:sandwiches]
+    @backpack[:sandwiches]
   end
 
   def potions
-    @knapsack[:potions]
+    @backpack[:potions]
   end
 
   def scrolls
-    @knapsack[:scrolls]
+    @backpack[:scrolls]
   end
 
   # Rounds the player has left of each timed potion; a round is one turn of everyone else's
@@ -654,7 +661,7 @@ class Dungeon
     [("Hasted #{@hasted}" if hasted?), ("Slowed #{@slowed}" if slowed?), ("Stuck #{@stuck}" if stuck?), ("Gaseous #{@gaseous}" if gaseous?)].compact.join("   ")
   end
 
-  # Each kind of potion by knapsack slot: the THINGAGES row it spawns from, its full name, and its glyph.
+  # Each kind of potion by backpack slot: the THINGAGES row it spawns from, its full name, and its glyph.
   # Quaffing one gives the drinker its power, and so does throwing it at a character close by
   POTIONS = {
     potions:         { row: "potion",         name: "potion of sight",        glyph: "¡" },
@@ -689,13 +696,13 @@ class Dungeon
   # What the player calls a potion: its full name, unless it's passing itself off as another
   def potion_name(slot) = slot == :hallucination_potions ? @potion_alias : POTIONS[slot][:name]
 
-  # What the player calls a knapsack slot's item, potions by potion_name
+  # What the player calls a backpack slot's item, potions by potion_name
   def item_name(slot) = POTIONS.key?(slot) ? potion_name(slot) : ITEM_NAMES[slot]
   SLOW_ROUNDS = 20
 
   # A potion of sleep puts its drinker, or whoever it's thrown at, to sleep for 3d4 rounds while everyone else
-  # carries on. Half the potions of sleep that spawn are disguised as a creature, the cloak a weapon would wear,
-  # and hurl themselves at the player once within DISGUISE_RANGE
+  # carries on. Half the potions of sleep that spawn are carried by a creature, the cloak a weapon would wear,
+  # which the player has defeated once within DISGUISE_RANGE, leaving the potion on its body
   DISGUISED_SLEEP_CHANCE = 0.5
   DISGUISE_RANGE = 3
   def self.d4x3 = dice(3, 4)
@@ -714,14 +721,14 @@ class Dungeon
   GAS_ROUNDS = 10
   HEAL_HP = 10
 
-  # Each kind of scroll by knapsack slot: the THINGAGES row it spawns from, its full name, and its glyph.
+  # Each kind of scroll by backpack slot: the THINGAGES row it spawns from, its full name, and its glyph.
   # Reading one uses it up
   SCROLLS = {
     scrolls:         { row: "scroll of 3 potions", name: "scroll of potion finding", glyph: "?" },
     mapping_scrolls: { row: "scroll of mapping",   name: "scroll of mapping",        glyph: "?" },
   }.freeze
 
-  # Each kind of ring by knapsack slot: the THINGAGES row it spawns from, its full name, and its glyph.
+  # Each kind of ring by backpack slot: the THINGAGES row it spawns from, its full name, and its glyph.
   # Wearing one slips it on; only one fits at a time
   RINGS = {
     peace_rings:      { row: "ring of peace",      name: "ring of peace",      glyph: "=" },
@@ -736,22 +743,26 @@ class Dungeon
 
   # A Toolbag, lying about like any item, works the lock of a locked door the player stands beside
   TOOLS = { toolbags: { row: "toolbag", name: "Toolbag", glyph: "(" } }.freeze
+
+  # A potion of water, lying about like any potion, packs as food: it shares the sandwiches' entry, and eating
+  # offers it first
+  FOODS = { water_potions: { row: "water potion", name: "potion of water", glyph: "¡" } }.freeze
   LACED = POTIONS.keys.to_h { |slot| [:"laced_#{slot}", slot] }.freeze
   BURST = 4
   KICK_RANGE = 3
 
-  # Thingages that walking into packs instead of attacks, with the knapsack slot each goes in and its full name
-  ITEMS = POTIONS.merge(SCROLLS).merge(RINGS).merge(CANDLES).merge(TOOLS).freeze
+  # Thingages that walking into packs instead of attacks, with the backpack slot each goes in and its full name
+  ITEMS = POTIONS.merge(SCROLLS).merge(RINGS).merge(CANDLES).merge(TOOLS).merge(FOODS).freeze
   PACKABLE = ITEMS.to_h { |slot, i| [i[:row], slot] }.freeze
   ITEM_NAMES = ITEMS.transform_values { |i| i[:name] }.freeze
 
   # How far, in squares each way, a scroll of potion finding or of mapping reaches
   SCROLL_RANGE = 20
 
-  # What one press of each give button hands over, keyed by its knapsack slot
+  # What one press of each give button hands over, keyed by its backpack slot
   GIFTS = { gold: "a coin", sandwiches: "a sandwich" }.freeze
 
-  # The most the knapsack holds, in pounds. What's wielded is in hand and what's worn is on a finger, so neither
+  # The most the backpack holds, in pounds. What's wielded is in hand and what's worn is on a finger, so neither
   # counts. Each thing's weight is the packable on the line that builds it: its THINGAGES row, its WEAPONS entry,
   # or, for a potion with no row of its own, its POTIONS entry. A Quail egg has no line, so it weighs EGG_POUNDS,
   # and gold, which lies about only as @treasure piles, weighs GOLD_POUNDS a coin
@@ -764,7 +775,7 @@ class Dungeon
 
   def self.packable(name) = THINGAGES.find { |k| k[:name] == name }&.dig(:packable)
 
-  # Pounds one thing from a knapsack slot weighs; a laced candle is its candle and its potion together
+  # Pounds one thing from a backpack slot weighs; a laced candle is its candle and its potion together
   def pounds(slot)
     return pounds(:candles) + pounds(LACED[slot]) if LACED.key?(slot)
 
@@ -778,17 +789,17 @@ class Dungeon
   # Pounds a weapon weighs, packed: its WEAPONS entry's packable
   def weapon_pounds(w) = Dungeon.pounds(WEAPONS.find { |k| k[:name] == w[:name] }&.dig(:packable) || 0)
 
-  # Pounds in the knapsack now
+  # Pounds in the backpack now
   def load
-    counted = @knapsack.sum { |slot, n| n.is_a?(Integer) ? n * pounds(slot) : 0 }
-    counted + @knapsack[:eggs].size * Dungeon.pounds(EGG_POUNDS) + @knapsack[:tough_sandwiches].size * pounds(:sandwiches) +
-      @knapsack[:weapons].sum { |w| weapon_pounds(w) } +
-      @knapsack[:shields].sum { |s| Dungeon.pounds(Dungeon.packable(s[:name])) }
+    counted = @backpack.sum { |slot, n| n.is_a?(Integer) ? n * pounds(slot) : 0 }
+    counted + @backpack[:eggs].size * Dungeon.pounds(EGG_POUNDS) + @backpack[:tough_sandwiches].size * pounds(:sandwiches) +
+      @backpack[:weapons].sum { |w| weapon_pounds(w) } +
+      @backpack[:shields].sum { |s| Dungeon.pounds(Dungeon.packable(s[:name])) }
   end
 
   def room_for?(weight) = load + weight <= ENCUMBRANCE
 
-  # How many of count things, each weighing that much, the knapsack has room for
+  # How many of count things, each weighing that much, the backpack has room for
   def fitting(count, each) = [count, ((ENCUMBRANCE - load) / each).floor].min.clamp(0..)
 
   # The load for the banner, e.g. "Load 12.5/60 lb"
@@ -797,56 +808,56 @@ class Dungeon
     "Load #{shown.denominator == 1 ? shown.to_i : shown.to_f}/#{ENCUMBRANCE} lb"
   end
 
-  # Readies a gift from the knapsack; the next arrow hands it that way instead of moving, and rest cancels it,
+  # Readies a gift from the backpack; the next arrow hands it that way instead of moving, and rest cancels it,
   # except that resting on a sandwich eats it yourself
   def offer(item)
     over? and return
     @throwable = nil
-    (@knapsack[item].zero? && !(item == :sandwiches && @knapsack[:tough_sandwiches].any?)) and
+    (@backpack[item].zero? && !(item == :sandwiches && (@backpack[:tough_sandwiches].any? || @backpack[:water_potions].positive?))) and
       return say("You have no #{item} to give.")
 
     @offering = item
     say "Give #{GIFTS[item]} which way?#{" Rest to eat it yourself." if item == :sandwiches}"
   end
 
-  # The knapsack as [text, slot] pairs, e.g. ["3 🪓 axes", "axe"], with weapons grouped by kind in
+  # The backpack as [text, slot] pairs, e.g. ["3 🪓 axes", "axe"], with weapons grouped by kind in
   # packing order. The slot is :gold or :sandwiches, which give, :eggs, which candles, a POTIONS slot, which quaffs
   # or throws, a SCROLLS slot, which reads, a RINGS slot, which wears, :candles and :shields, which wait, or a
   # weapon name, which wields
   def contents
     packed = []
     packed << ["#{gold} gold", :gold] if gold.positive?
-    packed << ["#{sandwiches} #{sandwiches == 1 ? "sandwich" : "sandwiches"}", :sandwiches] if sandwiches.positive?
-    packed << [egg_count(@knapsack[:eggs]), :eggs] if @knapsack[:eggs].any?
+    packed << [food_count, :sandwiches] if (sandwiches + @backpack[:water_potions]).positive?
+    packed << [egg_count(@backpack[:eggs]), :eggs] if @backpack[:eggs].any?
     POTIONS.each do |slot, p|
-      n = @knapsack[slot]
+      n = @backpack[slot]
       packed << [n == 1 ? "#{p[:glyph]} #{potion_name(slot)}" : "#{n} #{p[:glyph]} #{potion_name(slot).sub("potion", "potions")}", slot] if n.positive?
     end
     SCROLLS.each do |slot, s|
-      n = @knapsack[slot]
+      n = @backpack[slot]
       packed << [n == 1 ? "#{s[:glyph]} #{s[:name]}" : "#{n} #{s[:glyph]} #{s[:name].sub("scroll", "scrolls")}", slot] if n.positive?
     end
     RINGS.each do |slot, r|
-      n = @knapsack[slot]
+      n = @backpack[slot]
       packed << [n == 1 ? "#{r[:glyph]} #{r[:name]}" : "#{n} #{r[:glyph]} #{r[:name].sub("ring", "rings")}", slot] if n.positive?
     end
-    n = @knapsack[:candles]
+    n = @backpack[:candles]
     packed << [n == 1 ? "i candle" : "#{n} i candles", :candles] if n.positive?
-    n = @knapsack[:toolbags]
+    n = @backpack[:toolbags]
     packed << [n == 1 ? "( Toolbag" : "#{n} ( Toolbags", :toolbags] if n.positive?
     LACED.each do |slot, potion|
-      n = @knapsack[slot]
+      n = @backpack[slot]
       packed << ["#{n == 1 ? "i candle" : "#{n} i candles"} laced with #{potion_name(potion)}", slot] if n.positive?
     end
-    @knapsack[:weapons].group_by { |w| w[:name] }.each do |name, kind|
+    @backpack[:weapons].group_by { |w| w[:name] }.each do |name, kind|
       many = pair?(name) ? "#{kind.size} pairs of #{label(kind.first)}" : "#{kind.size} #{label(kind.first)}s"
       packed << [kind.size == 1 ? label(kind.first) : many, name]
     end
-    @knapsack[:shields].group_by { |s| s[:name] }.each_value do |kind|
+    @backpack[:shields].group_by { |s| s[:name] }.each_value do |kind|
       packed << [kind.size == 1 ? label(kind.first) : "#{kind.size} #{label(kind.first)}s", :shields]
     end
     WANDS.each do |slot, wand|
-      wands = @knapsack[slot]
+      wands = @backpack[slot]
       next if wands.empty?
 
       charges = wands.sum
@@ -856,25 +867,33 @@ class Dungeon
     packed
   end
 
-  # Lists the knapsack in the log, each entry with the letter that picks it at a prompt, e.g. "b. 2 sandwiches";
+  # The food entry: just sandwiches, e.g. "2 sandwiches", or, with any water among them, all of it as "3 foods"
+  def food_count
+    n = sandwiches + @backpack[:water_potions]
+    return "#{n} #{n == 1 ? "food" : "foods"}" if @backpack[:water_potions].positive?
+
+    "#{n} #{n == 1 ? "sandwich" : "sandwiches"}"
+  end
+
+  # Lists the backpack in the log, each entry with the letter that picks it at a prompt, e.g. "b. 2 sandwiches";
   # gold and the Toolbag, which no prompt uses, go unlettered. Looking takes no turn and leaves any readied gift waiting
   def inventory
     packed = contents.each_with_index.map { |(text, slot), i| %i[gold toolbags].include?(slot) ? text : "#{(97 + i).chr}. #{text}" }
-    return say("Your knapsack is empty.") if packed.empty?
+    return say("Your backpack is empty.") if packed.empty?
 
-    say "Your knapsack holds #{and_list(packed)}."
+    say "Your backpack holds #{and_list(packed)}."
   end
 
-  # Drinks a potion from the knapsack. Sight reveals the whole level; speed gives two actions for everyone
+  # Drinks a potion from the backpack. Sight reveals the whole level; speed gives two actions for everyone
   # else's one for SPEED_ROUNDS; gaseous form makes the player untouchable, and unable to touch, for GAS_ROUNDS.
   # Drinking takes a turn, so anything beside you gets its swing
   def quaff(slot = :potions)
     over? and return
     @throwable = nil
     (potion = POTIONS[slot]) or return
-    @knapsack[slot].zero? and return say(slot == :potions ? "You have no potion to drink." : "You have no #{potion_name(slot)} to drink.")
+    @backpack[slot].zero? and return say(slot == :potions ? "You have no potion to drink." : "You have no #{potion_name(slot)} to drink.")
 
-    @knapsack[slot] -= 1
+    @backpack[slot] -= 1
     say "You quaff the #{potion_name(slot)}. #{take_effect(slot)}"
     end_turn
   end
@@ -939,17 +958,17 @@ class Dungeon
     "#{slowed} It burns going down for #{burn} damage."
   end
 
-  # Pours a potion into a candle from the knapsack, making a laced candle to throw or kick; pouring takes a turn
+  # Pours a potion into a candle from the backpack, making a laced candle to throw or kick; pouring takes a turn
   def pour(slot)
     over? and return
     @throwable = nil
     (potion = POTIONS[slot]) or return
-    @knapsack[slot].zero? and return say("You have no #{potion_name(slot)} to pour.")
-    @knapsack[:candles].zero? and return say("You have no candle to pour it into.")
+    @backpack[slot].zero? and return say("You have no #{potion_name(slot)} to pour.")
+    @backpack[:candles].zero? and return say("You have no candle to pour it into.")
 
-    @knapsack[slot] -= 1
-    @knapsack[:candles] -= 1
-    @knapsack[:"laced_#{slot}"] += 1
+    @backpack[slot] -= 1
+    @backpack[:candles] -= 1
+    @backpack[:"laced_#{slot}"] += 1
     say "You pour the #{potion_name(slot)} into a candle."
     end_turn
   end
@@ -960,7 +979,7 @@ class Dungeon
     over? and return
     @throwable = nil
     (potion = LACED[slot]) && %i[throw kick].include?(how) or return
-    @knapsack[slot].zero? and return say("You have no candle laced with #{potion_name(potion)}.")
+    @backpack[slot].zero? and return say("You have no candle laced with #{potion_name(potion)}.")
 
     @offering = slot
     @flinging = how
@@ -972,7 +991,7 @@ class Dungeon
     over? and return
     @throwable = nil
     (potion = POTIONS[slot]) or return
-    @knapsack[slot].zero? and return say("You have no #{potion_name(slot)} to throw.")
+    @backpack[slot].zero? and return say("You have no #{potion_name(slot)} to throw.")
 
     @offering = slot
     say "Throw the #{potion_name(slot)} which way?"
@@ -983,10 +1002,10 @@ class Dungeon
   def zap(slot = nil)
     over? and return
     @throwable = nil
-    slot ||= WANDS.keys.find { |s| @knapsack[s].any?(&:positive?) } || WANDS.keys.find { |s| @knapsack[s].any? }
-    slot && @knapsack[slot].any? or return say("You have no wand to zap.")
+    slot ||= WANDS.keys.find { |s| @backpack[s].any?(&:positive?) } || WANDS.keys.find { |s| @backpack[s].any? }
+    slot && @backpack[slot].any? or return say("You have no wand to zap.")
     name = WANDS[slot][:name]
-    @knapsack[slot].any?(&:positive?) or return say("Your #{name} has no charges left until you level up.")
+    @backpack[slot].any?(&:positive?) or return say("Your #{name} has no charges left until you level up.")
 
     @offering = WANDS[slot][:kind]
     say "Zap the #{name} which way?"
@@ -1011,12 +1030,12 @@ class Dungeon
     "#{text} (#{seen.reject { |s| s.start_with?("0 ") }.join(", ")})"
   end
 
-  # Holds every egg in the knapsack up to the light, showing which are just yolk and which have grown legs, wings,
+  # Holds every egg in the backpack up to the light, showing which are just yolk and which have grown legs, wings,
   # and a beak; it takes a turn
   def candle
     over? and return
     @throwable = nil
-    eggs = @knapsack[:eggs]
+    eggs = @backpack[:eggs]
     eggs.empty? and return say("You have no eggs to hold up to the light.")
 
     eggs.each { |e| e.candled = true }
@@ -1035,16 +1054,16 @@ class Dungeon
     end_turn
   end
 
-  # Reads a scroll from the knapsack. Potion finding marks every potion of sight within SCROLL_RANGE on the map
+  # Reads a scroll from the backpack. Potion finding marks every potion of sight within SCROLL_RANGE on the map
   # for the rest of the level, however far or unseen, and the log says which way each lies; mapping reveals every
   # square within SCROLL_RANGE. Reading takes a turn
   def read(slot = :scrolls)
     over? and return
     @throwable = nil
     (scroll = SCROLLS[slot]) or return
-    @knapsack[slot].zero? and return say(slot == :scrolls ? "You have no scroll to read." : "You have no #{scroll[:name]} to read.")
+    @backpack[slot].zero? and return say(slot == :scrolls ? "You have no scroll to read." : "You have no #{scroll[:name]} to read.")
 
-    @knapsack[slot] -= 1
+    @backpack[slot] -= 1
     case slot
     when :scrolls
       found = @monsters.select do |m|
@@ -1064,37 +1083,37 @@ class Dungeon
     end_turn
   end
 
-  # Slips a ring from the knapsack onto a finger, packing any ring already worn. Nothing reads the worn ring
+  # Slips a ring from the backpack onto a finger, packing any ring already worn. Nothing reads the worn ring
   # yet. Swapping takes a turn
   def wear(slot)
     over? and return
     @throwable = nil
     (ring = RINGS[slot]) or return
-    @knapsack[slot].zero? and return say("You have no #{ring[:name]} to wear.")
+    @backpack[slot].zero? and return say("You have no #{ring[:name]} to wear.")
 
-    @knapsack[slot] -= 1
-    @knapsack[@ring] += 1 if @ring
+    @backpack[slot] -= 1
+    @backpack[@ring] += 1 if @ring
     @ring = slot
     say "You slip on the #{ring[:name]}."
     end_turn
   end
 
-  # Swaps the first knapsack weapon, or the first of the named kind, into hand, packing the old one at the
+  # Swaps the first backpack weapon, or the first of the named kind, into hand, packing the old one at the
   # back, so repeated wields cycle through them all; fists aren't packed. Swapping takes a turn
   def wield(name = nil)
     over? and return
     @throwable = nil
-    weapons = @knapsack[:weapons]
+    weapons = @backpack[:weapons]
     at = name ? weapons.index { |w| w[:name] == name } : 0
 
     (drawn = at && weapons.delete_at(at)) or
-      return say(name ? "You have no #{name} in your knapsack." : "You have no weapon in your knapsack to wield.")
+      return say(name ? "You have no #{name} in your backpack." : "You have no weapon in your backpack to wield.")
 
     unless @wielded == FISTS || room_for?(weapon_pounds(@wielded))
       weapons.insert(at, drawn)
-      return say("Your knapsack is too full to hold your #{@wielded[:name]} in place of the #{drawn[:name]}.")
+      return say("Your backpack is too full to hold your #{@wielded[:name]} in place of the #{drawn[:name]}.")
     end
-    @knapsack[:weapons] << @wielded unless @wielded == FISTS
+    @backpack[:weapons] << @wielded unless @wielded == FISTS
     @wielded = drawn
     @strung_steps = 0 # a bow strings fresh as it comes out, and unstrings as it goes in
     say "You now wield #{weapon}."
@@ -1134,7 +1153,7 @@ class Dungeon
     end
     [x, y] == [@px, @py] and return say("A wall is in the way. You keep it.")
 
-    @knapsack[item] -= 1
+    @backpack[item] -= 1
     floor = item == :gold ? @treasure : @sandwiches
     floor[[x, y]] = floor.fetch([x, y], 0) + 1
     @mimics[[x, y]] = false if item == :gold && !@mimics.key?([x, y]) # your own coin is only a coin
@@ -1142,13 +1161,13 @@ class Dungeon
     end_turn
   end
 
-  # Chooses a knapsack entry, by the slot contents gives it, for the Throw and Give buttons, without using it, as
-  # its radio button does; choosing takes no turn. A slot the knapsack doesn't hold chooses nothing
+  # Chooses a backpack entry, by the slot contents gives it, for the Throw and Give buttons, without using it, as
+  # its radio button does; choosing takes no turn. A slot the backpack doesn't hold chooses nothing
   def choose(slot)
     @chosen = contents.any? { |_, s| s == slot } ? slot : nil
   end
 
-  # The chosen entry's slot, while the knapsack still holds one of it
+  # The chosen entry's slot, while the backpack still holds one of it
   def chosen
     @chosen = nil unless contents.any? { |_, s| s == @chosen }
     @chosen
@@ -1161,7 +1180,7 @@ class Dungeon
     when :sandwiches then "sandwich"
     when :eggs then "egg"
     when :candles then "candle"
-    when :shields then @knapsack[:shields].first[:name]
+    when :shields then @backpack[:shields].first[:name]
     when String then slot
     else LACED.key?(slot) ? "candle laced with #{potion_name(LACED[slot])}" : item_name(slot)
     end
@@ -1176,7 +1195,7 @@ class Dungeon
   def throw_chosen
     over? and return
     @throwable = nil
-    slot = chosen or return say("Choose something by its radio button in the knapsack first.")
+    slot = chosen or return say("Choose something by its radio button in the backpack first.")
     dx, dy = @facing
     if POTIONS.key?(slot) then throw_potion(slot, dx, dy)
     elsif LACED.key?(slot)
@@ -1195,7 +1214,7 @@ class Dungeon
   def give_chosen
     over? and return
     @throwable = nil
-    slot = chosen or return say("Choose something by its radio button in the knapsack first.")
+    slot = chosen or return say("Choose something by its radio button in the backpack first.")
     dx, dy = @facing
     return give(slot, dx, dy) if GIFTS.key?(slot)
 
@@ -1245,7 +1264,7 @@ class Dungeon
     else
       wall?(x, y) and return say("A wall is in the way. You keep the coin.")
 
-      @knapsack[:gold] -= 1
+      @backpack[:gold] -= 1
       @treasure[[x, y]] = @treasure.fetch([x, y], 0) + 1
       @mimics[[x, y]] = false unless @mimics.key?([x, y]) # your own coin is only a coin
       say "No one is there, so the coin lands on the floor."
@@ -1258,9 +1277,9 @@ class Dungeon
   TOOLS_CHANCE = 0.5
 
   # A locked door, not yet jammed, in one of the eight squares around the player, when there's a Toolbag in the
-  # knapsack to work it with
+  # backpack to work it with
   def tools_door
-    @knapsack[:toolbags].positive? or return nil
+    @backpack[:toolbags].positive? or return nil
     @monsters.find { |m| m.name == "door" && m.locked && !m.jammed && (m.x - @px).abs <= 1 && (m.y - @py).abs <= 1 }
   end
 
@@ -1271,7 +1290,7 @@ class Dungeon
   # swings open, and half the time the tools jam it shut. Either way it takes a turn, and the Toolbag is kept
   def use_tools
     over? and return
-    if !tools_door && @knapsack[:toolbags].positive? &&
+    if !tools_door && @backpack[:toolbags].positive? &&
        (ajar = @monsters.find { |m| m.name == "door" && !m.locked && !m.jammed && (m.x - @px).abs <= 1 && (m.y - @py).abs <= 1 })
       @monsters.delete(ajar) # unlocked all along: it needs no tools, just the bag's rattle
       say "As you open the toolbag, the door swings ajar."
@@ -1298,6 +1317,8 @@ class Dungeon
     @stairs_question = nil
     @take_question = nil
     @stow_question = nil
+    @drink_question = nil
+    @grab_question = nil
     @offering = nil
     x = @px + @facing[0]
     y = @py + @facing[1]
@@ -1339,7 +1360,7 @@ class Dungeon
   # answers for itself
   def tap_say(m, text) = say("#{text}#{" Also, the #{m.name} is too big for your backpack." unless takeable?(m) || kit?(m) || m.name == "door"}")
 
-  # A shield or a weapon: kit that does go in the knapsack, once it's beaten or won over, however alive it is now
+  # A shield or a weapon: kit that does go in the backpack, once it's beaten or won over, however alive it is now
   def kit?(m) = SHIELDS.include?(m.name) || WEAPONS.any? { |w| w[:name] == m.name }
 
   # A thingage is in a tight spot, as in a hallway or a corner, when walls close in on all but two of its sides at
@@ -1383,7 +1404,7 @@ class Dungeon
   # The thing the player just tapped that didn't respond in any way, while they're asked whether to pocket it
   attr_reader :take_question
 
-  # Something lying dormant that a tap gets nothing out of, and a knapsack could hold: an item, a shield, or a
+  # Something lying dormant that a tap gets nothing out of, and a backpack could hold: an item, a shield, or a
   # dropped weapon. Nothing with a brain, though: it has its own say in the matter
   def takeable?(m)
     m.pacifist && !m.disguised_potion && !brain?(m) &&
@@ -1406,29 +1427,31 @@ class Dungeon
     weapon_pounds(m.weapon || { name: m.name })
   end
 
-  # The name of the single heaviest thing in the knapsack
+  # The name of the single heaviest thing in the backpack
   def heaviest_packed
-    things = @knapsack.filter_map { |slot, n| [item_noun(slot), pounds(slot)] if n.is_a?(Integer) && n.positive? }
-    things += @knapsack[:weapons].map { |w| [w[:name], weapon_pounds(w)] }
-    things += @knapsack[:shields].map { |sh| [sh[:name], Dungeon.pounds(Dungeon.packable(sh[:name]))] }
-    things << ["egg", Dungeon.pounds(EGG_POUNDS)] if @knapsack[:eggs].any?
+    things = @backpack.filter_map { |slot, n| [item_noun(slot), pounds(slot)] if n.is_a?(Integer) && n.positive? }
+    things += @backpack[:weapons].map { |w| [w[:name], weapon_pounds(w)] }
+    things += @backpack[:shields].map { |sh| [sh[:name], Dungeon.pounds(Dungeon.packable(sh[:name]))] }
+    things << ["egg", Dungeon.pounds(EGG_POUNDS)] if @backpack[:eggs].any?
     things.max_by(&:last)&.first
   end
 
   # The wrapped sandwich the player just started on, while they're asked whether to stow it for later
   attr_reader :stow_question
 
-  # Answers "Stow sandwich in knapsack for later? (y/N)": only a definite yes stows it, wrapping and all, which
-  # takes a turn. A stowed sandwich is a tough one: the knapsack remembers it, and its weight, but never shows it,
+  # Answers "Stow sandwich in backpack for later? (y/N)": only a definite yes stows it, wrapping and all, which
+  # takes a turn. A stowed sandwich is a tough one: the backpack remembers it, and its weight, but never shows it,
   # nor counts it among the sandwiches
   def stow_it(yes)
     over? and return
     food = @stow_question or return
     @stow_question = nil
+    @drink_question = nil
+    @grab_question = nil
     (yes && @monsters.include?(food)) or return
 
     @monsters.delete(food)
-    @knapsack[:tough_sandwiches] << food.hp # its wrapping still to work through
+    @backpack[:tough_sandwiches] << food.hp # its wrapping still to work through
     say "You stow the sandwich, wrapping and all."
     end_turn
   end
@@ -1440,6 +1463,8 @@ class Dungeon
     m = @take_question or return
     @take_question = nil
     @stow_question = nil
+    @drink_question = nil
+    @grab_question = nil
     (yes && @monsters.include?(m)) or return
 
     if (slot = PACKABLE[m.name])
@@ -1459,6 +1484,8 @@ class Dungeon
     @stairs_question = nil
     @take_question = nil
     @stow_question = nil
+    @drink_question = nil
+    @grab_question = nil
     return say("You stay where you are.") unless yes
 
     way == "down" ? descend : ascend
@@ -1471,6 +1498,8 @@ class Dungeon
     @stairs_question = nil
     @take_question = nil
     @stow_question = nil
+    @drink_question = nil
+    @grab_question = nil
     @facing = [dx, dy] unless dx.zero? && dy.zero?
     if (item = @offering)
       return fling_candle(item, dx, dy) if LACED.key?(item)
@@ -1486,8 +1515,8 @@ class Dungeon
     return if wall?(nx, ny)
 
     foe = monster_at(nx, ny)
-    if foe && potion_slot(foe) && !gaseous? && !mist?(foe) && !stuck?
-      pack(foe, PACKABLE[foe.name]) or return # a full knapsack says so, and costs no turn
+    if foe && (potion_slot(foe) || foe.name == "water potion") && !gaseous? && !mist?(foe) && !stuck?
+      pack(foe, PACKABLE[foe.name]) or return # a full backpack says so, and costs no turn
       foe = nil # overrun: packed, and the player steps on where it lay
     end
 
@@ -1496,10 +1525,12 @@ class Dungeon
 
       if mist?(foe)
         say "Your blow passes right through the misty #{foe.name}."
-      elsif foe.name == "toolbag" && @knapsack[:toolbags].positive?
+      elsif foe.name == "toolbag" && @backpack[:toolbags].positive?
         return say("You already carry a Toolbag, so you leave this one be.") # one's plenty; no turn
-      elsif (slot = PACKABLE[foe.name])
-        pack(foe, slot) or return # a full knapsack says so, and costs no turn
+      elsif foe.name == "toolbag"
+        pack(foe, :toolbags) or return # it jumps in; a full backpack says so, and costs no turn
+      elsif PACKABLE.key?(foe.name)
+        return grab # walking into it from the next square is no walking onto it: it asks, as G does, with no turn
       elsif foe.name == "Quail" && first_meeting?(foe, :ego)
         say "You tap the Quail. It looks you over."
       else
@@ -1528,6 +1559,7 @@ class Dungeon
 
     end_turn
     reveal
+    perceive_loot unless over?
   end
 
   def rest
@@ -1536,6 +1568,8 @@ class Dungeon
     @stairs_question = nil
     @take_question = nil
     @stow_question = nil
+    @drink_question = nil
+    @grab_question = nil
     if @offering
       item = @offering
       @offering = nil
@@ -1544,17 +1578,30 @@ class Dungeon
 
     @hp = [@hp + 1, @max_hp].min
     found = beside.map { |m| a_name(m.name) }
-    say "You catch your breath and find #{found.empty? ? "nothing" : and_list(found)} beside you."
-    sniff_gold
+    say "You catch your breath and find #{and_list(found)} beside you." if found.any?
+    sniffed = sniff_gold
     @hero_rested = true # so everyone rests this round
+    said = @said.to_i
     end_turn
+    return if over?
+
+    # No perception check, a failed one, or one that turned up nothing, and nothing else happened this round: the
+    # rest found nothing new
+    perceive_loot || found.any? || sniffed.positive? || @said.to_i > said or
+      say("Catching your breath, you notice nothing new.")
   end
 
-  # Eating a sandwich from the knapsack wants low blood sugar; a refusal takes no turn. A packed sandwich counts
-  # as open, so eating takes a turn and then does what leaving SandwichOpenState does: its action
-  def eat
+  # Eating a sandwich from the backpack wants low blood sugar; a refusal takes no turn. With a potion of water
+  # packed, eating first asks whether to drink that instead, taking no turn to ask. A packed sandwich counts as
+  # open, so eating takes a turn and then does what leaving SandwichOpenState does: its action
+  def eat(offer_water: true)
     peckish? or return say("Your blood sugar isn't low enough to want a sandwich.")
-    return work_tough_sandwich if @knapsack[:sandwiches].zero? && @knapsack[:tough_sandwiches].any?
+    if offer_water && @backpack[:water_potions].positive?
+      @drink_question = true
+      return say("Do you want a refreshing potion of water?")
+    end
+    return work_tough_sandwich if @backpack[:sandwiches].zero? && @backpack[:tough_sandwiches].any?
+    return say("You keep the water.") if @backpack[:sandwiches].zero?
 
     end_turn
     return if over?
@@ -1562,19 +1609,38 @@ class Dungeon
     SandwichOpenState.new.action(self, nil)
   end
 
+  # Whether eating has just asked "Do you want a refreshing potion of water?"
+  attr_reader :drink_question
+
+  # Answers the refreshing question: a definite yes drinks a potion of water, which satisfies as a sandwich does,
+  # 2d6 blood sugar, and takes a turn; anything else eats a sandwich instead, if there is one
+  def drink_it(yes)
+    over? and return
+    @drink_question or return
+    @drink_question = nil
+    @grab_question = nil
+    return eat(offer_water: false) unless yes
+
+    gain = rand(1..6) + rand(1..6)
+    @blood_sugar = [@blood_sugar + gain, MAX_BLOOD_SUGAR].min
+    @backpack[:water_potions] -= 1
+    say "You drink the potion of water. How refreshing! Your blood sugar rises by #{gain}, to #{@blood_sugar}."
+    end_turn
+  end
+
   # With only tough sandwiches left, eating wastes turns on a wrapping first: each turn works it a point, while the
   # dungeon carries on, and the turn it gives way, the sandwich is eaten. A Toolbag's knife needs no turns at all
   def work_tough_sandwich
-    return knife_open_tough_sandwich if @knapsack[:toolbags].positive?
+    return knife_open_tough_sandwich if @backpack[:toolbags].positive?
 
-    @knapsack[:tough_sandwiches][0] -= 1
-    if @knapsack[:tough_sandwiches][0].positive?
+    @backpack[:tough_sandwiches][0] -= 1
+    if @backpack[:tough_sandwiches][0].positive?
       say "You work at a tough sandwich's wrapping."
       return end_turn
     end
 
-    @knapsack[:tough_sandwiches].shift
-    @knapsack[:sandwiches] += 1
+    @backpack[:tough_sandwiches].shift
+    @backpack[:sandwiches] += 1
     say "The tough sandwich's wrapping gives way."
     eat
   end
@@ -1583,8 +1649,8 @@ class Dungeon
   ZIPPO_KNIFE = "Your zippo knife from the Toolbag opens the sandwich."
 
   def knife_open_tough_sandwich
-    @knapsack[:tough_sandwiches].shift
-    @knapsack[:sandwiches] += 1
+    @backpack[:tough_sandwiches].shift
+    @backpack[:sandwiches] += 1
     say ZIPPO_KNIFE
     eat
   end
@@ -1595,11 +1661,11 @@ class Dungeon
   def peckish? = @blood_sugar < LOW_BLOOD_SUGAR
 
   # A sandwich eaten, as SandwichOpenState's action has it: 2d6 blood sugar, up to the most there is, and that
-  # sandwich gone, from the floor or, with none given, from the knapsack
+  # sandwich gone, from the floor or, with none given, from the backpack
   def feed(food)
     gain = rand(1..6) + rand(1..6)
     @blood_sugar = [@blood_sugar + gain, MAX_BLOOD_SUGAR].min
-    food ? @monsters.delete(food) : @knapsack[:sandwiches] -= 1
+    food ? @monsters.delete(food) : @backpack[:sandwiches] -= 1
     say "You eat the sandwich. Your blood sugar rises by #{gain}, to #{@blood_sugar}."
   end
 
@@ -1716,6 +1782,7 @@ class Dungeon
     @treasure = {}
     @mimics = Hash.new { |mimics, spot| mimics[spot] = rand < GOLD_MIMIC_CHANCE } # each pile's fate, settled when first asked
     @sniffed = []
+    @bodies = {}
     @sandwiches = {}
     @monsters = []
     @detected = []
@@ -1765,6 +1832,10 @@ class Dungeon
       spawn_monster(nil, door, at: spot)
       @monsters.last.locked = rand < DOOR_LOCKED_CHANCE
     end
+
+    # Every hunter starts the level asleep, as long as a potion of sleep lasts, so the player doesn't walk in on a
+    # chorus of predators eating their prey
+    @monsters.each { |m| m.asleep = Dungeon.d4x3 if prey_of(m) }
 
     reveal
   end
@@ -1825,14 +1896,14 @@ class Dungeon
     (lx.is_a?(Range) ? lx.cover?(x) : lx == x) && (ly.is_a?(Range) ? ly.cover?(y) : ly == y)
   end
 
-  # Stepping onto the plate drops the bars along the line: everything behind them, the player and their knapsack
+  # Stepping onto the plate drops the bars along the line: everything behind them, the player and their backpack
   # included, is the haul. A haul without both an egg and a living Quail is only a practice run, so the adventure
   # goes on behind the bars until the player steps off the plate and back on. Otherwise it ends: every developed
   # egg hatches, and a Quail chick, with a Quail to raise it, is a win
   def spring_trap
     caught = @monsters.select { |m| in_trap?(m.x, m.y) }
     floor = ->(items) { items.sum { |spot, n| in_trap?(*spot) ? n : 0 } }
-    eggs = @knapsack[:eggs] + @eggs.select { |spot, _| in_trap?(*spot) }.values.flatten
+    eggs = @backpack[:eggs] + @eggs.select { |spot, _| in_trap?(*spot) }.values.flatten
     coins = gold + floor.(@treasure)
     food = sandwiches + floor.(@sandwiches)
     @caged = { eggs: eggs.size, critters: caught.select { |m| critter?(m) }.map(&:name) }
@@ -2094,7 +2165,10 @@ class Dungeon
     cornered = foe.hp.positive? && brain?(foe) && tight_spot?(foe) # before any knock back moves it
     if foe.hp <= 0
       @monsters.delete(foe)
-      return say("The #{foe.name} shatters: it was a #{potion_name(foe.disguised_potion)} in disguise!") if foe.disguised_potion
+      if foe.disguised_potion || foe.weapon # a looted tool is never a creature in disguise: it's on the body
+        leave_body(foe)
+        return say("You defeat the #{foe.name}!")
+      end
       return seize(foe) if armed?(foe)
       return stow(foe) if SHIELDS.include?(foe.name) || PACKABLE.key?(foe.name)
 
@@ -2153,9 +2227,200 @@ class Dungeon
     return false if gaseous? || (m.x - @px).abs > DISGUISE_RANGE || (m.y - @py).abs > DISGUISE_RANGE
 
     @monsters.delete(m)
-    say "The #{m.name} is a #{potion_name(slot)} in disguise! It hurls itself at you and shatters. #{take_effect(slot)}"
+    case disguise_ending
+    when :defeat
+      leave_body(m)
+      say "You have defeated the #{m.name}."
+    when :broken
+      dmg = Dungeon.d2x2
+      hurt(dmg) unless godMode?
+      say "The #{m.name} died of cringe. While rolling the body you break a potion of poison. " \
+          "#{godMode? ? "You take no damage." : "You take #{dmg} damage."}"
+      say("You die on depth #{@depth} with #{gold} gold.") if over?
+    when :found
+      (@traps ||= {})[[m.x, m.y]] = { kind: :poison, seen: true } # it lies where the body was
+      say "The #{m.name} died of cringe. You find a potion of poison."
+    end
     true
   end
+
+  # How a disguise ends, close by: usually the player has defeated its creature, its potion left on the body to
+  # notice, but one time in CRINGE_CHANCE the creature dies of cringe instead, leaving a potion of poison, broken
+  # on the player or else found lying there
+  CRINGE_CHANCE = 1.0 / 3
+
+  def disguise_ending = rand < CRINGE_CHANCE ? %i[broken found].sample : :defeat
+
+  # Every 1 + d4 rests and moves, with anything to find close by, the player makes a Wisdom perception check, a d20
+  # plus their Wisdom modifier against PERCEPTION_DC, to notice it
+  PERCEPTION_DC = 10
+
+  # A defeated creature that carried a potion or a weapon leaves its body, and that loot on it, where it fell
+  def leave_body(m)
+    loot = m.disguised_potion ? { potion: m.disguised_potion } : { weapon: m.weapon }
+    (@bodies ||= {})[[m.x, m.y]] = { name: m.name, loot: loot, noticed: false }
+  end
+
+  # What's on a body, by name, e.g. "potion of sleep" or "dagger"
+  def loot_name(body) = body[:loot][:potion] ? potion_name(body[:loot][:potion]) : body[:loot][:weapon][:name]
+
+  # Notices what's on each body close by not yet looked over
+  def notice_loot
+    (@bodies ||= {}).each do |(x, y), body|
+      next if body[:noticed] || (x - @px).abs > 1 || (y - @py).abs > 1
+
+      body[:noticed] = true
+      say "You notice #{a_name(loot_name(body))} on the body."
+    end
+  end
+
+  # Everything grabbable within a square of the player, facing it or not: the noticed loot on each body, each item
+  # lying about but a Toolbag, which jumps in by itself, each shield or weapon lying about not fighting the player, the weapon in each armed creature's hands, an ally's
+  # excepted, and each pile of gold. Each is { label:, stem:, spot: } for a body, { label:, stem:, item: } for an item,
+  # { label:, stem:, holder: } for a creature, or { label:, stem:, gold: } for a pile, its label as the grab prompt
+  # lists it and its stem as the DOS box's shorter prompt does
+  def grabbables
+    near = ->(x, y) { (x - @px).abs <= 1 && (y - @py).abs <= 1 }
+    bodies = (@bodies ||= {}).select { |(x, y), body| body[:noticed] && near.(x, y) }.map do |spot, body|
+      { label: "the defeated #{body[:name]}'s #{loot_name(body)}", stem: stem(loot_name(body)), spot: spot }
+    end
+    lying = ->(m) { (PACKABLE.key?(m.name) && m.name != "toolbag") || (kit?(m) && (!m.aggressive || m.ally)) } # a shield or weapon not fighting you
+    items = @monsters.select { |m| lying.(m) && !mist?(m) && near.(m.x, m.y) }
+                     .map do |m|
+                       name = PACKABLE.key?(m.name) ? item_name(PACKABLE[m.name]) : m.name
+                       { label: "the #{name}", stem: stem(name), item: m }
+                     end
+    holders = @monsters.select { |m| m.weapon && m.hp.positive? && !m.ally && !mist?(m) && near.(m.x, m.y) }.map do |m|
+      { label: m.asleep.to_i.positive? ? "the unconscious #{m.name}'s #{m.weapon[:name]}" : "your opponent's #{m.weapon[:name]}",
+        stem: stem(m.weapon[:name]), holder: m }
+    end
+    piles = @treasure.keys.select { |x, y| near.(x, y) }.map { |spot| { label: "the pile of gold", stem: "gold", gold: spot } }
+    bodies + items + holders + piles
+  end
+
+  # The one word a thing goes by, e.g. "shield" for a light shield, "potion" for a sleep potion or a potion of sight
+  def stem(name) = name.split(" of ").first.split.last
+
+  # Every 1 + d4 rests and moves, loot on a body or a weapon in an unconscious creature's hands, within a square,
+  # may catch the player's eye: on a passed perception check, the grab prompt pops up for them unasked. The wait is
+  # only rolled once there's something to find, and a check that comes due with nothing about waits for something
+  def perceive_loot
+    @unperceived = @unperceived.to_i + 1 # rests and moves since the last check
+    near = ->(x, y) { (x - @px).abs <= 1 && (y - @py).abs <= 1 }
+    unconscious = ->(o) { o[:spot] || o[:holder]&.asleep.to_i.positive? } # what there was to notice
+    findable = (@bodies ||= {}).any? { |(x, y), _| near.(x, y) } ||
+               @monsters.any? { |m| m.weapon && m.hp.positive? && !m.ally && m.asleep.to_i.positive? && near.(m.x, m.y) }
+    findable or return
+    @unperceived >= (@perception_in ||= perception_wait) or return
+
+    @unperceived = 0
+    @perception_in = perception_wait
+    perceives? or return
+
+    notice_loot
+    options = grabbables.select(&unconscious)
+    return false if options.empty?
+
+    ask_grab(options)
+    true # it found something to ask about
+  end
+
+  def perception_wait = 1 + rand(1..4)
+
+  def perceives? = rand(1..20) + Dungeon.modifier(@abilities[:wis]) >= PERCEPTION_DC
+
+  # The grab prompt's choices while it's asking, or nil
+  attr_reader :grab_question
+
+  # Asks which of everything close by to grab, e.g. "Grab a. the defeated rat's potion of sleep, b. your opponent's
+  # mace?"; asking takes no turn, and with nothing close by there's no question
+  def grab
+    over? and return
+    @grab_question = nil
+    options = grabbables
+    options.empty? and return say("There's nothing close by to grab.")
+
+    ask_grab(options)
+  end
+
+  def ask_grab(options)
+    @grab_question = options
+    say "Grab #{options.each_with_index.map { |o, i| "#{(97 + i).chr}. #{o[:label]}" }.join(", ")}?"
+  end
+
+  # Answers the grab prompt with a letter; anything that isn't one of its letters lets it go, with no turn.
+  # Grabbing takes a turn. Loot off a body, or a weapon from the hands of an unconscious creature, comes freely;
+  # wrenching one from an opponent's grip is a Strength contest, its strength against the player's, and either way
+  # wakes it up to fight. A potion goes in the backpack, and a weapon in hand, if the player is down to their fists
+  # and it isn't ranged, or else in the backpack; no room for it, no turn
+  def grab_pick(key)
+    over? and return
+    options = @grab_question or return
+    @grab_question = nil
+    index = key.ord - 97 if key.is_a?(String) && key.size == 1
+    (option = index&.between?(0, options.size - 1) && options[index]) or return
+
+    if (spot = option[:gold])
+      @treasure.key?(spot) or return
+      mimic?(spot) ? spring_mimic(*spot) : take_gold(spot)
+      return end_turn
+    end
+    if (item = option[:item])
+      @monsters.include?(item) or return
+      if (slot = PACKABLE[item.name])
+        pack(item, slot) or return # a full backpack says so, with no turn
+      else
+        room_for?(packed_pounds(item)) or return say("Your backpack is too full for the #{item.name}.")
+
+        @monsters.delete(item)
+        armed?(item) ? seize(item, "take", pack: true) : stow(item, "take")
+      end
+      return end_turn
+    end
+    body = option[:spot] && @bodies[option[:spot]]
+    if (slot = body&.dig(:loot, :potion))
+      room_for?(pounds(slot)) or return say("Your backpack is too full for the #{potion_name(slot)}.")
+
+      @backpack[slot] += 1
+      @bodies.delete(option[:spot])
+      say "You grab the #{potion_name(slot)} off the body."
+      return end_turn
+    end
+
+    m = option[:holder]
+    held = body ? body[:loot][:weapon] : m.weapon
+    found = held.slice(:name, :glyph, :hit).merge(WEAPONS.find { |w| w[:name] == held[:name] }&.slice(:packable, :ranged) || {})
+    to_hand = @wielded == FISTS && !found[:ranged]
+    to_hand || room_for?(weapon_pounds(found)) or return say("Your backpack is too full for the #{found[:name]}.")
+
+    if m && !m.asleep.to_i.positive?
+      m.aggressive = true
+      unless wrest?(m)
+        say "You grab at the #{m.name}'s #{found[:name]}, but it holds on."
+        return end_turn
+      end
+    end
+    verb = body ? "grab the #{found[:name]} off the body" : m.asleep.to_i.positive? ? "slip the #{found[:name]} from the unconscious #{m.name}" : "wrench the #{found[:name]} from the #{m.name}"
+    if body
+      @bodies.delete(option[:spot])
+    else
+      m.weapon = nil
+      m.hit = THINGAGES.find { |k| k[:name] == m.name }&.dig(:hit) || m.hit # back to its own blows
+    end
+    if to_hand
+      @wielded = found
+      say "You #{verb}! You now wield #{weapon}."
+    else
+      @backpack[:weapons] << found
+      say "You #{verb} and pack #{pair?(found[:name]) ? "them" : "it"} into your backpack."
+    end
+    end_turn
+  end
+  public :grab, :grab_pick, :grab_question # the front ends' G key, and its answer
+
+  # Whether the player wrenches a weapon from a creature's grip: a d20 plus their Strength modifier against its d20
+  # plus its own, ties to the holder
+  def wrest?(m) = rand(1..20) + Dungeon.modifier(@abilities[:str]) > rand(1..20) + Dungeon.modifier(m.str)
 
   # Whether this is who's first meeting with a Quail, who being :ego or a thingage; it's remembered either way
   def first_meeting?(quail, who)
@@ -2187,7 +2452,9 @@ class Dungeon
   # Offering to empty floor doesn't, and readies the throw button for that item and direction instead
   def give(item, dx, dy)
     @offering = nil
-    if item == :sandwiches && @knapsack[:sandwiches].zero?
+    if item == :sandwiches && @backpack[:sandwiches].zero?
+      return say("Your only food is water; rest to drink it yourself.") if @backpack[:tough_sandwiches].empty?
+
       return say("Your only sandwiches are still wrapped; you'd have to eat one to unwrap it.")
     end
     taker = monster_at(@px + dx, @py + dy)
@@ -2203,15 +2470,15 @@ class Dungeon
     end_turn
   end
 
-  # Takes one thing out of a knapsack slot and returns it: an egg, a weapon, or a shield as itself, and anything
+  # Takes one thing out of a backpack slot and returns it: an egg, a weapon, or a shield as itself, and anything
   # counted as its slot
   def take_out(slot)
     case slot
-    when :eggs then @knapsack[:eggs].shift
-    when :shields then @knapsack[:shields].shift
-    when String then @knapsack[:weapons].delete_at(@knapsack[:weapons].index { |w| w[:name] == slot })
+    when :eggs then @backpack[:eggs].shift
+    when :shields then @backpack[:shields].shift
+    when String then @backpack[:weapons].delete_at(@backpack[:weapons].index { |w| w[:name] == slot })
     else
-      @knapsack[slot] -= 1
+      @backpack[slot] -= 1
       slot
     end
   end
@@ -2276,7 +2543,7 @@ class Dungeon
   # its power; with no one there it shatters. Throwing takes a turn
   def throw_potion(slot, dx, dy)
     @offering = nil
-    @knapsack[slot] -= 1
+    @backpack[slot] -= 1
     name = potion_name(slot)
     x, y = @px, @py
     THROW_RANGE.times do
@@ -2380,7 +2647,7 @@ class Dungeon
   def fling_candle(slot, dx, dy)
     how = @flinging
     @offering = @flinging = nil
-    @knapsack[slot] -= 1
+    @backpack[slot] -= 1
     x, y = @px, @py
     (how == :kick ? KICK_RANGE : THROW_RANGE).times do
       break if wall?(x + dx, y + dy)
@@ -2462,7 +2729,7 @@ class Dungeon
     end
   end
 
-  # Takes the gift out of the knapsack and says what the taker does with it. A goblin eats a sandwich and stays
+  # Takes the gift out of the backpack and says what the taker does with it. A goblin eats a sandwich and stays
   # friendly until hungry again, and any other creature just eats it, either way filling its blood sugar; a
   # pacifist, an ally, or a greedy goblin pockets a coin for good and becomes an
   # ally hoping for more, and a nesting Quail leaves its eggs to follow you; a rat pockets a coin and disengages,
@@ -2470,12 +2737,12 @@ class Dungeon
   # and swings open, gone from the hallway. Enraged furniture takes a coin to calm down, and throws a sandwich
   # back. Anyone else just keeps it
   def receive(taker, item)
-    @knapsack[item] -= 1
+    @backpack[item] -= 1
     return appease(taker, item) if FURNITURE.include?(taker.name) && state_machine(taker).state.is_a?(EnragedState)
     return win_over(taker) if item == :gold && useful?(taker) && agitated?(taker)
 
     if taker.name == "door" && taker.jammed
-      @knapsack[item] += 1
+      @backpack[item] += 1
       return "won't take it, being jammed shut, so you keep it"
     end
     return coin_lock(taker) if taker.name == "door" && item == :gold && taker.locked
@@ -2524,7 +2791,7 @@ class Dungeon
     end
     return "pockets it, but the lock holds" unless rand < COIN_KEPT_CHANCE
 
-    @knapsack[:gold] += 1
+    @backpack[:gold] += 1
     "won't take it, and the lock holds, so you keep your coin"
   end
 
@@ -2535,7 +2802,7 @@ class Dungeon
   # beside it, sets upon the sandwich, and the door swings open. Otherwise the player keeps the sandwich
   def imp_opens(door)
     unless rand < IMP_CHANCE
-      @knapsack[:sandwiches] += 1
+      @backpack[:sandwiches] += 1
       return "won't take it while it's locked, so you keep it"
     end
 
@@ -2658,7 +2925,7 @@ class Dungeon
   def unwrap(food, damage)
     food.touched = true
     machine = food_machine(food)
-    if !machine.state.is_a?(OpenState) && @knapsack[:toolbags].positive?
+    if !machine.state.is_a?(OpenState) && @backpack[:toolbags].positive?
       machine.transit(StateEvent::KEY, self, food) if machine.state.is_a?(LockState)
       machine.transit(StateEvent::TIMER, self, food)
       say ZIPPO_KNIFE
@@ -2673,7 +2940,7 @@ class Dungeon
     machine.transit(StateEvent::KEY, self, food) if first
     food.hp -= damage
     if food.hp.positive?
-      @stow_question = food if first && room_for?(pounds(:sandwiches)) # a full knapsack isn't asked
+      @stow_question = food if first && room_for?(pounds(:sandwiches)) # a full backpack isn't asked
       return say("You work at the sandwich's wrapping.")
     end
 
@@ -2681,26 +2948,26 @@ class Dungeon
     say "The sandwich's wrapping gives way. It's open, and edible."
   end
 
-  # Defeating a shield, or a potion or any other packable thing, packs it into the knapsack, room allowing; with no
+  # Defeating a shield, or a potion or any other packable thing, packs it into the backpack, room allowing; with no
   # room, it's left behind
   def stow(foe, how = "defeat")
     shield = SHIELDS.include?(foe.name)
     weight = shield ? Dungeon.pounds(Dungeon.packable(foe.name)) : pounds(PACKABLE[foe.name])
     room_for?(weight) or
-      return say("You #{how} the #{foe.name}, but your knapsack is too full to carry it, so you leave it behind.")
+      return say("You #{how} the #{foe.name}, but your backpack is too full to carry it, so you leave it behind.")
 
     if shield
-      @knapsack[:shields] << { name: foe.name, glyph: foe.glyph }
+      @backpack[:shields] << { name: foe.name, glyph: foe.glyph }
     else
-      @knapsack[PACKABLE[foe.name]] += 1
+      @backpack[PACKABLE[foe.name]] += 1
     end
-    say "You #{how} the #{foe.name} and pack it into your knapsack."
+    say "You #{how} the #{foe.name} and pack it into your backpack."
   end
 
   # A weapon, or something wielding one, that defeating or capturing seizes
   def armed?(m) = m.weapon || WEAPONS.any? { |w| w[:name] == m.name }
 
-  # A useful obstacle: a live weapon or shield, or anything else the knapsack can hold
+  # A useful obstacle: a live weapon or shield, or anything else the backpack can hold
   def useful?(m) = armed?(m) || SHIELDS.include?(m.name) || PACKABLE.key?(m.name)
 
   # A grumpy useful obstacle, given a coin, comes over to the player's side
@@ -2712,7 +2979,7 @@ class Dungeon
     "pockets it and comes over to your side"
   end
 
-  # Hitting a useful obstacle on the player's side captures it into the knapsack, whatever its hit points
+  # Hitting a useful obstacle on the player's side captures it into the backpack, whatever its hit points
   def capture(foe)
     @monsters.delete(foe)
     armed?(foe) ? seize(foe, "capture", pack: true) : stow(foe, "capture")
@@ -2720,7 +2987,7 @@ class Dungeon
 
   # Defeating a weapon seizes it, and defeating a cloaked one seizes the weapon it wielded. Empty hands wield it: it
   # shows in the banner and its hit range becomes the player's. A player already wielding one, or seizing a ranged
-  # one, packs it into the knapsack instead, room allowing; it keeps the packable weight and ranged flag from its
+  # one, packs it into the backpack instead, room allowing; it keeps the packable weight and ranged flag from its
   # WEAPONS entry
   def seize(foe, how = "defeat", pack: false)
     held = foe.weapon || { name: foe.name, glyph: foe.glyph, hit: foe.hit }
@@ -2729,10 +2996,10 @@ class Dungeon
     what = foe.weapon ? "its #{found[:name]}" : them
     if pack || @wielded != FISTS || found[:ranged]
       room_for?(weapon_pounds(found)) or
-        return say("You #{how} the #{foe.name}, but your knapsack is too full to carry #{what}, so you leave #{them} behind.")
+        return say("You #{how} the #{foe.name}, but your backpack is too full to carry #{what}, so you leave #{them} behind.")
 
-      @knapsack[:weapons] << found
-      return say("You #{how} the #{foe.name} and pack #{what} into your knapsack.")
+      @backpack[:weapons] << found
+      return say("You #{how} the #{foe.name} and pack #{what} into your backpack.")
     end
 
     @wielded = found
@@ -2759,17 +3026,17 @@ class Dungeon
     [w[:glyph], w[:name]].compact.join(" ")
   end
 
-  # Walking into a potion, a scroll, or a ring packs it into the knapsack instead of attacking it; quaff, read, or wear uses it later
+  # Walking into a potion, a scroll, or a ring packs it into the backpack instead of attacking it; quaff, read, or wear uses it later
   # Packs it, room allowing; true when it did, so a refusal can cost no turn
   def pack(thing, slot)
     unless room_for?(pounds(slot))
-      say "Your knapsack is too full for the #{item_name(slot)}."
+      say "Your backpack is too full for the #{item_name(slot)}."
       return false
     end
 
     @monsters.delete(thing)
-    @knapsack[slot] += 1
-    say "You pack #{a_name(item_name(slot))} into your knapsack."
+    @backpack[slot] += 1
+    say(slot == :toolbags ? "A Toolbag jumped into your backpack!" : "You pack #{a_name(item_name(slot))} into your backpack.")
     true
   end
 
@@ -2893,8 +3160,8 @@ class Dungeon
   def sniff_gold(chance = GOLD_SNIFF_CHANCE)
     @sniffed ||= []
     piles = @treasure.keys.select { |x, y| (x - @px).abs <= 1 && (y - @py).abs <= 1 && !@sniffed.include?([x, y]) }
-    piles.each do |spot|
-      next unless rand < chance
+    piles.count do |spot| # how many it told of
+      next false unless rand < chance
 
       @sniffed << spot
       say(if @mimics[spot]
@@ -2903,33 +3170,39 @@ class Dungeon
           else
             "As you rest, the gold beside you just lies there, glinting, smelling of nothing but old pockets. It's honest money."
           end)
+      true
     end
   end
 
-  # Takes what lies here into the knapsack, as much as it has room for; the rest stays where it lies
+  # Takes the pile of gold at spot, if any, into the backpack, as much as it has room for; the rest stays put
+  def take_gold(spot)
+    (coins = @treasure.delete(spot)) or return
+
+    taken = fitting(coins, pounds(:gold))
+    @backpack[:gold] += taken
+    @treasure[spot] = coins - taken if taken < coins
+    say taken == coins ? "You find #{coins} gold!" : "You find #{coins} gold, but your backpack has room for only #{taken}."
+  end
+
+  # Takes what lies here into the backpack, as much as it has room for; the rest stays where it lies
   def pick_up
     spot = [@px, @py]
-    if (coins = @treasure.delete(spot))
-      taken = fitting(coins, pounds(:gold))
-      @knapsack[:gold] += taken
-      @treasure[spot] = coins - taken if taken < coins
-      say taken == coins ? "You find #{coins} gold!" : "You find #{coins} gold, but your knapsack has room for only #{taken}."
-    end
+    take_gold(spot)
     if (count = @sandwiches.delete(spot))
       taken = fitting(count, pounds(:sandwiches))
-      @knapsack[:sandwiches] += taken
+      @backpack[:sandwiches] += taken
       @sandwiches[spot] = count - taken if taken < count
-      say taken == count ? "You pack #{count == 1 ? "a sandwich" : "#{count} sandwiches"} into your knapsack." :
-                           "Your knapsack has room for only #{taken} of the #{count} sandwiches here."
+      say taken == count ? "You pack #{count == 1 ? "a sandwich" : "#{count} sandwiches"} into your backpack." :
+                           "Your backpack has room for only #{taken} of the #{count} sandwiches here."
     end
     return unless (laid = @eggs.delete(spot))
 
     taken = fitting(laid.size, Dungeon.pounds(EGG_POUNDS))
     @eggs[spot] = laid.drop(taken) if taken < laid.size
-    return say("Your knapsack is too full for the #{laid.size == 1 ? "egg" : "eggs"}.") if taken.zero?
+    return say("Your backpack is too full for the #{laid.size == 1 ? "egg" : "eggs"}.") if taken.zero?
 
     gathered = laid.first(taken)
-    @knapsack[:eggs].concat(gathered)
+    @backpack[:eggs].concat(gathered)
     left = laid.size - taken
     say "You gather #{egg_kinds(gathered)}#{" from the nest" unless laid.all?(&:dodo)}#{", leaving #{left} for want of room" if left.positive?}."
     nesters = @monsters.select(&:nesting)
@@ -2961,8 +3234,8 @@ class Dungeon
     take_stock
   end
 
-  # Every wand in the knapsack holds WAND_CHARGES again: the one recharge there is, when the hero levels up
-  def refill_wands = WANDS.each_key { |slot| @knapsack[slot].map! { WAND_CHARGES } }
+  # Every wand in the backpack holds WAND_CHARGES again: the one recharge there is, when the hero levels up
+  def refill_wands = WANDS.each_key { |slot| @backpack[slot].map! { WAND_CHARGES } }
 
   # A level already visited is the one the player left
   def descend
@@ -3225,7 +3498,7 @@ class Dungeon
         m.fed -= 1
         say "The #{m.name} is hungry again." if m.fed.zero?
       end
-      next if m.slowed.to_i.positive? && (m.lagging = !m.lagging) # the round a slowed one sits out
+      next if (m.slowed.to_i.positive? || m.palsied) && (m.lagging = !m.lagging) # the round a slowed one sits out
       (m.hasted.to_i.positive? ? 2 : 1).times do
         act(m)
         return if over?
@@ -3335,7 +3608,7 @@ class Dungeon
   end
 
   # The player treads on a trap where they stand: poison hurts, glue sticks them in place, a wand of slowness slows
-  # them and a wand of slipperiness slicks the floor round them, either then going in the knapsack, and slippery
+  # them and a wand of slipperiness slicks the floor round them, either then going in the backpack, and slippery
   # floor waits its turn to trip them
   def tread_player
     (trap = @traps&.[]([@px, @py])) or return
@@ -3351,7 +3624,7 @@ class Dungeon
         trap[:charges] -= 1
         say "You step on a wand of slipperiness, and it zaps the floor, #{splash_words(:slippery, *spread(:slippery, @px, @py))}."
       end
-      @knapsack[:slip_wands] << trap[:charges]
+      @backpack[:slip_wands] << trap[:charges]
       say "You pick up the wand of slipperiness (#{trap[:charges]} #{trap[:charges] == 1 ? "charge" : "charges"} left)."
     elsif trap[:kind] == :poison
       dmg = Dungeon.d2x2
@@ -3367,7 +3640,7 @@ class Dungeon
         say "You step on a wand of slowness, and it zaps you. Everything else speeds up!"
       end
       @traps.delete([@px, @py])
-      @knapsack[:wands] << trap[:charges]
+      @backpack[:wands] << trap[:charges]
       say "You pick up the wand of slowness (#{trap[:charges]} #{trap[:charges] == 1 ? "charge" : "charges"} left)."
     end
   end
@@ -3405,14 +3678,18 @@ class Dungeon
     true
   end
 
-  # Zaps a charge that way: the first thingage within THROW_RANGE slows for 2d2 rounds. Zapping takes a turn
+  # Zaps a charge that way: the first thingage within THROW_RANGE slows for 2d2 rounds, or, a door, for good.
+  # Zapping takes a turn
   def zap_wand(dx, dy)
     @offering = nil
-    at = @knapsack[:wands].index(&:positive?) or return say("Your wand of slowness has no charges left until you level up.")
-    @knapsack[:wands][at] -= 1
+    at = @backpack[:wands].index(&:positive?) or return say("Your wand of slowness has no charges left until you level up.")
+    @backpack[:wands][at] -= 1
     target = (1..THROW_RANGE).lazy.map { |i| [@px + dx * i, @py + dy * i] }
                              .take_while { |x, y| !wall?(x, y) }.map { |x, y| monster_at(x, y) }.find(&:itself)
-    if target
+    if target&.name == "door"
+      target.palsied = true
+      say "You zap the wand of slowness. The door slows down for good!"
+    elsif target
       target.slowed = target.slowed.to_i + Dungeon.d2x2
       say "You zap the wand of slowness. The #{target.name} slows down!"
     else
@@ -3425,8 +3702,8 @@ class Dungeon
   # wall, and slicks the floor there. Zapping takes a turn
   def zap_slip_wand(dx, dy)
     @offering = nil
-    at = @knapsack[:slip_wands].index(&:positive?) or return say("Your wand of slipperiness has no charges left until you level up.")
-    @knapsack[:slip_wands][at] -= 1
+    at = @backpack[:slip_wands].index(&:positive?) or return say("Your wand of slipperiness has no charges left until you level up.")
+    @backpack[:slip_wands][at] -= 1
     x, y = @px, @py
     THROW_RANGE.times do
       break if wall?(x + dx, y + dy)
@@ -4069,6 +4346,8 @@ class WebGame
       when "/rest" then @game.rest
       when "/tap" then @game.tap
       when "/zap" then @game.zap
+      when "/grab" then @game.grab
+      when "/grab_pick" then @game.grab_pick(params["letter"].to_s)
       when "/use_tools" then @game.use_tools
       when "/give_coin" then @game.give_coin
       when "/choose"
@@ -4079,6 +4358,7 @@ class WebGame
       when "/stairs" then @game.take_stairs(params["answer"] == "yes")
       when "/take" then @game.take_it(params["answer"] == "yes")
       when "/stow" then @game.stow_it(params["answer"] == "yes")
+      when "/drink" then @game.drink_it(params["answer"] == "yes")
       when "/zip" then params["answer"] == "yes" ? @game.zip : @game.decline_zip
       when "/give"
         item = params["item"].to_s.to_sym
@@ -4168,7 +4448,7 @@ class WebGame
         %(#{' style="text-decoration: underline"' if lit}>#{label}</button></form>)
     end
 
-    # One button per knapsack entry: gold and sandwiches ready a gift, eggs are held up to the light, a potion
+    # One button per backpack entry: gold and sandwiches ready a gift, eggs are held up to the light, a potion
     # quaffs (with throw and pour-into-a-candle buttons beside it), a laced candle is thrown (with a kick button
     # beside it), a scroll reads, a ring is worn, and a weapon kind wields one of them. Plain candles just wait
     entry_for = lambda do |text, slot|
@@ -4215,9 +4495,21 @@ class WebGame
                %(<form method="post" action="/take?answer=no"><button data-keys="n" style="width: auto">No (N)</button></form></div>)
            end
     stow = if @game.stow_question
-             %(<div class="stairs">Stow sandwich in knapsack for later? ) +
+             %(<div class="stairs">Stow sandwich in backpack for later? ) +
                %(<form method="post" action="/stow?answer=yes"><button data-keys="y" style="width: auto">Yes (y)</button></form>) +
                %(<form method="post" action="/stow?answer=no"><button data-keys="n" style="width: auto">No (N)</button></form></div>)
+           end
+    drink = if @game.drink_question
+              %(<div class="stairs">Do you want a refreshing potion of water? ) +
+                %(<form method="post" action="/drink?answer=yes"><button data-keys="y" style="width: auto">Yes (y)</button></form>) +
+                %(<form method="post" action="/drink?answer=no"><button data-keys="n" style="width: auto">No (N)</button></form></div>)
+            end
+    grab = if (options = @game.grab_question)
+             %(<div class="stairs">Grab which? ) +
+               options.each_with_index.map do |o, i|
+                 %(<form method="post" action="/grab_pick?letter=#{(97 + i).chr}"><button data-keys="#{(97 + i).chr}" style="width: auto">#{h o[:label]} (#{(97 + i).chr})</button></form>)
+               end.join +
+               %(<form method="post" action="/grab_pick?letter=Escape"><button data-keys="Escape" style="width: auto">Never mind (Esc)</button></form></div>)
            end
     zip = if (way = @game.zip_question)
             %(<div class="stairs">zip #{way}? ) +
@@ -4243,7 +4535,7 @@ class WebGame
           .below { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 16px; }
           .controls { display: flex; flex-direction: column; gap: 4px; }
           .panel { display: flex; flex-direction: column; gap: 4px; }
-          .knapsack { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+          .backpack { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
           .hungry { color: #{Dungeon::HUNGRY_COLOR}; }
           .ally { color: #{Dungeon::ALLY_COLOR}; }
           .enemy { color: #{Dungeon::ENEMY_COLOR}; }
@@ -4255,16 +4547,17 @@ class WebGame
         <pre>#{map_html}</pre>
         <p>#{@game.log.map { |line| h line }.join("<br>")}</p>
         #{%(<iframe src="/plaque" title="Wall of Fallen Heroes" style="border: 0; width: 100%; height: 22em;"></iframe>) if @game.plaque?}
-        <!-- The map spans the page like a lintel over two posts: the move pad lower left, the knapsack lower right -->
+        <!-- The map spans the page like a lintel over two posts: the move pad lower left, the backpack lower right -->
         <div class="below">
           <div class="controls">
             #{%(<form method="post" action="/throw"><button data-keys="t" style="width: auto">throw (t)</button></form>) if @game.can_hurl?}
-            #{stairs}#{take}#{stow}#{zip}
+            #{stairs}#{take}#{stow}#{drink}#{grab}#{zip}
             <div class="pad-row">
               <div class="pad">#{buttons.join}</div>
               <div class="controls">
                 <form method="post" action="/tap"><button data-keys="f" style="width: auto">#{h @game.tap_label} (f)</button></form>
                 <form method="post" action="/zap"><button data-keys="z" style="width: auto">Zap wand (z)</button></form>
+                <form method="post" action="/grab"><button data-keys="G" style="width: auto">Grab loot (G)</button></form>
                 #{%(<form method="post" action="/use_tools"><button data-keys="o" style="width: auto">Use the tools in the Toolbag to open the door (o)</button></form>) if @game.tools_ready?}
                 <form method="post" action="/throw_chosen"><button data-keys="x" style="width: auto">#{h @game.throw_label} (x)</button></form>
                 <form method="post" action="/give_chosen"><button data-keys="g" style="width: auto">#{h @game.give_label} (g)</button></form>
@@ -4274,7 +4567,7 @@ class WebGame
             <form method="post" action="/wield"><button data-keys="w" style="width: auto">Wield (w)</button></form>
           </div>
           <aside class="panel">
-            #{%(<div class="knapsack">Knapsack: #{packed.join}</div>) if packed.any?}
+            #{%(<div class="backpack">Backpack: #{packed.join}</div>) if packed.any?}
             <form method="post" action="/give_coin"><button data-keys="$">#{h @game.give_coin_label}</button></form>
             <form method="post" action="/give?item=sandwiches"><button data-keys="%">give sandwich (%)</button></form>
           </aside>
@@ -4322,7 +4615,7 @@ class DosBox
     "\e" => "Escape",
   }.freeze
 
-  # Commands that ask which knapsack entry, by its letter, before they act
+  # Commands that ask which backpack entry, by its letter, before they act
   PROMPTS = {
     "a" => [:use,   "Use which item?"],
     "T" => [:throw, "Throw which item?"],
@@ -4347,16 +4640,17 @@ class DosBox
     "t: throw the gift",
     "f: tap",
     "z: zap the wand",
+    "G: grab loot",
     "o: open with Toolbag",
     "s: select an item",
     "x: throw selected",
     "g: give selected",
-    "?: knapsack/keys",
+    "?: backpack/keys",
     "N: new game",
     "Q: quit",
   ].freeze
 
-  # The status line, the map, the four log lines, and the prompt; the knapsack panel stacks above the map, so a
+  # The status line, the map, the four log lines, and the prompt; the backpack panel stacks above the map, so a
   # screen runs this many rows plus the panel's
   SCREEN_ROWS = 1 + Dungeon::VIEWPORT_HEIGHT + 4 + 1
 
@@ -4393,7 +4687,7 @@ class DosBox
     lines.each_with_index.map { |line, i| "#{ESC}[#{i + 1};1H#{fit(line, width)}#{ESC}[0m#{ESC}[K" }.join
   end
 
-  # The screen's lines: the status, the map with the knapsack (or the keys) beside it, the log, any plaque the
+  # The screen's lines: the status, the map with the backpack (or the keys) beside it, the log, any plaque the
   # finished game earned, and a prompt
   def lines
     panel = panel_lines
@@ -4431,6 +4725,13 @@ class DosBox
     return @game.take_stairs(%w[y Y].include?(key)) if @game.stairs_question && %w[y Y n].include?(key)
     return @game.take_it(key == "y") if @game.take_question # only a definite y; any other key is a no
     return @game.stow_it(key == "y") if @game.stow_question
+    return @game.drink_it(key == "y") if @game.drink_question # only a definite y; any other key eats instead
+    if (options = @game.grab_question)
+      letters = options.each_index.map { |i| (97 + i).chr }
+      return @game.grab_pick(key) if letters.include?(key) || key == "Escape"
+
+      @game.grab_pick("Escape") # any other key lets the question go, and does what it always does
+    end
     if @game.zip_question
       return @game.zip if %W[y Y \r \n].include?(key) # Enter, or a yes, zips
       return @game.decline_zip if %w[n N].include?(key)
@@ -4442,15 +4743,16 @@ class DosBox
     when "t" then @game.hurl
     when "f" then @game.tap
     when "z" then @game.zap
+    when "G" then @game.grab
     when "o" then @game.use_tools
     when "R", "r" then @game.rest # the console's rest key, either case; . and 5 still rest too, as the keypad's middle
     when "x" then @game.throw_chosen
-    when "g" then @game.give_chosen
+    when "g" then @game.chosen ? @game.give_chosen : @game.grab # with nothing chosen to give, g grabs, as G does
     when "$" then @game.give_coin
     when "%" then @game.offer(:sandwiches)
     else
       if (command = PROMPTS[key])
-        @game.contents.empty? ? @note = "Your knapsack is empty." : @pending = command.first
+        @game.contents.empty? ? @note = "Your backpack is empty." : @pending = command.first
       elsif (pad = PAD.flatten(1).find { |_, _, _, keys| keys.split.include?(key) })
         _, dx, dy = pad
         dx.zero? && dy.zero? ? @game.rest : @game.move(dx, dy)
@@ -4543,7 +4845,7 @@ class DosBox
       "Weapon #{g.weapon}  Gold #{g.gold}  Sandwiches #{g.sandwiches}  #{g.load_text}  Depth #{g.depth}"
   end
 
-  # The knapsack, each entry lettered for the prompts, or the keys while ? shows them, the tap key named for the
+  # The backpack, each entry lettered for the prompts, or the keys while ? shows them, the tap key named for the
   # way the player faces
   def panel_lines
     if @help
@@ -4555,9 +4857,9 @@ class DosBox
     buttons = ["f: #{@game.tap_label}", "x: #{@game.throw_label}", "g: #{@game.give_label}"]
     packed = @game.contents
     stats = "XP: #{@game.experience_points}  Blood sugar #{@game.blood_sugar}"
-    return ["Empty knapsack  #{stats}", "? lists the keys"] + buttons if packed.empty?
+    return ["Empty backpack  #{stats}", "? lists the keys"] + buttons if packed.empty?
 
-    ["Knapsack: #{stats}"] + packed.each_with_index.map do |(text, slot), i|
+    ["Backpack: #{stats}"] + packed.each_with_index.map do |(text, slot), i|
       "#{(97 + i).chr}) #{"(*) " if @game.chosen == slot}#{text}"
     end + buttons
   end
@@ -4567,7 +4869,9 @@ class DosBox
     return "#{ending} Play again? (y/n)" if @error || @game.over?
     return "You want to go #{@game.stairs_question}? (y/n)" if @game.stairs_question
     return "Put this #{@game.take_question.name} in your backpack? (y/N)" if @game.take_question
-    return "Stow sandwich in knapsack for later? (y/N)" if @game.stow_question
+    return "Stow sandwich in backpack for later? (y/N)" if @game.stow_question
+    return "Do you want a refreshing potion of water? (y/N)" if @game.drink_question
+    return "Grab which? (#{@game.grab_question.each_with_index.map { |o, i| "#{(97 + i).chr}.#{o[:stem]}" }.join(" ")}; Esc cancels)" if @game.grab_question
     return @note if @note
     return "Then an arrow sends it that way, or R keeps it" if @game.log.last.to_s.end_with?("which way?")
     return "o: use the tools in the Toolbag to open the door" if @game.tools_ready?
@@ -4605,7 +4909,7 @@ class DosBox
     last == "a" ? "a" : "a-#{last}"
   end
 
-  # The knapsack letter answers a pending prompt, which then acts as the web page's buttons do
+  # The backpack letter answers a pending prompt, which then acts as the web page's buttons do
   def answer(key)
     verb = @pending
     @pending = nil
@@ -4775,7 +5079,7 @@ Scarpe.app(title: "Scarpe Rogue") do # , width: 560, height: 640) do
     end
     @map.replace(*pieces)
     @log.replace @game.log.join("\n")
-    # One button per knapsack entry: gold and sandwiches ready a gift, eggs are held up to the light, a weapon
+    # One button per backpack entry: gold and sandwiches ready a gift, eggs are held up to the light, a weapon
     # kind wields one of them
     @packed.clear do
       @game.contents.each do |text, slot|

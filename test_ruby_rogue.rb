@@ -3175,6 +3175,31 @@ class DungeonTest < Minitest::Test
     assert_equal "You pack the open sandwich into your backpack.", last_log
   end
 
+  def test_g_gathers_eggs_close_by
+    arrange_arena
+    arrange_set :eggs, { [4, 4] => [egg, egg] }
+
+    @game.grab
+    assert_equal "Grab a. the 2 eggs?", last_log
+    @game.grab_pick("a")
+
+    assert_equal 2, @game.backpack[:eggs].size
+    assert_empty assert_get(:eggs)
+    assert_includes @game.log, "You gather 2 Quail eggs from the nest."
+  end
+
+  def test_g_takes_no_turn_when_the_backpack_is_too_full_for_an_egg
+    arrange_arena
+    arrange_set :eggs, { [4, 4] => [egg] }
+    assert_get(:backpack)[:gold] = 3_000 # 60 pounds
+
+    @game.grab
+    @game.grab_pick("a")
+
+    assert_equal 1, assert_get(:eggs)[[4, 4]].size
+    assert_equal "Your backpack is too full for the egg.", last_log
+  end
+
   def test_grabbing_a_gold_mimic_springs_it
     arrange_arena
     arrange_set :treasure, { [4, 4] => 12 }

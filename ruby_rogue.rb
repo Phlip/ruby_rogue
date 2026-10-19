@@ -227,7 +227,7 @@ class Dungeon
       transitions: {[LockState,      StateEvent::KEY]        => UnlockingState,
                     [UnlockingState, StateEvent::REMOVE_KEY] => LockState,
                     [UnlockingState, StateEvent::TIMER]      => SandwichOpenState,
-                    [SandwichOpenState,      StateEvent::KEY]        => LockState,}
+                    [SandwichOpenState, StateEvent::KEY]        => LockState,}
     },
     { glyph: "?", name: "scroll of 3 potions", na:  1, cr: 6, hp:  3, hit: 0..0, ac:  2, str:  2, dex:  0, con:  2, int:  0, wis:  0, cha:  0, pacifist: true, packable: 0.1,
       transitions: {[LockState,      StateEvent::KEY]        => UnlockingState,
@@ -2275,10 +2275,10 @@ class Dungeon
 
   # Everything grabbable within a square of the player, facing it or not: the noticed loot on each body, each item
   # lying about but a Toolbag, which jumps in by itself, each shield or weapon lying about not fighting the player, the weapon in each armed creature's hands, an ally's
-  # excepted, each pile of gold, and each sandwich, wrapped or open. Each is { label:, stem:, spot: } for a body,
-  # { label:, stem:, item: } for an item, { label:, stem:, holder: } for a creature, { label:, stem:, gold: } for a
-  # pile, or { label:, stem:, sandwich: } for a sandwich, its label as the grab prompt lists it and its stem as the
-  # DOS box's shorter prompt does
+  # excepted, each pile of gold, each spot's eggs, and each sandwich, wrapped or open. Each is { label:, stem:, spot: }
+  # for a body, { label:, stem:, item: } for an item, { label:, stem:, holder: } for a creature, { label:, stem:, gold: }
+  # for a pile, { label:, stem:, eggs: } for eggs, or { label:, stem:, sandwich: } for a sandwich, its label as the
+  # grab prompt lists it and its stem as the DOS box's shorter prompt does
   def grabbables
     near = ->(x, y) { (x - @px).abs <= 1 && (y - @py).abs <= 1 }
     bodies = (@bodies ||= {}).select { |(x, y), body| body[:noticed] && near.(x, y) }.map do |spot, body|
@@ -2295,9 +2295,12 @@ class Dungeon
         stem: stem(m.weapon[:name]), holder: m }
     end
     piles = @treasure.keys.select { |x, y| near.(x, y) }.map { |spot| { label: "the pile of gold", stem: "gold", gold: spot } }
+    clutches = @eggs.select { |(x, y), laid| laid.any? && near.(x, y) }.map do |spot, laid|
+      { label: laid.size == 1 ? "the egg" : "the #{laid.size} eggs", stem: "egg", eggs: spot }
+    end
     foods = @monsters.select { |m| m.name == "sandwich" && !mist?(m) && near.(m.x, m.y) }
                      .map { |m| { label: "the sandwich", stem: "sandwich", sandwich: m } }
-    bodies + items + holders + piles + foods
+    bodies + items + holders + piles + clutches + foods
   end
 
   # The one word a thing goes by, e.g. "shield" for a light shield, "potion" for a sleep potion or a potion of sight
@@ -2355,7 +2358,7 @@ class Dungeon
   # wrenching one from an opponent's grip is a Strength contest, its strength against the player's, and either way
   # wakes it up to fight. A potion goes in the backpack, and a weapon in hand, if the player is down to their fists
   # and it isn't ranged, or else in the backpack; no room for it, no turn. A wrapped sandwich is stowed wrapping and
-  # all, and an open one packed to eat
+  # all, and an open one packed to eat. Gold and eggs come as stepping onto them would bring them
   def grab_pick(key)
     over? and return
     options = @grab_question or return
@@ -2366,6 +2369,14 @@ class Dungeon
     if (spot = option[:gold])
       @treasure.key?(spot) or return
       mimic?(spot) ? spring_mimic(*spot) : take_gold(spot)
+      return end_turn
+    end
+    if (spot = option[:eggs])
+      @eggs[spot]&.any? or return
+      before = @eggs[spot].size
+      take_eggs(spot)
+      return if @eggs[spot]&.size == before # a full backpack says so, with no turn
+
       return end_turn
     end
     if (food = option[:sandwich])
@@ -3212,7 +3223,13 @@ class Dungeon
       say taken == count ? "You pack #{count == 1 ? "a sandwich" : "#{count} sandwiches"} into your backpack." :
                            "Your backpack has room for only #{taken} of the #{count} sandwiches here."
     end
-    return unless (laid = @eggs.delete(spot))
+    take_eggs(spot)
+  end
+
+  # Gathers the eggs at spot, if any, into the backpack, as many as it has room for; the rest stay put. Taking a
+  # nest's eggs stirs its nesting Quail to follow them
+  def take_eggs(spot)
+    (laid = @eggs.delete(spot)) or return
 
     taken = fitting(laid.size, Dungeon.pounds(EGG_POUNDS))
     @eggs[spot] = laid.drop(taken) if taken < laid.size

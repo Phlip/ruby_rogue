@@ -3147,6 +3147,34 @@ class DungeonTest < Minitest::Test
     assert_includes @game.log, "You find 12 gold!"
   end
 
+  def test_g_stows_a_wrapped_sandwich_close_by_wrapping_and_all
+    arrange_arena
+    arrange_sandwich_at(4, 6)
+
+    @game.grab
+    assert_equal "Grab a. the sandwich?", last_log
+    @game.grab_pick("a")
+
+    assert_empty assert_get(:monsters)
+    assert_equal [3], @game.backpack[:tough_sandwiches]
+    assert_equal "You stow the sandwich, wrapping and all.", last_log
+  end
+
+  def test_g_packs_an_open_sandwich_to_eat
+    arrange_arena
+    food = arrange_sandwich_at(6, 5).last
+    3.times { @game.tap }
+    assert_instance_of Dungeon::SandwichOpenState, wrapping(food)
+
+    @game.grab
+    @game.grab_pick("a")
+
+    assert_empty assert_get(:monsters)
+    assert_equal 1, @game.backpack[:sandwiches]
+    assert_empty @game.backpack[:tough_sandwiches]
+    assert_equal "You pack the open sandwich into your backpack.", last_log
+  end
+
   def test_grabbing_a_gold_mimic_springs_it
     arrange_arena
     arrange_set :treasure, { [4, 4] => 12 }

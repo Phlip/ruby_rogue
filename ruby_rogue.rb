@@ -207,21 +207,21 @@ class Dungeon
       transitions: doorLikeTransitions },
     { glyph: "?", name: "scroll of mapping", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.1,
       transitions: doorLikeTransitions },
-    { glyph: "!", name: "slow potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
+    { glyph: "¡", name: "slow potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
       transitions: doorLikeTransitions },
-    { glyph: "!", name: "healing potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
+    { glyph: "¡", name: "healing potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
       transitions: doorLikeTransitions },
     { glyph: "¡", name: "water potion", na: 3, cr: 1, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
       transitions: doorLikeTransitions },
-    { glyph: "!", name: "hallucination potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
+    { glyph: "¡", name: "hallucination potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
       transitions: doorLikeTransitions },
-    { glyph: "!", name: "sleep potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
+    { glyph: "¡", name: "sleep potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
       transitions: doorLikeTransitions },
-    { glyph: "!", name: "glue potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
+    { glyph: "¡", name: "glue potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
       transitions: doorLikeTransitions },
-    { glyph: "!", name: "slip potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
+    { glyph: "¡", name: "slip potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
       transitions: doorLikeTransitions },
-    { glyph: "!", name: "empty potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
+    { glyph: "¡", name: "empty potion", na: 3, cr: 3, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 0.5,
       transitions: doorLikeTransitions },
     { glyph: "%", name: "sandwich",   na: 20, cr: 4, out_of_band: true, hp: 3, hit: 0..0, ac: 2, str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0, pacifist: true, packable: 1,
       transitions: {[LockState,      StateEvent::KEY]        => UnlockingState,
@@ -254,7 +254,6 @@ class Dungeon
         [UnlockingState, StateEvent::REMOVE_KEY] => LockState,
       [UnlockingState, StateEvent::TIMER]      => OpenState,
       [OpenState,      StateEvent::KEY]        => LockState,}
-
     }
   ]
 
@@ -2276,9 +2275,10 @@ class Dungeon
 
   # Everything grabbable within a square of the player, facing it or not: the noticed loot on each body, each item
   # lying about but a Toolbag, which jumps in by itself, each shield or weapon lying about not fighting the player, the weapon in each armed creature's hands, an ally's
-  # excepted, and each pile of gold. Each is { label:, stem:, spot: } for a body, { label:, stem:, item: } for an item,
-  # { label:, stem:, holder: } for a creature, or { label:, stem:, gold: } for a pile, its label as the grab prompt
-  # lists it and its stem as the DOS box's shorter prompt does
+  # excepted, each pile of gold, and each sandwich, wrapped or open. Each is { label:, stem:, spot: } for a body,
+  # { label:, stem:, item: } for an item, { label:, stem:, holder: } for a creature, { label:, stem:, gold: } for a
+  # pile, or { label:, stem:, sandwich: } for a sandwich, its label as the grab prompt lists it and its stem as the
+  # DOS box's shorter prompt does
   def grabbables
     near = ->(x, y) { (x - @px).abs <= 1 && (y - @py).abs <= 1 }
     bodies = (@bodies ||= {}).select { |(x, y), body| body[:noticed] && near.(x, y) }.map do |spot, body|
@@ -2295,7 +2295,9 @@ class Dungeon
         stem: stem(m.weapon[:name]), holder: m }
     end
     piles = @treasure.keys.select { |x, y| near.(x, y) }.map { |spot| { label: "the pile of gold", stem: "gold", gold: spot } }
-    bodies + items + holders + piles
+    foods = @monsters.select { |m| m.name == "sandwich" && !mist?(m) && near.(m.x, m.y) }
+                     .map { |m| { label: "the sandwich", stem: "sandwich", sandwich: m } }
+    bodies + items + holders + piles + foods
   end
 
   # The one word a thing goes by, e.g. "shield" for a light shield, "potion" for a sleep potion or a potion of sight
@@ -2352,7 +2354,8 @@ class Dungeon
   # Grabbing takes a turn. Loot off a body, or a weapon from the hands of an unconscious creature, comes freely;
   # wrenching one from an opponent's grip is a Strength contest, its strength against the player's, and either way
   # wakes it up to fight. A potion goes in the backpack, and a weapon in hand, if the player is down to their fists
-  # and it isn't ranged, or else in the backpack; no room for it, no turn
+  # and it isn't ranged, or else in the backpack; no room for it, no turn. A wrapped sandwich is stowed wrapping and
+  # all, and an open one packed to eat
   def grab_pick(key)
     over? and return
     options = @grab_question or return
@@ -2363,6 +2366,20 @@ class Dungeon
     if (spot = option[:gold])
       @treasure.key?(spot) or return
       mimic?(spot) ? spring_mimic(*spot) : take_gold(spot)
+      return end_turn
+    end
+    if (food = option[:sandwich])
+      @monsters.include?(food) or return
+      room_for?(pounds(:sandwiches)) or return say("Your backpack is too full for the sandwich.")
+
+      @monsters.delete(food)
+      if food_machine(food).state.is_a?(OpenState)
+        @backpack[:sandwiches] += 1
+        say "You pack the open sandwich into your backpack."
+      else
+        @backpack[:tough_sandwiches] << food.hp # its wrapping still to work through, as stow_it keeps it
+        say "You stow the sandwich, wrapping and all."
+      end
       return end_turn
     end
     if (item = option[:item])

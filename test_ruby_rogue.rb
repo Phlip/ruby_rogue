@@ -2716,10 +2716,12 @@ class DungeonTest < Minitest::Test
     game = dos.instance_variable_get(:@game)
     game.instance_variable_set(:@monsters, [])
     game.instance_variable_set(:@treasure, {})
+    game.instance_variable_set(:@sandwiches, {})
+    game.instance_variable_set(:@eggs, {})
     game.instance_variable_set(:@bodies, { [game.instance_variable_get(:@px) + 1, game.instance_variable_get(:@py)] =>
                                              { name: "rat", loot: { potion: :sleep_potions }, noticed: true } })
     dos.press("G")
-    assert_equal "Grab which? (a.potion; Esc cancels)", dos.send(:prompt)
+    assert_equal "Grab which? (a.potion Esc cancels)", dos.send(:prompt)
     dos.press("a")
     assert_equal 1, game.backpack[:sleep_potions]
   end
@@ -2730,12 +2732,32 @@ class DungeonTest < Minitest::Test
     px, py = game.instance_variable_get(:@px), game.instance_variable_get(:@py)
     game.instance_variable_set(:@bodies, {})
     game.instance_variable_set(:@treasure, {})
+    game.instance_variable_set(:@sandwiches, {})
+    game.instance_variable_set(:@eggs, {})
     game.instance_variable_set(:@monsters, [arrange_thing(px - 1, py, "]", "light shield", 1, 0..0, pacifist: true),
                                             arrange_thing(px + 1, py, "¡", "potion", 3, 0..0, pacifist: true)])
 
     dos.press("G")
 
-    assert_equal "Grab which? (a.shield b.potion; Esc cancels)", dos.send(:prompt)
+    assert_equal "Grab which? (a.shield b.potion Esc cancels)", dos.send(:prompt)
+  end
+
+  def test_the_dos_box_asks_grab_which_on_the_prompt_line_alone
+    dos = DosBox.new
+    game = dos.instance_variable_get(:@game)
+    px, py = game.instance_variable_get(:@px), game.instance_variable_get(:@py)
+    game.instance_variable_set(:@bodies, {})
+    game.instance_variable_set(:@monsters, [])
+    game.instance_variable_set(:@treasure, { [px - 1, py - 1] => 7 })
+    game.instance_variable_set(:@sandwiches, {})
+    game.instance_variable_set(:@eggs, {})
+
+    dos.press("G")
+
+    assert_equal "Grab a. the pile of gold?", game.log.last, "the game's log still asks"
+    lines = dos.send(:lines)
+    refute(lines.any? { |line| line.start_with?("Grab a.") }, "the screen doesn't")
+    assert_equal "Grab which? (a.gold Esc cancels)", lines.last
   end
 
   def test_the_dos_box_grab_prompt_calls_a_pile_of_gold_gold
@@ -2745,10 +2767,12 @@ class DungeonTest < Minitest::Test
     game.instance_variable_set(:@bodies, {})
     game.instance_variable_set(:@monsters, [])
     game.instance_variable_set(:@treasure, { [px - 1, py - 1] => 7 })
+    game.instance_variable_set(:@sandwiches, {})
+    game.instance_variable_set(:@eggs, {})
 
     dos.press("G")
 
-    assert_equal "Grab which? (a.gold; Esc cancels)", dos.send(:prompt)
+    assert_equal "Grab which? (a.gold Esc cancels)", dos.send(:prompt)
   end
 
   def test_capital_g_grabs_in_the_dos_box
@@ -3002,10 +3026,35 @@ class DungeonTest < Minitest::Test
     assert(counts.all? { |n| n <= 1 }, "depth 1 only gets the extra potion")
   end
 
+  # Stray eggs, off any nest, on each of 50 freshly built levels at this depth
+  def stray_eggs(depth)
+    50.times.map do |seed|
+      srand(seed)
+      @game = Dungeon.new
+      arrange_set :depth, depth
+      @game.send(:build_level)
+      assert_get(:eggs).reject { |spot, _| spot == assert_get(:nest) }.values.flatten.reject(&:axebeak)
+    end
+  end
+
+  def test_levels_4_thru_8_sometimes_hold_one_stray_real_quail_egg
+    (4..8).each do |depth|
+      counts = stray_eggs(depth).map(&:size)
+      assert_includes counts, 0, "depth #{depth}: not every level"
+      assert_includes counts, 1, "depth #{depth}: some level"
+      assert(counts.all? { |n| n <= 1 }, "depth #{depth}: one at most")
+      assert(stray_eggs(depth).flatten.none?(&:dodo), "depth #{depth}: a real Quail egg")
+    end
+  end
+
+  def test_no_stray_eggs_outside_levels_4_thru_8
+    [3, 9].each { |depth| assert(stray_eggs(depth).all?(&:empty?), "depth #{depth}") }
+  end
+
   # --- the Quail's placement ---
 
   # Quails on each of 50 freshly built levels at this depth
-  def quail_counts(depth)
+  def activate_quail_counts(depth)
     50.times.map do |seed|
       srand(seed)
       @game = Dungeon.new
@@ -3016,30 +3065,135 @@ class DungeonTest < Minitest::Test
   end
 
   def test_no_quail_before_depth_five
-    assert(quail_counts(4).all?(&:zero?))
+    assert(activate_quail_counts(4).all?(&:zero?))
   end
 
   def test_about_half_the_levels_at_depth_five_hold_one_quail
-    counts = quail_counts(5)
+    counts = activate_quail_counts(5)
     assert(counts.all? { |n| n <= 1 }, "never more than one")
     assert_in_delta 25, counts.sum, 12, "about half of 50 levels"
   end
 
   def test_from_depth_six_every_two_levels_add_a_quail
     { 6 => 1, 7 => 1, 8 => 2, 9 => 2, 10 => 3, 13 => 4 }.each do |depth, quails|
-      assert_equal [quails] * 50, quail_counts(depth), "depth #{depth}"
+      assert_equal [quails] * 50, activate_quail_counts(depth), "depth #{depth}"
     end
   end
 
+  def assert_quail_egg_spots = assert_get(:eggs).count { |_, laid| laid.none?(&:axebeak) }
+
   def test_from_depth_eight_one_quail_nests_in_a_hatchery
+    quail_eggs = dodo_eggs = 0
     activate_building_levels_at(8) do |seed|
       quails = assert_get(:monsters).select { |m| m.name == "Quail" }
       assert_equal 1, quails.count(&:nesting), "seed #{seed}: one nesting Quail"
-      assert_equal 1, assert_get(:eggs).size, "seed #{seed}: one nest of eggs"
+      nest = assert_get(:eggs)[assert_get(:nest)]
+      assert_includes 1..3, nest.size, "seed #{seed}: one nest of 1-3 eggs"
+      assert_operator assert_quail_egg_spots, :<=, 2, "seed #{seed}: besides the nest, one stray egg at most"
+      quail_eggs += nest.count { |e| !e.dodo }
+      dodo_eggs += nest.count(&:dodo)
       hatchery = assert_get(:rooms).find { |r| @game.send(:in_room?, r, *assert_get(:nest)) }
       refute_includes [assert_get(:rooms).first, assert_get(:cage_room)], hatchery, "seed #{seed}: a room of its own"
     end
-    activate_building_levels_at(7) { |seed| assert_empty assert_get(:eggs), "seed #{seed}: no hatchery above depth 8" }
+    assert_operator quail_eggs, :>, dodo_eggs, "the nests hold mostly real Quail eggs"
+    assert_operator dodo_eggs, :>, 0, "with Dodo eggs slipped in among them"
+    assert_equal 0.25, Dungeon::NEST_DODO_CHANCE
+    assert_equal 100, Dungeon::EGG_XP, "a Quail egg's XP on the elevator ride"
+    assert_equal 100, Dungeon::EGG_XP, "a Dodo egg's XP on the elevator ride"
+
+    activate_building_levels_at(7) do |seed|
+      assert_nil assert_get(:nest), "seed #{seed}: no hatchery above depth 8"
+      assert_operator assert_quail_egg_spots, :<=, 1, "seed #{seed}: a stray egg at most"
+    end
+  end
+
+  # --- Axebeak eggs ---
+
+  def test_from_the_axebeaks_cr_some_levels_hold_an_axebeak_egg
+    axebeak_eggs = ->(depth) { activate_building_levels_at(depth, seeds: 50) { assert_get(:eggs).values.flatten.select(&:axebeak) } }
+    counts = axebeak_eggs.(5).map(&:size)
+    assert_includes counts, 0
+    assert_includes counts, 1
+    assert(counts.all? { |n| n <= 1 }, "one at most")
+    assert(axebeak_eggs.(5).flatten.all? { |e| Dungeon::AXEBEAK_FUSE.cover?(e.fuse) }, "each with its fuse")
+    assert(axebeak_eggs.(4).all?(&:empty?), "none above the Axebeak's cr")
+    assert_equal 0.25, Dungeon::AXEBEAK_EGG_CHANCE
+    assert_equal 0.5, Dungeon::AXEBEAK_DEVELOPED_CHANCE
+    assert_equal 15..30, Dungeon::AXEBEAK_FUSE
+  end
+
+  def test_a_developed_axebeak_egg_carried_too_far_hatches_a_full_grown_axebeak
+    arrange_arena
+    quail_egg = egg(true)
+    assert_get(:backpack)[:eggs] = [quail_egg, axebeak_egg(true, fuse: 2)]
+
+    @game.move(1, 0)
+    assert_equal 2, @game.backpack[:eggs].size, "a square left on its fuse"
+    @game.move(1, 0)
+
+    assert_equal [quail_egg], @game.backpack[:eggs]
+    axebeak = assert_get(:monsters).find { |m| m.name == "Axebeak" }
+    assert axebeak, "it hatched"
+    assert axebeak.aggressive, "out to fight"
+    assert_includes @game.log, "An Axebeak egg in your backpack hatches! Out bursts a full grown Axebeak!"
+  end
+
+  def test_a_yolk_axebeak_egg_carried_too_far_hatches_an_imp_axebeak
+    arrange_arena
+    assert_get(:backpack)[:eggs] = [axebeak_egg(false, fuse: 1)]
+
+    @game.move(1, 0)
+
+    assert_empty @game.backpack[:eggs]
+    imp = assert_get(:monsters).find { |m| m.name == "imp Axebeak" }
+    assert imp, "it hatched"
+    assert_operator (imp.x - player[0]).abs, :<=, 1, "beside the player"
+    assert_includes @game.log, "An Axebeak egg in your backpack hatches! Out climbs an imp Axebeak."
+  end
+
+  def test_an_axebeak_egg_lying_on_the_floor_never_burns_its_fuse
+    arrange_arena
+    arrange_set :eggs, { [9, 9] => [axebeak_egg(true, fuse: 1)] }
+
+    3.times { @game.move(1, 0) }
+
+    assert_equal 1, assert_get(:eggs)[[9, 9]].first.fuse
+    assert_empty assert_get(:monsters)
+  end
+
+  def test_gathering_and_candling_tell_an_axebeak_egg_apart
+    arrange_arena
+    arrange_set :eggs, { [6, 5] => [axebeak_egg(true)] }
+
+    @game.move(1, 0)
+    assert_includes @game.log, "You gather an Axebeak egg."
+    @game.candle
+
+    assert_equal "It's an Axebeak's egg.", last_log
+  end
+
+  def test_an_axebeak_egg_hatches_no_quail_chick_in_the_safe_room
+    arrange_player_one_step_from_the_cage_plate
+    assert_get(:backpack)[:eggs] = [axebeak_egg(true)]
+    arrange_quail(12, 12)
+
+    activate_stepping_onto_the_cage_plate
+
+    refute @game.won?
+    assert_includes @game.log, "The bars slam down behind you. Your haul: a Quail and 1 other egg."
+  end
+
+  def test_every_egg_of_any_kind_earns_xp_on_the_elevator_ride
+    arrange_player_one_step_from_the_cage_plate
+    assert_get(:backpack)[:eggs] = [egg(true), egg(false), dodo_egg(true), axebeak_egg(true)]
+    arrange_quail(12, 12)
+    xp = @game.experience_points
+
+    activate_stepping_onto_the_cage_plate
+
+    assert_equal xp + 4 * 100, @game.experience_points
+    assert_equal 100, Dungeon::EGG_XP
+    assert_includes @game.log, "The Safe Room rides up. Your 4 eggs earn you 400 XP."
   end
 
   def test_walking_into_a_potion_packs_it_without_drinking
@@ -3175,6 +3329,34 @@ class DungeonTest < Minitest::Test
     assert_equal "You pack the open sandwich into your backpack.", last_log
   end
 
+  def test_g_packs_a_loose_sandwich_close_by
+    arrange_arena
+    arrange_set :sandwiches, { [5, 6] => 1 }
+
+    @game.grab
+    assert_equal "Grab a. the sandwich?", last_log
+    @game.grab_pick("a")
+
+    assert_equal 1, @game.backpack[:sandwiches]
+    assert_empty assert_get(:sandwiches)
+    assert_equal "You pack a sandwich into your backpack.", last_log
+  end
+
+  def test_the_dos_box_grab_prompt_calls_a_loose_sandwich_sandwich
+    dos = DosBox.new
+    game = dos.instance_variable_get(:@game)
+    px, py = game.instance_variable_get(:@px), game.instance_variable_get(:@py)
+    game.instance_variable_set(:@bodies, {})
+    game.instance_variable_set(:@monsters, [])
+    game.instance_variable_set(:@treasure, {})
+    game.instance_variable_set(:@eggs, {})
+    game.instance_variable_set(:@sandwiches, { [px, py + 1] => 1 })
+
+    dos.press("G")
+
+    assert_equal "Grab which? (a.sandwich Esc cancels)", dos.send(:prompt)
+  end
+
   def test_g_gathers_eggs_close_by
     arrange_arena
     arrange_set :eggs, { [4, 4] => [egg, egg] }
@@ -3198,6 +3380,66 @@ class DungeonTest < Minitest::Test
 
     assert_equal 1, assert_get(:eggs)[[4, 4]].size
     assert_equal "Your backpack is too full for the egg.", last_log
+  end
+
+  def test_g_offers_all_the_gold_as_one_choice_and_all_the_sandwiches_as_another_each_taken_in_one_turn
+    arrange_arena
+    arrange_set :treasure, { [4, 6] => 10, [5, 6] => 20 }
+    arrange_set :sandwiches, { [6, 6] => 2 }
+    arrange_sandwich_at(4, 5)
+
+    @game.grab
+    assert_equal "Grab a. the 2 piles of gold, b. the 3 sandwiches?", last_log
+    @game.grab_pick("a")
+    assert_equal 30, @game.backpack[:gold]
+    assert_empty assert_get(:treasure)
+
+    @game.grab
+    assert_equal "Grab a. the 3 sandwiches?", last_log
+    @game.grab_pick("b")
+    assert_equal 0, @game.backpack[:sandwiches], "b is no longer a choice"
+    @game.grab
+    @game.grab_pick("a")
+    assert_equal 2, @game.backpack[:sandwiches]
+    assert_equal [3], @game.backpack[:tough_sandwiches]
+    assert_empty assert_get(:sandwiches)
+    assert_empty assert_get(:monsters)
+  end
+
+  def test_grabbing_all_the_gold_takes_one_turn
+    arrange_arena
+    arrange_set :treasure, { [4, 6] => 10, [5, 6] => 20 }
+    turns = 0
+    @game.define_singleton_method(:end_turn) { turns += 1 }
+
+    @game.grab
+    @game.grab_pick("a")
+
+    assert_equal 1, turns
+  end
+
+  def test_tapping_a_mundane_pile_of_gold_finds_its_gold_pieces
+    arrange_arena
+    arrange_set :facing, [1, 0]
+    arrange_set :treasure, { [6, 5] => 17 }
+
+    @game.tap
+
+    assert_equal "You find 17 gold pieces.", last_log
+    assert_equal 17, @game.backpack[:gold]
+    assert_empty assert_get(:treasure)
+  end
+
+  def test_tapping_a_gold_mimic_springs_it
+    arrange_arena
+    arrange_set :facing, [1, 0]
+    arrange_set :treasure, { [6, 5] => 17 }
+    assert_get(:mimics)[[6, 5]] = true
+
+    @game.tap
+
+    assert_equal 0, @game.backpack[:gold]
+    assert_equal [Dungeon::GOLD_MIMIC], assert_get(:monsters).map(&:name)
   end
 
   def test_grabbing_a_gold_mimic_springs_it
@@ -4498,6 +4740,15 @@ class DungeonTest < Minitest::Test
     assert_includes @game.log, "The bars slam down behind you. Your haul: a Quail, a goblin, 35 gold, and 1 sandwich."
   end
 
+  def test_the_haul_counts_creatures_of_a_kind_together
+    arrange_player_one_step_from_the_cage_plate
+    assert_get(:backpack)[:eggs] = [egg(true)]
+    arrange_quail(12, 12)
+    arrange_quail(13, 12)
+    activate_stepping_onto_the_cage_plate
+    assert_includes @game.log, "The bars slam down behind you. Your haul: 2 Quails and 1 Quail egg."
+  end
+
   def test_a_developed_egg_in_your_backpack_hatches_and_wins
     arrange_player_one_step_from_the_cage_plate
     assert_get(:backpack)[:eggs] = [egg(true), egg(false)]
@@ -5082,6 +5333,7 @@ class DungeonTest < Minitest::Test
   end
 
   def dodo_egg(developed = false) = Dungeon::Egg.new(developed, false, true)
+  def axebeak_egg(developed = false, fuse: 20) = Dungeon::Egg.new(developed, false, nil, true, fuse)
 
   def test_a_dodo_drops_an_egg_where_it_stands_and_wanders_off
     arrange_arena
@@ -9341,6 +9593,15 @@ class DosBoxTest < Minitest::Test
     assert_equal "The adventure is over. Play again? (y/n)", prompt_line
     arrange_set :won, true
     assert_equal "You won! Play again? (y/n)", prompt_line
+  end
+
+  def test_play_again_leaves_out_an_ending_the_log_just_said
+    arrange_set :trapped, true
+    game.send(:say, "No egg in your haul hatches. The adventure is over.")
+    assert_equal "Play again? (y/n)", prompt_line
+    arrange_set :won, true
+    game.send(:say, "An egg hatches, and Quail chicks peep in the Safe Room. You won!")
+    assert_equal "Play again? (y/n)", prompt_line
   end
 
   def test_a_key_that_breaks_the_game_offers_another_or_a_graceful_exit

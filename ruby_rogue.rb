@@ -247,6 +247,8 @@ class Dungeon
       transitions: doorLikeTransitions },
     { glyph: "I", name: "Imp",      na:  4, cr: 2, hp:  3, hit: 1..2, ac: 12, str:  6, dex: 16, con:  8, int:  8, wis:  8, cha:  6, pacifist: true,
       transitions: doorLikeTransitions },
+    { glyph: "a", name: "imp Axebeak", na: 1, cr: 5, out_of_band: true, hp: 6, hit: 1..3, ac: 12, str: 8, dex: 16, con: 10, int: 6, wis: 8, cha: 6, pacifist: false,
+      transitions: doorLikeTransitions },
     { glyph: "D", name: "Dodo",     na:  3, cr: 4, hp:  6, hit: 1..2, ac:  8, str:  8, dex:  6, con: 10, int:  2, wis:  2, cha:  6, pacifist: true,
       transitions: doorLikeTransitions },
     { glyph: "Q", name: "Quail",    na:  1, cr: 5, hp: 28, hit: 4..9, ac: 15, str: 18, dex: 17, con: 16, int: 15, wis: 14, cha: 13, pacifist: true, eats: true,
@@ -610,8 +612,11 @@ class Dungeon
   TELEPORT_CHANCE = 0.5
 
   # An egg is developed, with legs, wings, and a beak, or just yolk; candled once it's been held up to the light,
-  # which also shows a Dodo's egg for what it is
-  Egg = Struct.new(:developed, :candled, :dodo)
+  # which also shows a Dodo's or an Axebeak's egg for what it is. An Axebeak's egg has a fuse: the squares it can
+  # ride in the backpack before it hatches there
+  Egg = Struct.new(:developed, :candled, :dodo, :axebeak, :fuse) do
+    def quail? = !dodo && !axebeak
+  end
 
   # The first depth where a Quail always turns up; shallower than this, from the Quail's cr, it's a coin toss.
   # From here on, every two levels deeper add one more
@@ -1012,9 +1017,8 @@ class Dungeon
 
   # Eggs by whose they are, as gathering tells them apart: "a Quail egg", or "2 Quail eggs and a Dodo egg"
   def egg_kinds(eggs)
-    dodos = eggs.count(&:dodo)
-    kinds = [["Quail", eggs.size - dodos], ["Dodo", dodos]].select { |_, n| n.positive? }
-    and_list(kinds.map { |kind, n| n == 1 ? "a #{kind} egg" : "#{n} #{kind} eggs" })
+    kinds = [["Quail", eggs.count(&:quail?)], ["Dodo", eggs.count(&:dodo)], ["Axebeak", eggs.count(&:axebeak)]]
+    and_list(kinds.select { |_, n| n.positive? }.map { |kind, n| n == 1 ? "#{a_name(kind)} egg" : "#{n} #{kind} eggs" })
   end
 
   # "3 eggs", and once candled, what the light showed, e.g. "3 eggs (1 developed, 1 yolk, 1 unknown)"
@@ -1025,7 +1029,7 @@ class Dungeon
 
     developed = candled.count(&:developed)
     seen = ["#{developed} developed", "#{candled.size - developed} yolk", "#{eggs.size - candled.size} unknown",
-            "#{candled.count(&:dodo)} Dodo"]
+            "#{candled.count(&:dodo)} Dodo", "#{candled.count(&:axebeak)} Axebeak"]
     "#{text} (#{seen.reject { |s| s.start_with?("0 ") }.join(", ")})"
   end
 
@@ -1048,8 +1052,9 @@ class Dungeon
       seen << "in #{developed == 1 ? "one" : developed} you can see legs, wings, and a beak" if developed.positive?
       say "You hold #{eggs.size} eggs up to the light: #{seen.join("; ")}."
     end
-    dodos = eggs.count(&:dodo)
-    say(eggs.size == 1 ? "It's a Dodo's egg." : "#{dodos == 1 ? "One is" : "#{dodos} are"} a Dodo's.") if dodos.positive?
+    { "Dodo" => eggs.count(&:dodo), "Axebeak" => eggs.count(&:axebeak) }.each do |kind, n|
+      say(eggs.size == 1 ? "It's #{a_name(kind)}'s egg." : "#{n == 1 ? "One is" : "#{n} are"} #{a_name(kind)}'s.") if n.positive?
+    end
     end_turn
   end
 
@@ -1349,6 +1354,10 @@ class Dungeon
     elsif [x, y] == @cage&.dig(:plate)
       press_plate(StateEvent::TAP)
       return if cage_sprung?
+    elsif mimic?([x, y])
+      spring_mimic(x, y)
+    elsif @treasure.key?([x, y])
+      take_gold([x, y], pieces: true) # tapping a mundane pile counts it out into the backpack
     else
       return # tapping a wall or empty air is a bad keystroke: it just disappears, no message and no turn
     end
@@ -1542,6 +1551,7 @@ class Dungeon
     else
       @px, @py = nx, ny
       march
+      carry_eggs
       pick_up
       tread_player
       over? and return
@@ -1824,6 +1834,8 @@ class Dungeon
       quails -= 1
     end
     quails.times { spawn_monster(@rooms.drop(1).sample || @rooms.first, quail) }
+    lay_stray_egg
+    lay_axebeak_egg
 
     # A few doors, living walls, stand at the ends of hallways where a tunnel meets a room; food or a coin opens one
     door = THINGAGES.find { |k| k[:name] == "door" }
@@ -1897,8 +1909,9 @@ class Dungeon
 
   # Stepping onto the plate drops the bars along the line: everything behind them, the player and their backpack
   # included, is the haul. A haul without both an egg and a living Quail is only a practice run, so the adventure
-  # goes on behind the bars until the player steps off the plate and back on. Otherwise it ends: every developed
-  # egg hatches, and a Quail chick, with a Quail to raise it, is a win
+  # goes on behind the bars until the player steps off the plate and back on. Otherwise it ends, with the elevator
+  # ride: every egg in the haul, of any kind, earns EGG_XP, every developed egg hatches, and a Quail chick, with a
+  # Quail to raise it, is a win
   def spring_trap
     caught = @monsters.select { |m| in_trap?(m.x, m.y) }
     floor = ->(items) { items.sum { |spot, n| in_trap?(*spot) ? n : 0 } }
@@ -1906,8 +1919,8 @@ class Dungeon
     coins = gold + floor.(@treasure)
     food = sandwiches + floor.(@sandwiches)
     @caged = { eggs: eggs.size, critters: caught.select { |m| critter?(m) }.map(&:name) }
-    haul = caught.map { |m| a_name(m.name) }
-    quail_eggs, other_eggs = eggs.partition { |e| !e.dodo }
+    haul = caught.group_by(&:name).map { |name, ms| ms.one? ? a_name(name) : "#{ms.size} #{plural(name)}" }
+    quail_eggs, other_eggs = eggs.partition(&:quail?)
     haul << "#{quail_eggs.size} Quail #{quail_eggs.size == 1 ? "egg" : "eggs"}" if quail_eggs.any?
     haul << "#{other_eggs.size} other #{other_eggs.size == 1 ? "egg" : "eggs"}" if other_eggs.any?
     haul << "#{coins} gold" if coins.positive?
@@ -1918,7 +1931,9 @@ class Dungeon
     return say("Without #{missing.join(" and ")}, step off the plate and back on to lift the bars.") if missing.any?
 
     @trapped = true
-    hatched = eggs.count { |e| e.developed && !e.dodo }
+    @experience_points += eggs.size * EGG_XP
+    say "The Safe Room rides up. Your #{eggs.size == 1 ? "egg earns" : "#{eggs.size} eggs earn"} you #{eggs.size * EGG_XP} XP."
+    hatched = eggs.count { |e| e.developed && e.quail? }
     dodos = eggs.count { |e| e.developed && e.dodo }
     @won = hatched.positive?
     return say("No egg in your haul hatches. The adventure is over.") if (hatched + dodos).zero?
@@ -1930,6 +1945,9 @@ class Dungeon
         "#{", with Dodo chicks among them" if dodos.positive?}. You won!"
     record_hero
   end
+
+  # What each egg in the Safe Room's haul earns on the elevator ride, Quail's or Dodo's alike
+  EGG_XP = 100
 
   # A winner's final score: SCORE_PER_CHICK for each Quail chick hatched, SCORE_PER_DEPTH for each level down,
   # and a point for each piece of gold carried and each point of experience
@@ -1998,6 +2016,46 @@ class Dungeon
 
   def lay_egg = Egg.new(rand < developed_chance, false, (true if rand < NEST_DODO_CHANCE))
 
+  # On levels STRAY_EGG_DEPTHS, STRAY_EGG_CHANCE of a level has one stray Quail egg lying in a room past the first,
+  # a real one, never a Dodo's
+  STRAY_EGG_DEPTHS = 4..8
+  STRAY_EGG_CHANCE = 0.3
+
+  def lay_stray_egg
+    STRAY_EGG_DEPTHS.cover?(@depth) && rand < STRAY_EGG_CHANCE or return
+
+    room = (@rooms.drop(1) - [@cage_room]).sample or return
+    @eggs[free_spot(room)] = [Egg.new(rand < developed_chance, false, nil)]
+  end
+
+  # From the Axebeak's cr on, AXEBEAK_EGG_CHANCE of a level has one Axebeak egg lying in a room past the first,
+  # developed AXEBEAK_DEVELOPED_CHANCE of the time, with a fuse of AXEBEAK_FUSE squares
+  AXEBEAK_EGG_CHANCE = 0.25
+  AXEBEAK_DEVELOPED_CHANCE = 0.5
+  AXEBEAK_FUSE = 15..30
+
+  def lay_axebeak_egg
+    @depth >= THINGAGES.find { |k| k[:name] == "Axebeak" }[:cr] && rand < AXEBEAK_EGG_CHANCE or return
+
+    room = (@rooms.drop(1) - [@cage_room]).sample or return
+    @eggs[free_spot(room)] = [Egg.new(rand < AXEBEAK_DEVELOPED_CHANCE, false, nil, true, rand(AXEBEAK_FUSE))]
+  end
+
+  # Each square marched burns a square off every Axebeak egg's fuse in the backpack. One burnt down hatches, onto
+  # an open square beside the player, or waits for one: a developed egg into a full grown Axebeak, and one of just
+  # yolk into an imp Axebeak, either out to fight
+  def carry_eggs
+    @backpack[:eggs].select(&:axebeak).each do |egg|
+      (egg.fuse -= 1).positive? and next
+      spot = [-1, 0, 1].product([-1, 0, 1]).map { |dx, dy| [@px + dx, @py + dy] }.find { |x, y| open_floor?(x, y) } or next
+
+      @backpack[:eggs].delete_at(@backpack[:eggs].index { |e| e.equal?(egg) })
+      kind = egg.developed ? "Axebeak" : "imp Axebeak"
+      spawn_monster(nil, THINGAGES.find { |k| k[:name] == kind }, at: spot).last.aggressive = true
+      say "An Axebeak egg in your backpack hatches! #{egg.developed ? "Out bursts a full grown Axebeak!" : "Out climbs an imp Axebeak."}"
+    end
+  end
+
   # A nest of 1-3 eggs in a room of its own, with a nesting Quail beside it that won't leave while its eggs lie there
   def nest_quail(quail)
     room = (@rooms.drop(1) - [@cage_room]).sample || @rooms.first
@@ -2052,7 +2110,7 @@ class Dungeon
     loop do
       spot = [rand(room[:x]...room[:x] + room[:w]), rand(room[:y]...room[:y] + room[:h])]
       next if spot == [@px, @py] || STAIRS.key?(@map[spot[1]][spot[0]]) || spot == @cage&.dig(:plate)
-      next if @treasure.key?(spot) || @sandwiches.key?(spot) || @plates.key?(spot) || @traps&.key?(spot) || monster_at(*spot)
+      next if @treasure.key?(spot) || @sandwiches.key?(spot) || @plates.key?(spot) || @traps&.key?(spot) || @eggs&.key?(spot) || monster_at(*spot)
 
       return spot
     end
@@ -2275,10 +2333,11 @@ class Dungeon
 
   # Everything grabbable within a square of the player, facing it or not: the noticed loot on each body, each item
   # lying about but a Toolbag, which jumps in by itself, each shield or weapon lying about not fighting the player, the weapon in each armed creature's hands, an ally's
-  # excepted, each pile of gold, each spot's eggs, and each sandwich, wrapped or open. Each is { label:, stem:, spot: }
-  # for a body, { label:, stem:, item: } for an item, { label:, stem:, holder: } for a creature, { label:, stem:, gold: }
-  # for a pile, { label:, stem:, eggs: } for eggs, or { label:, stem:, sandwich: } for a sandwich, its label as the
-  # grab prompt lists it and its stem as the DOS box's shorter prompt does
+  # excepted, and each spot's eggs; then all the gold close by, as one choice, and all the sandwiches, loose or
+  # wrapped or open, as another. Each is { label:, stem:, spot: } for a body, { label:, stem:, item: } for an item,
+  # { label:, stem:, holder: } for a creature, { label:, stem:, eggs: } for eggs, { label:, stem:, gold: } for the
+  # gold's spots, or { label:, stem:, sandwiches:, foods: } for the loose sandwiches' spots and the sandwiches lying
+  # about, its label as the grab prompt lists it and its stem as the DOS box's shorter prompt does
   def grabbables
     near = ->(x, y) { (x - @px).abs <= 1 && (y - @py).abs <= 1 }
     bodies = (@bodies ||= {}).select { |(x, y), body| body[:noticed] && near.(x, y) }.map do |spot, body|
@@ -2294,13 +2353,16 @@ class Dungeon
       { label: m.asleep.to_i.positive? ? "the unconscious #{m.name}'s #{m.weapon[:name]}" : "your opponent's #{m.weapon[:name]}",
         stem: stem(m.weapon[:name]), holder: m }
     end
-    piles = @treasure.keys.select { |x, y| near.(x, y) }.map { |spot| { label: "the pile of gold", stem: "gold", gold: spot } }
     clutches = @eggs.select { |(x, y), laid| laid.any? && near.(x, y) }.map do |spot, laid|
       { label: laid.size == 1 ? "the egg" : "the #{laid.size} eggs", stem: "egg", eggs: spot }
     end
+    piles = @treasure.keys.select { |x, y| near.(x, y) }
+    gold = [{ label: piles.one? ? "the pile of gold" : "the #{piles.size} piles of gold", stem: "gold", gold: piles }]
+    loose = @sandwiches.keys.select { |x, y| @sandwiches[[x, y]].positive? && near.(x, y) }
     foods = @monsters.select { |m| m.name == "sandwich" && !mist?(m) && near.(m.x, m.y) }
-                     .map { |m| { label: "the sandwich", stem: "sandwich", sandwich: m } }
-    bodies + items + holders + piles + clutches + foods
+    count = loose.sum { |spot| @sandwiches[spot] } + foods.size
+    sandwiches = [{ label: count == 1 ? "the sandwich" : "the #{count} sandwiches", stem: "sandwich", sandwiches: loose, foods: foods }]
+    bodies + items + holders + clutches + (piles.any? ? gold : []) + (count.positive? ? sandwiches : [])
   end
 
   # The one word a thing goes by, e.g. "shield" for a light shield, "potion" for a sleep potion or a potion of sight
@@ -2358,7 +2420,8 @@ class Dungeon
   # wrenching one from an opponent's grip is a Strength contest, its strength against the player's, and either way
   # wakes it up to fight. A potion goes in the backpack, and a weapon in hand, if the player is down to their fists
   # and it isn't ranged, or else in the backpack; no room for it, no turn. A wrapped sandwich is stowed wrapping and
-  # all, and an open one packed to eat. Gold and eggs come as stepping onto them would bring them
+  # all, and an open one packed to eat. Gold, eggs, and loose sandwiches come as stepping onto them would bring them.
+  # Choosing the gold takes every pile close by, and choosing the sandwiches every sandwich, in the one turn
   def grab_pick(key)
     over? and return
     options = @grab_question or return
@@ -2366,9 +2429,9 @@ class Dungeon
     index = key.ord - 97 if key.is_a?(String) && key.size == 1
     (option = index&.between?(0, options.size - 1) && options[index]) or return
 
-    if (spot = option[:gold])
-      @treasure.key?(spot) or return
-      mimic?(spot) ? spring_mimic(*spot) : take_gold(spot)
+    if (spots = option[:gold])
+      (spots = spots.select { |spot| @treasure.key?(spot) }).any? or return
+      spots.each { |spot| mimic?(spot) ? spring_mimic(*spot) : take_gold(spot) }
       return end_turn
     end
     if (spot = option[:eggs])
@@ -2379,19 +2442,12 @@ class Dungeon
 
       return end_turn
     end
-    if (food = option[:sandwich])
-      @monsters.include?(food) or return
-      room_for?(pounds(:sandwiches)) or return say("Your backpack is too full for the sandwich.")
+    if option.key?(:sandwiches)
+      took = option[:sandwiches].map { |spot| take_sandwiches(spot) } +
+             option[:foods].select { |food| @monsters.include?(food) }.map { |food| take_food(food) }
+      return end_turn if took.any? # a full backpack says so, with no turn
 
-      @monsters.delete(food)
-      if food_machine(food).state.is_a?(OpenState)
-        @backpack[:sandwiches] += 1
-        say "You pack the open sandwich into your backpack."
-      else
-        @backpack[:tough_sandwiches] << food.hp # its wrapping still to work through, as stow_it keeps it
-        say "You stow the sandwich, wrapping and all."
-      end
-      return end_turn
+      return
     end
     if (item = option[:item])
       @monsters.include?(item) or return
@@ -3045,6 +3101,13 @@ class Dungeon
     items.size < 3 ? items.join(" and ") : "#{items[0...-1].join(", ")}, and #{items.last}"
   end
 
+  # More than one of a name: "Quails", "pairs of gloves"
+  def plural(name)
+    return "pairs of #{name}" if pair?(name)
+
+    name.match?(/(s|x|sh|ch)\z/) ? "#{name}es" : "#{name}s"
+  end
+
   def pair?(name)
     WEAPONS.any? { |w| w[:name] == name && w[:pair] }
   end
@@ -3202,28 +3265,53 @@ class Dungeon
     end
   end
 
-  # Takes the pile of gold at spot, if any, into the backpack, as much as it has room for; the rest stays put
-  def take_gold(spot)
+  # Takes the pile of gold at spot, if any, into the backpack, as much as it has room for; the rest stays put. Counted
+  # out by a tap, it's found in gold pieces
+  def take_gold(spot, pieces: false)
     (coins = @treasure.delete(spot)) or return
 
     taken = fitting(coins, pounds(:gold))
     @backpack[:gold] += taken
     @treasure[spot] = coins - taken if taken < coins
-    say taken == coins ? "You find #{coins} gold!" : "You find #{coins} gold, but your backpack has room for only #{taken}."
+    found = pieces ? "#{coins} gold #{coins == 1 ? "piece" : "pieces"}" : "#{coins} gold"
+    say taken == coins ? "You find #{found}#{pieces ? "." : "!"}" : "You find #{found}, but your backpack has room for only #{taken}."
   end
 
   # Takes what lies here into the backpack, as much as it has room for; the rest stays where it lies
   def pick_up
     spot = [@px, @py]
     take_gold(spot)
-    if (count = @sandwiches.delete(spot))
-      taken = fitting(count, pounds(:sandwiches))
-      @backpack[:sandwiches] += taken
-      @sandwiches[spot] = count - taken if taken < count
-      say taken == count ? "You pack #{count == 1 ? "a sandwich" : "#{count} sandwiches"} into your backpack." :
-                           "Your backpack has room for only #{taken} of the #{count} sandwiches here."
-    end
+    take_sandwiches(spot)
     take_eggs(spot)
+  end
+
+  # Packs the loose sandwiches at spot, if any, as many as the backpack has room for; the rest stay put. Whether it
+  # packed any
+  def take_sandwiches(spot)
+    (count = @sandwiches.delete(spot)) or return false
+
+    taken = fitting(count, pounds(:sandwiches))
+    @backpack[:sandwiches] += taken
+    @sandwiches[spot] = count - taken if taken < count
+    say taken == count ? "You pack #{count == 1 ? "a sandwich" : "#{count} sandwiches"} into your backpack." :
+                         "Your backpack has room for only #{taken} of the #{count} sandwiches here."
+    taken.positive?
+  end
+
+  # Takes a sandwich lying about into the backpack, room allowing: a wrapped one stowed wrapping and all, as stow_it
+  # keeps it, and an open one packed to eat. Whether it took it
+  def take_food(food)
+    room_for?(pounds(:sandwiches)) or return say("Your backpack is too full for the sandwich.") || false
+
+    @monsters.delete(food)
+    if food_machine(food).state.is_a?(OpenState)
+      @backpack[:sandwiches] += 1
+      say "You pack the open sandwich into your backpack."
+    else
+      @backpack[:tough_sandwiches] << food.hp # its wrapping still to work through
+      say "You stow the sandwich, wrapping and all."
+    end
+    true
   end
 
   # Gathers the eggs at spot, if any, into the backpack, as many as it has room for; the rest stay put. Taking a
@@ -3238,7 +3326,7 @@ class Dungeon
     gathered = laid.first(taken)
     @backpack[:eggs].concat(gathered)
     left = laid.size - taken
-    say "You gather #{egg_kinds(gathered)}#{" from the nest" unless laid.all?(&:dodo)}#{", leaving #{left} for want of room" if left.positive?}."
+    say "You gather #{egg_kinds(gathered)}#{" from the nest" unless laid.none?(&:quail?)}#{", leaving #{left} for want of room" if left.positive?}."
     nesters = @monsters.select(&:nesting)
     nesters.each { |m| m.nesting = false }
     say "The nesting Quail stirs and follows its eggs!" if nesters.any?
@@ -4722,13 +4810,15 @@ class DosBox
   end
 
   # The screen's lines: the status, the map with the backpack (or the keys) beside it, the log, any plaque the
-  # finished game earned, and a prompt
+  # finished game earned, and a prompt. While the grab prompt asks, its question leaves the log to the prompt line
   def lines
     panel = panel_lines
     map = @game.cells.map do |row|
       row.map { |glyph, tint| (ink = TINTS[tint]) ? "#{ESC}[#{ink}m#{oem(glyph)}#{ESC}[0m" : oem(glyph) }.join
     end
-    [status] + panel + map + Array.new(4) { |i| @game.log[i].to_s } + plaque_lines + [prompt]
+    log = @game.log
+    log = log[0...-1] if @game.grab_question && log.last.to_s.start_with?("Grab ")
+    [status] + panel + map + Array.new(4) { |i| log[i].to_s } + plaque_lines + [prompt]
   end
 
   # The finished game's plaque, made once per game and hung on the wall: the stylesheet's ASCII art, or, with
@@ -4900,12 +4990,12 @@ class DosBox
 
   def prompt
     return "#{PROMPTS.values.to_h[@pending]} (#{letters}, Esc cancels)" if @pending
-    return "#{ending} Play again? (y/n)" if @error || @game.over?
+    return "#{ending unless @game.log.last.to_s.end_with?(ending)} Play again? (y/n)".lstrip if @error || @game.over?
     return "You want to go #{@game.stairs_question}? (y/n)" if @game.stairs_question
     return "Put this #{@game.take_question.name} in your backpack? (y/N)" if @game.take_question
     return "Stow sandwich in backpack for later? (y/N)" if @game.stow_question
     return "Do you want a refreshing potion of water? (y/N)" if @game.drink_question
-    return "Grab which? (#{@game.grab_question.each_with_index.map { |o, i| "#{(97 + i).chr}.#{o[:stem]}" }.join(" ")}; Esc cancels)" if @game.grab_question
+    return "Grab which? (#{@game.grab_question.each_with_index.map { |o, i| "#{(97 + i).chr}.#{o[:stem]}" }.join(" ")} Esc cancels)" if @game.grab_question
     return @note if @note
     return "Then an arrow sends it that way, or R keeps it" if @game.log.last.to_s.end_with?("which way?")
     return "o: use the tools in the Toolbag to open the door" if @game.tools_ready?

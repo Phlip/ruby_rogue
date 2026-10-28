@@ -235,7 +235,7 @@ class Dungeon
                     [UnlockingState, StateEvent::TIMER]      => OpenState,
                     [OpenState,      StateEvent::KEY]        => LockState,}
     },
-    { glyph: "A", name: "Axebeak",    na:  1, cr: 5, hp: 28, hit: 4..9, ac: 15, str: 18, dex: 17, con: 16, int: 15, wis: 14, cha: 13, pacifist: false, eats: true,
+    { glyph: "A", name: "Axebeak",    na:  2, cr: 5, hp: 28, hit: 4..9, ac: 15, str: 18, dex: 17, con: 16, int: 15, wis: 14, cha: 13, pacifist: false, eats: true,
       transitions: {[LockState,      StateEvent::KEY]        => UnlockingState,
                     [UnlockingState, StateEvent::REMOVE_KEY] => LockState,
                     [UnlockingState, StateEvent::TIMER]      => OpenState,
@@ -249,9 +249,9 @@ class Dungeon
       transitions: doorLikeTransitions },
     { glyph: "a", name: "imp Axebeak", na: 1, cr: 5, out_of_band: true, hp: 6, hit: 1..3, ac: 12, str: 8, dex: 16, con: 10, int: 6, wis: 8, cha: 6, pacifist: false,
       transitions: doorLikeTransitions },
-    { glyph: "D", name: "Dodo",     na:  3, cr: 4, hp:  6, hit: 1..2, ac:  8, str:  8, dex:  6, con: 10, int:  2, wis:  2, cha:  6, pacifist: true,
+    { glyph: "D", name: "Dodo",     na:  3, cr: 7, hp:  6, hit: 1..2, ac:  8, str:  8, dex:  6, con: 10, int:  2, wis:  2, cha:  6, pacifist: true,
       transitions: doorLikeTransitions },
-    { glyph: "Q", name: "Quail",    na:  1, cr: 5, hp: 28, hit: 4..9, ac: 15, str: 18, dex: 17, con: 16, int: 15, wis: 14, cha: 13, pacifist: true, eats: true,
+    { glyph: "Q", name: "Quail",    na:  1, cr: 8, hp: 28, hit: 4..9, ac: 15, str: 18, dex: 17, con: 16, int: 15, wis: 14, cha: 13, pacifist: true, eats: true,
       transitions: {[LockState,      StateEvent::KEY]        => UnlockingState,
         [UnlockingState, StateEvent::REMOVE_KEY] => LockState,
       [UnlockingState, StateEvent::TIMER]      => OpenState,
@@ -620,10 +620,10 @@ class Dungeon
 
   # The first depth where a Quail always turns up; shallower than this, from the Quail's cr, it's a coin toss.
   # From here on, every two levels deeper add one more
-  QUAIL_DEPTH = 6
+  QUAIL_DEPTH = 9
 
   # From this depth on, one of the level's Quails nests in a hatchery: a room of its own with a nest of eggs
-  HATCHERY_DEPTH = 8
+  HATCHERY_DEPTH = 11
 
   def godMode?
     @godMode
@@ -1967,12 +1967,12 @@ class Dungeon
     nil
   end
 
-  # A danger inside the cage's perimeter that keeps its plate from springing: any troll, or a Coyote in its
-  # enraged state, until the player neutralizes it, killing it, winning it over, feeding it, or putting it to sleep
+  # A danger inside the cage's perimeter that keeps its plate from springing: any predator, a hunter on the PREY
+  # table but the Dodo, which only ever goes after Trolls, until the player neutralizes it, killing it, winning it
+  # over, feeding it, or putting it to sleep. There's no sense bringing the bars down on a Quail and its hunter
   def cage_threat
     @monsters.find do |m|
-      in_trap?(m.x, m.y) && m.hp.positive? && !friend?(m) && !m.asleep.to_i.positive? &&
-        (m.name == "Troll" || (m.name == "Coyote" && m.state&.state.is_a?(EnragedState)))
+      in_trap?(m.x, m.y) && m.hp.positive? && !friend?(m) && !m.asleep.to_i.positive? && prey_of(m) && m.name != "Dodo"
     end
   end
 
@@ -2018,7 +2018,7 @@ class Dungeon
 
   # On levels STRAY_EGG_DEPTHS, STRAY_EGG_CHANCE of a level has one stray Quail egg lying in a room past the first,
   # a real one, never a Dodo's
-  STRAY_EGG_DEPTHS = 4..8
+  STRAY_EGG_DEPTHS = 7..11
   STRAY_EGG_CHANCE = 0.3
 
   def lay_stray_egg

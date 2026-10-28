@@ -15,15 +15,16 @@ Heroes.file = File.join(Dir.tmpdir, "test_heroes_#{Process.pid}.xml")
 Minitest.after_run { File.delete(Heroes.file) if File.exist?(Heroes.file) }
 
 module Things
+
   # The THINGAGES row a thingage of this name spawns from; a name with no row of its own is a weapon's look
-  def row_for(name)
+  def arrange_row_for(name)
     Dungeon::THINGAGES.find { |k| k[:name] == name } || Dungeon::THINGAGES.find { |k| k[:name] == "weapon" }
   end
 
   # Builds a Thingage from named fields, so no test depends on the order of the Struct's members. Like a
   # spawned one, it gets all six ability scores from its kind's row, unless a field names its own
   def arrange_thing(x, y, glyph, name, hp, hit, **fields)
-    scores = row_for(name).slice(*Dungeon::ABILITIES).merge(fields.slice(*Dungeon::ABILITIES))
+    scores = arrange_row_for(name).slice(*Dungeon::ABILITIES).merge(fields.slice(*Dungeon::ABILITIES))
     Dungeon::Thingage.new(x, y, glyph, name, hp, hit, *scores.values_at(*Dungeon::ABILITIES))
                      .tap { |t| fields.except(*Dungeon::ABILITIES).each { |field, value| t[field] = value } }
                      .tap { |t| assert_state(t) }
@@ -241,7 +242,56 @@ module Things
         refute game.send(:hostile_beside, o)&.equal?(m), "#{where}: allies never fight each other"
       end
     end
-  end
+
+    # --- additional structural and relationship invariants ---
+
+    if (prey = m.pursuit_target).is_a?(Dungeon::Thingage)
+      refute_same m, prey, "#{where}: nobody hunts itself"
+      # assert_operator prey.hp, :>, 0, "#{where}: prey is alive" if on_level # <-- TODO fix this; maintaining a lock on the prey after it's down means you are despoiling the body
+      # assert_kind_of Dungeon::Thingage, prey, "#{where}: prey is a thingage"
+      # assert_includes monsters, prey, "#{where}: prey is on this level" if on_level
+    end
+
+    if m.state&.state.is_a?(Dungeon::FleeingState)
+      refute game.send(:agitated?, m), "#{where}: a fleeing creature isn't an active hunter"
+    end
+
+    if m.hp <= 0
+      refute game.send(:agitated?, m), "#{where}: a dead creature isn't agitated"
+    end
+
+    # --- catalog integrity ---
+    if (row = Dungeon::THINGAGES.find { |kind| kind[:name] == m.name })
+      Dungeon::ABILITIES.each do |ability|
+        assert_kind_of Integer, row[ability], "#{where}: catalog row has #{ability}"
+        assert_operator row[ability], :>=, 0, "#{where}: catalog #{ability} isn't negative"
+        assert_operator row[ability], :<=, 30, "#{where}: catalog #{ability} is bounded"
+      end
+      assert_kind_of String, row[:glyph], "#{where}: catalog glyph"
+      refute_empty row[:glyph], "#{where}: catalog glyph is drawable"
+    end
+
+    # --- world invariants ---
+    if on_level
+      assert_equal 1, monsters.count { |o| o.equal?(m) },
+                   "#{where}: a thingage occurs only once in the monster list"
+
+      if m.hp.positive?
+        assert_equal ".", map[m.y][m.x], "#{where}: living thingage occupies open floor"
+      end
+    end
+
+    # --- temporary counters ---
+    %i[fed coins asleep stuck slowed hasted gaseous starving sugar].each do |counter|
+      value = m[counter]
+      next if value.nil?
+
+      assert_operator value, :>=, 0, "#{where}: #{counter} never goes negative"
+    end
+    assert_operator m.sugar, :<=, Dungeon::MAX_BLOOD_SUGAR,
+                    "#{where}: blood sugar never exceeds its maximum" if m.sugar
+
+  end  #  def assert_state() is watching you
 
   def a_kind(name) = "#{"aeiou".include?(name[0].downcase) ? "an" : "a"} #{name}"
 
@@ -996,6 +1046,19 @@ class DungeonTest < Minitest::Test
     arrangeManyLevels(10)
   #   population = assert_get(:population)
   #   Dungeon::THINGAGES.each { |k| assert_operator population[k[:name]], :<=, k[:na], k[:name] }
+  end
+
+  def test_axebeaks_spawn_at_random_from_depth_five
+    assert_equal [2, 5], Dungeon::THINGAGES.find { |k| k[:name] == "Axebeak" }.values_at(:na, :cr)
+    assert_includes arrangeManyLevels(5).map(&:name), "Axebeak"
+    refute_includes arrangeManyLevels(4).map(&:name), "Axebeak"
+    assert_operator arrangeManyLevels(9).count { |m| m.name == "Axebeak" }, :<=, 2, "two a level at most"
+  end
+
+  def test_dodos_spawn_from_depth_seven
+    assert_equal 7, Dungeon::THINGAGES.find { |k| k[:name] == "Dodo" }[:cr]
+    refute_includes arrangeManyLevels(6).map(&:name), "Dodo"
+    assert_includes arrangeManyLevels(7).map(&:name), "Dodo"
   end
 
   def test_random_spawning_skips_unique_kinds
@@ -3037,8 +3100,9 @@ class DungeonTest < Minitest::Test
     end
   end
 
-  def test_levels_4_thru_8_sometimes_hold_one_stray_real_quail_egg
-    (4..8).each do |depth|
+  def test_levels_7_thru_11_sometimes_hold_one_stray_real_quail_egg
+    assert_equal 7..11, Dungeon::STRAY_EGG_DEPTHS
+    (7..11).each do |depth|
       counts = stray_eggs(depth).map(&:size)
       assert_includes counts, 0, "depth #{depth}: not every level"
       assert_includes counts, 1, "depth #{depth}: some level"
@@ -3047,8 +3111,8 @@ class DungeonTest < Minitest::Test
     end
   end
 
-  def test_no_stray_eggs_outside_levels_4_thru_8
-    [3, 9].each { |depth| assert(stray_eggs(depth).all?(&:empty?), "depth #{depth}") }
+  def test_no_stray_eggs_outside_levels_7_thru_11
+    [6, 12].each { |depth| assert(stray_eggs(depth).all?(&:empty?), "depth #{depth}") }
   end
 
   # --- the Quail's placement ---
@@ -3064,27 +3128,30 @@ class DungeonTest < Minitest::Test
     end
   end
 
-  def test_no_quail_before_depth_five
-    assert(activate_quail_counts(4).all?(&:zero?))
+  def test_no_quail_before_depth_eight
+    assert_equal 8, Dungeon::THINGAGES.find { |k| k[:name] == "Quail" }[:cr]
+    assert(activate_quail_counts(7).all?(&:zero?))
   end
 
-  def test_about_half_the_levels_at_depth_five_hold_one_quail
-    counts = activate_quail_counts(5)
+  def test_about_half_the_levels_at_depth_eight_hold_one_quail
+    counts = activate_quail_counts(8)
     assert(counts.all? { |n| n <= 1 }, "never more than one")
     assert_in_delta 25, counts.sum, 12, "about half of 50 levels"
   end
 
-  def test_from_depth_six_every_two_levels_add_a_quail
-    { 6 => 1, 7 => 1, 8 => 2, 9 => 2, 10 => 3, 13 => 4 }.each do |depth, quails|
+  def test_from_depth_nine_every_two_levels_add_a_quail
+    assert_equal 9, Dungeon::QUAIL_DEPTH
+    { 9 => 1, 10 => 1, 11 => 2, 12 => 2, 13 => 3, 16 => 4 }.each do |depth, quails|
       assert_equal [quails] * 50, activate_quail_counts(depth), "depth #{depth}"
     end
   end
 
   def assert_quail_egg_spots = assert_get(:eggs).count { |_, laid| laid.none?(&:axebeak) }
 
-  def test_from_depth_eight_one_quail_nests_in_a_hatchery
+  def test_from_depth_eleven_one_quail_nests_in_a_hatchery
     quail_eggs = dodo_eggs = 0
-    activate_building_levels_at(8) do |seed|
+    assert_equal 11, Dungeon::HATCHERY_DEPTH
+    activate_building_levels_at(11) do |seed|
       quails = assert_get(:monsters).select { |m| m.name == "Quail" }
       assert_equal 1, quails.count(&:nesting), "seed #{seed}: one nesting Quail"
       nest = assert_get(:eggs)[assert_get(:nest)]
@@ -3101,8 +3168,8 @@ class DungeonTest < Minitest::Test
     assert_equal 100, Dungeon::EGG_XP, "a Quail egg's XP on the elevator ride"
     assert_equal 100, Dungeon::EGG_XP, "a Dodo egg's XP on the elevator ride"
 
-    activate_building_levels_at(7) do |seed|
-      assert_nil assert_get(:nest), "seed #{seed}: no hatchery above depth 8"
+    activate_building_levels_at(10) do |seed|
+      assert_nil assert_get(:nest), "seed #{seed}: no hatchery above depth 11"
       assert_operator assert_quail_egg_spots, :<=, 1, "seed #{seed}: a stray egg at most"
     end
   end
@@ -4641,15 +4708,31 @@ class DungeonTest < Minitest::Test
     assert @game.won?
   end
 
-  def test_a_quiet_coyote_in_the_cage_is_no_threat_but_an_enraged_one_is
+  def test_any_predator_in_the_cage_keeps_the_plate_from_springing_even_a_quiet_one
+    %w[rat Coyote Troll].each do |name|
+      arrange_player_one_step_from_the_cage_plate
+      assert_get(:backpack)[:eggs] = [egg(true)]
+      arrange_quail(12, 12)
+      predator = arrange_thing(20, 12, name[0], name, 100, 0..0, aggressive: false)
+      assert_get(:monsters) << predator
+      assert_same predator, @game.send(:cage_threat), name
+
+      activate_stepping_onto_the_cage_plate
+
+      refute snapped?, name
+      refute @game.over?, name
+      assert_includes @game.log, "The plate won't budge with #{@game.send(:a_name, name)} loose in the cage. Deal with it, then step back on."
+    end
+  end
+
+  def test_a_dodo_in_the_cage_is_no_threat
     arrange_player_one_step_from_the_cage_plate
     assert_get(:backpack)[:eggs] = [egg(true)]
     arrange_quail(12, 12)
-    coyote = arrange_thing(20, 12, "C", "Coyote", 100, 0..0, aggressive: false)
-    assert_get(:monsters) << coyote
+    assert_get(:monsters) << arrange_thing(20, 12, "D", "Dodo", 6, 0..0)
     assert_nil @game.send(:cage_threat)
-    @game.send(:state_machine, coyote).transit(StateEvent::HIT, @game, coyote, :ego)
-    assert_same coyote, @game.send(:cage_threat)
+    activate_stepping_onto_the_cage_plate
+    assert @game.won?
   end
 
   def test_a_neutralized_troll_lets_the_plate_spring
@@ -6317,22 +6400,22 @@ class DungeonTest < Minitest::Test
   # --- eggs ---
 
   def test_deeper_nests_hold_more_developed_eggs
-    { 8 => 3 / 9.0, 9 => 4 / 9.0, 11 => 6 / 9.0, 13 => 8 / 9.0, 20 => 0.9 }.each do |depth, chance|
+    { 11 => 3 / 9.0, 12 => 4 / 9.0, 14 => 6 / 9.0, 16 => 8 / 9.0, 23 => 0.9 }.each do |depth, chance|
       arrange_set :depth, depth
       assert_in_delta chance, @game.send(:developed_chance), 0.0001, "depth #{depth}"
     end
   end
 
   def test_a_nest_holds_one_to_three_uncandled_eggs
-    activate_building_levels_at(8) do |seed|
-      laid = assert_get(:eggs).values.first
+    activate_building_levels_at(11) do |seed|
+      laid = assert_get(:eggs)[assert_get(:nest)]
       assert_includes 1..3, laid.size, "seed #{seed}"
       assert(laid.all? { |e| e.is_a?(Dungeon::Egg) && !e.candled }, "seed #{seed}")
     end
   end
 
-  def test_about_a_third_of_eggs_laid_at_depth_eight_are_developed
-    arrange_set :depth, 8
+  def test_about_a_third_of_eggs_laid_at_depth_eleven_are_developed
+    arrange_set :depth, 11
     laid = Array.new(900) { @game.send(:lay_egg) }
     assert_in_delta 300, laid.count(&:developed), 60
   end

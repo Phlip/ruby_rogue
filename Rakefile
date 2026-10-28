@@ -36,6 +36,7 @@ end
 desc "Run every test in test_ruby_rogue.rb; a frog croaks if they pass, a kitten mews if they fail"
 task :test do
   ENV['QUIET'] = '1'
+  ENV['MT_BACKTRACE'] = '1'  #  For more verbose options
 
   # The run's output tees through tee_sounds.rb, which plays a sound for each E, F, and S as the dots print
   require 'open3'
@@ -44,7 +45,7 @@ task :test do
   play(status.success? ? "frog2" : "kitten")
   status.success? or abort "The tests failed (exit status #{status.exitstatus})."
 
-  sh 'figlet tests passed'
+  `figlet tests passed`
 end
 
 desc "Play sounds from sounds/ by name, one after another, e.g. rake 'sound[car_horn chimp error]'; with no name, list them"
@@ -109,5 +110,5 @@ end
 desc "Play the game in god mode, where you take no damage"
 task :god do
   Dir.chdir(__dir__)
-  exec RbConfig.ruby, "ruby_rogue.rb", "--god", "--level", "6"
+  exec RbConfig.ruby, "ruby_rogue.rb", "--god", "--level", "11"
 end

@@ -1434,7 +1434,7 @@ class DungeonTest < Minitest::Test
     arrange_monster(6, 5)
     arrange_quail(7, 5)
     arrange_rat_at(8, 5)
-    add_door(9, 5)
+    arrange_new_door(9, 5)
     arrange_wall_ally_at(10, 5)
     arrangeWeapon(11, 5)
     assert_no_missing_scores(assert_get(:monsters))
@@ -4042,9 +4042,9 @@ class DungeonTest < Minitest::Test
 
   # --- doors at the ends of hallways ---
 
-  def add_door(x, y) = assert_get(:monsters) << arrange_thing(x, y, "#", "door", 30, kind("door")[:hit], pacifist: true)
+  def arrange_new_door(x, y) = assert_get(:monsters) << arrange_thing(x, y, "#", "door", 30, kind("door")[:hit], pacifist: true)
 
-  def in_a_room?(x, y)
+  def assert_in_a_room(x, y)
     assert_get(:rooms).any? { |r| x.between?(r[:x], r[:x] + r[:w] - 1) && y.between?(r[:y], r[:y] + r[:h] - 1) }
   end
 
@@ -4063,8 +4063,8 @@ class DungeonTest < Minitest::Test
       counts << doors.size
       doors.each do |d|
         assert_equal ".", assert_get(:map)[d.y][d.x], "seed #{seed}: a door stands on corridor floor"
-        refute in_a_room?(d.x, d.y), "seed #{seed}: outside every room"
-        assert([[1, 0], [-1, 0], [0, 1], [0, -1]].any? { |dx, dy| in_a_room?(d.x + dx, d.y + dy) },
+        refute assert_in_a_room(d.x, d.y), "seed #{seed}: outside every room"
+        assert([[1, 0], [-1, 0], [0, 1], [0, -1]].any? { |dx, dy| assert_in_a_room(d.x + dx, d.y + dy) },
                "seed #{seed}: at the end of a hallway, next to a room")
       end
     end
@@ -4078,7 +4078,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_coin_opens_a_door
     arrange_arena
-    add_door(6, 5)
+    arrange_new_door(6, 5)
     activate_give(:gold, 1, 0)
     assert_empty assert_get(:monsters)
     assert_equal 0, @game.gold
@@ -4089,7 +4089,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_sandwich_opens_a_door
     arrange_arena
-    add_door(5, 6)
+    arrange_new_door(5, 6)
     activate_give(:sandwiches, 0, 1)
     assert_empty assert_get(:monsters)
     assert_equal "You give the door a sandwich. It eats it and swings open.", last_log
@@ -4097,7 +4097,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_thrown_coin_opens_a_door_down_the_hall
     arrange_arena
-    add_door(8, 5)
+    arrange_new_door(8, 5)
     activate_give(:gold, 1, 0)
     assert_equal "There's no one there to take it.", last_log
     @game.hurl
@@ -4107,7 +4107,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_closed_door_blocks_the_way_and_takes_one_hit_without_fighting_back
     arrange_arena
-    add_door(6, 5)
+    arrange_new_door(6, 5)
     @game.move(1, 0)
     @game.rest
     assert_equal [5, 5], player
@@ -4119,7 +4119,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_second_hit_turns_a_door_aggressive_and_it_hits_back_every_turn
     arrange_arena
-    add_door(6, 5)
+    arrange_new_door(6, 5)
     @game.move(1, 0)
     @game.move(1, 0)
     door = assert_get(:monsters).first
@@ -4136,7 +4136,7 @@ class DungeonTest < Minitest::Test
 
   def test_an_angry_door_never_leaves_its_hallway_to_chase
     arrange_arena
-    add_door(6, 5)
+    arrange_new_door(6, 5)
     2.times { @game.move(1, 0) }
     @game.move(-1, 0)
     2.times { @game.rest }
@@ -4146,7 +4146,7 @@ class DungeonTest < Minitest::Test
 
   def test_resting_finds_a_door
     arrange_arena
-    add_door(6, 5)
+    arrange_new_door(6, 5)
     @game.rest
     assert_includes @game.log, "You catch your breath and find a door beside you."
   end
@@ -5768,7 +5768,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_door_never_rests
     arrange_arena
-    door = add_door(9, 9).last.tap { |d| d.hp = 10; d.max_hp = 30 }
+    door = arrange_new_door(9, 9).last.tap { |d| d.hp = 10; d.max_hp = 30 }
 
     3.times { @game.rest }
     3.times { @game.send(:end_turn) }
@@ -6097,7 +6097,7 @@ class DungeonTest < Minitest::Test
   def test_bashing_furniture_is_no_crime
     arrange_arena
     arrange_set :experience_points, 200
-    add_door(6, 5).last.tap { |d| d.hp = 100; d.hit = 0..0 }
+    arrange_new_door(6, 5).last.tap { |d| d.hp = 100; d.hit = 0..0 }
 
     3.times { @game.move(1, 0) }
 
@@ -7864,7 +7864,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_door_has_no_use_for_anything_but_a_coin_or_a_sandwich
     arrange_arena
-    add_door(6, 5)
+    arrange_new_door(6, 5)
     assert_get(:backpack)[:candles] = 1
     @game.choose(:candles)
     @game.give_chosen
@@ -8004,8 +8004,8 @@ class DungeonTest < Minitest::Test
 
   def test_doors_share_the_lock_machine
     arrange_arena
-    open_door = add_door(6, 5).last
-    locked = add_door(7, 5).last.tap { |d| d.locked = true }
+    open_door = arrange_new_door(6, 5).last
+    locked = arrange_new_door(7, 5).last.tap { |d| d.locked = true }
     assert_instance_of Dungeon::OpenState, @game.send(:door_machine, open_door).state
     assert_instance_of Dungeon::LockState, @game.send(:door_machine, locked).state
     assert_same @game.send(:door_machine, locked), locked.machine, "one machine per door, kept"
@@ -8013,7 +8013,7 @@ class DungeonTest < Minitest::Test
 
   def test_tapping_an_unlocked_door_opens_it
     arrange_arena
-    add_door(6, 5)
+    arrange_new_door(6, 5)
     @game.tap
     assert_empty assert_get(:monsters)
     assert_equal "You tap the door, and it swings open.", last_log
@@ -8021,7 +8021,7 @@ class DungeonTest < Minitest::Test
 
   def test_tapping_a_locked_door_only_rattles_it
     arrange_arena
-    add_door(6, 5).last.locked = true
+    arrange_new_door(6, 5).last.locked = true
     @game.tap
     assert_equal 1, assert_get(:monsters).size
     assert_equal "You tap the door. It rattles, but it's locked.", last_log
@@ -8029,7 +8029,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_locked_door_still_opens_for_a_lucky_coin
     arrange_arena
-    add_door(6, 5).last.locked = true
+    arrange_new_door(6, 5).last.locked = true
     arrange_every_roll_coming_up(0.0)
 
     activate_give(:gold, 1, 0)
@@ -8040,7 +8040,7 @@ class DungeonTest < Minitest::Test
 
   def test_an_unlucky_coin_is_sometimes_kept
     arrange_arena
-    door = add_door(6, 5).last.tap { |d| d.locked = true }
+    door = arrange_new_door(6, 5).last.tap { |d| d.locked = true }
     arrange_every_roll_coming_up(0.3) # past the quarter that opens it, inside the half that hands the coin back
 
     activate_give(:gold, 1, 0)
@@ -8051,7 +8051,7 @@ class DungeonTest < Minitest::Test
 
   def test_an_unlucky_coin_is_sometimes_lost
     arrange_arena
-    door = add_door(6, 5).last.tap { |d| d.locked = true }
+    door = arrange_new_door(6, 5).last.tap { |d| d.locked = true }
     arrange_every_roll_coming_up(0.9)
 
     activate_give(:gold, 1, 0)
@@ -8066,7 +8066,7 @@ class DungeonTest < Minitest::Test
   def arrange_locked_door_beside_a_packed_toolbag
     arrange_arena
     assert_get(:backpack)[:toolbags] = 1
-    add_door(6, 5).last.tap { |d| d.locked = true }
+    arrange_new_door(6, 5).last.tap { |d| d.locked = true }
   end
 
   def test_a_toolbag_lies_about_and_packs_like_any_item
@@ -8162,7 +8162,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_locked_door_offered_a_sandwich_draws_an_imp_a_quarter_of_the_time
     arrange_arena
-    add_door(6, 5).last.locked = true
+    arrange_new_door(6, 5).last.locked = true
     assert_get(:backpack)[:sandwiches] = 1
     arrange_every_roll_coming_up(0.0)
     activate_give(:sandwiches, 1, 0)
@@ -8173,7 +8173,7 @@ class DungeonTest < Minitest::Test
 
   def test_an_imp_already_nearby_answers_the_call
     arrange_arena
-    add_door(6, 5).last.locked = true
+    arrange_new_door(6, 5).last.locked = true
     imp = arrange_thing(10, 5, "I", "Imp", 3, 1..2, pacifist: true)
     assert_get(:monsters) << imp
     assert_get(:backpack)[:sandwiches] = 1
@@ -8185,7 +8185,7 @@ class DungeonTest < Minitest::Test
 
   def test_otherwise_a_locked_door_keeps_you_your_sandwich
     arrange_arena
-    door = add_door(6, 5).last.tap { |d| d.locked = true }
+    door = arrange_new_door(6, 5).last.tap { |d| d.locked = true }
     assert_get(:backpack)[:sandwiches] = 1
     arrange_every_roll_coming_up(0.99)
     activate_give(:sandwiches, 1, 0)
@@ -8206,54 +8206,54 @@ class DungeonTest < Minitest::Test
 
   # --- a door begs you to go round it ---
 
-  def hit_door_east(blows)
+  def activate_hit_door_east(blows)
     arrange_arena
-    add_door(6, 5).last.tap { |d| d.hp = 100; d.hit = 0..0 }
+    arrange_new_door(6, 5).last.tap { |d| d.hp = 100; d.hit = 0..0 }
     blows.times { @game.move(1, 0) }
   end
 
-  def door_says = @game.log.select { |line| line.start_with?("The door squeaks") }
+  def assert_door_says = @game.log.select { |line| line.start_with?("The door squeaks") }
 
   def test_a_hit_door_begs_you_to_pass_round_it
-    hit_door_east(1)
+    activate_hit_door_east(1)
 
-    assert_equal ['The door squeaks: "Pass to the left, please."'], door_says
+    assert_equal ['The door squeaks: "Pass to the left, please."'], assert_door_says
   end
 
   def test_after_two_pleas_the_door_names_the_keypad_key
-    hit_door_east(3)
+    activate_hit_door_east(3)
 
-    assert_equal 'The door squeaks: "Pass to the left using 9 on your numeric keypad."', door_says.last
+    assert_equal 'The door squeaks: "Pass to the left using 9 on your numeric keypad."', assert_door_says.last
   end
 
   def test_with_the_left_blocked_the_door_says_right
     arrange_arena
     assert_get(:map)[4][6] = "#"
-    add_door(6, 5).last.tap { |d| d.hp = 100; d.hit = 0..0 }
+    arrange_new_door(6, 5).last.tap { |d| d.hp = 100; d.hit = 0..0 }
 
     3.times { @game.move(1, 0) }
 
-    assert_equal 'The door squeaks: "Pass to the right using 3 on your numeric keypad."', door_says.last
+    assert_equal 'The door squeaks: "Pass to the right using 3 on your numeric keypad."', assert_door_says.last
   end
 
   def test_a_door_with_no_way_round_says_nothing
     arrange_hallway
-    add_door(6, 5).last.tap { |d| d.hp = 100; d.hit = 0..0 }
+    arrange_new_door(6, 5).last.tap { |d| d.hp = 100; d.hit = 0..0 }
 
     @game.move(1, 0)
 
-    assert_empty door_says
+    assert_empty assert_door_says
   end
 
   def test_the_keys_match_the_keypad_for_every_heading
     arrange_arena(px: 10, py: 10)
     { [0, -1] => 7, [-1, 0] => 1, [0, 1] => 3, [1, 0] => 9 }.each do |(dx, dy), key|
       arrange_set :monsters, []
-      add_door(10 + dx, 10 + dy).last.tap { |d| d.hp = 100; d.hit = 0..0; d.pleas = Dungeon::PLEAS_BEFORE_KEYS }
+      arrange_new_door(10 + dx, 10 + dy).last.tap { |d| d.hp = 100; d.hit = 0..0; d.pleas = Dungeon::PLEAS_BEFORE_KEYS }
 
       @game.move(dx, dy)
 
-      assert_includes door_says.last, "using #{key} on", "hitting #{[dx, dy]}: forward and to the left"
+      assert_includes assert_door_says.last, "using #{key} on", "hitting #{[dx, dy]}: forward and to the left"
     end
   end
 
@@ -9242,7 +9242,7 @@ end
 
 class CommandLineTest < Minitest::Test
   # Runs ruby_rogue.rb in a fresh Ruby, the same one running these tests, with these flags; [stdout, stderr, status]
-  def rogue(*flags)
+  def activate_rogue(*flags)
     require 'open3'
     require 'rbconfig'
     Open3.capture3(RbConfig.ruby, File.join(__dir__, "ruby_rogue.rb"), *flags)
@@ -9255,7 +9255,7 @@ class CommandLineTest < Minitest::Test
 
   def test_help_prints_the_usage_and_exits_cleanly
     %w[--help -h].each do |flag|
-      out, err, status = rogue(flag)
+      out, err, status = activate_rogue(flag)
       assert status.success?, "#{flag}: #{err}"
       assert_equal USAGE, out, flag
     end
@@ -9270,7 +9270,7 @@ class CommandLineTest < Minitest::Test
 
   def test_a_level_that_isnt_a_depth_stops_with_the_usage
     ["0", "100", "deep", nil].each do |given|
-      _, err, status = rogue(*["--level", given].compact)
+      _, err, status = activate_rogue(*["--level", given].compact)
       refute status.success?, given.inspect
       assert_includes err, "--level N, where N is a depth from 1 to 99", given.inspect
     end
@@ -9285,7 +9285,7 @@ class CommandLineTest < Minitest::Test
 
   # Port 0 is out of range, so if --help ever stops winning, --web fails fast instead of serving forever
   def test_help_wins_over_the_other_flags
-    out, _, status = rogue("--web", "0", "--god", "--help")
+    out, _, status = activate_rogue("--web", "0", "--god", "--help")
     assert status.success?
     assert_equal USAGE, out, "it prints the usage instead of serving the game"
   end

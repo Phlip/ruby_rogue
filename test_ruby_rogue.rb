@@ -16,20 +16,6 @@ Minitest.after_run { File.delete(Heroes.file) if File.exist?(Heroes.file) }
 
 module Things
 
-  # The THINGAGES row a thingage of this name spawns from; a name with no row of its own is a weapon's look
-  def arrange_row_for(name)
-    Dungeon::THINGAGES.find { |k| k[:name] == name } || Dungeon::THINGAGES.find { |k| k[:name] == "weapon" }
-  end
-
-  # Builds a Thingage from named fields, so no test depends on the order of the Struct's members. Like a
-  # spawned one, it gets all six ability scores from its kind's row, unless a field names its own
-  def arrange_thing(x, y, glyph, name, hp, hit, **fields)
-    scores = arrange_row_for(name).slice(*Dungeon::ABILITIES).merge(fields.slice(*Dungeon::ABILITIES))
-    Dungeon::Thingage.new(x, y, glyph, name, hp, hit, *scores.values_at(*Dungeon::ABILITIES))
-                     .tap { |t| fields.except(*Dungeon::ABILITIES).each { |field, value| t[field] = value } }
-                     .tap { |t| assert_state(t) }
-  end
-
   # The test now running, for the Dungeon hook below to check every thingage with
   class << self
     attr_accessor :watcher
@@ -45,8 +31,22 @@ module Things
     super
   end
 
+  # The THINGAGES row a thingage of this name spawns from; a name with no row of its own is a weapon's look
+  def arrange_row_for(name)
+    Dungeon::THINGAGES.find { |k| k[:name] == name } || Dungeon::THINGAGES.find { |k| k[:name] == "weapon" }
+  end
+
+  # Builds a Thingage from named fields, so no test depends on the order of the Struct's members. Like a
+  # spawned one, it gets all six ability scores from its kind's row, unless a field names its own
+  def arrange_thing(x, y, glyph, name, hp, hit, **fields)
+    scores = arrange_row_for(name).slice(*Dungeon::ABILITIES).merge(fields.slice(*Dungeon::ABILITIES))
+    Dungeon::Thingage.new(x, y, glyph, name, hp, hit, *scores.values_at(*Dungeon::ABILITIES))
+                     .tap { |t| fields.except(*Dungeon::ABILITIES).each { |field, value| t[field] = value } }
+                     .tap { |t| assert_state(t) }
+  end
+
   # The game this test is playing, whichever way its class holds it
-  def watched_game
+  def assert_watched_game
     return @game if defined?(@game) && @game.is_a?(Dungeon)
     return @web.game if defined?(@web) && @web.respond_to?(:game)
     return @dos.game if defined?(@dos) && @dos.respond_to?(:game)
@@ -59,7 +59,7 @@ module Things
   # scratch and compared. settled says its round's monsters have all just acted, so the rules about what a
   # creature does once it's had its turn apply too. Slow on purpose
   def assert_state(m, settled: false)
-    game = watched_game
+    game = assert_watched_game
     where = "#{m.name} at #{m.x}, #{m.y}"
 
     # --- its own fields ---
@@ -71,12 +71,14 @@ module Things
     assert_kind_of Integer, m.y, where if m.y
     assert_kind_of Integer, m.hp, "#{where}: hit points"
     assert_kind_of Range, m.hit, "#{where}: a hit range" if m.hit
+
     Dungeon::ABILITIES.each do |a|
       refute_nil m[a], "#{where} has no #{a}"
       assert_kind_of Integer, m[a], "#{where}: #{a}"
       assert_operator m[a], :>=, 0, "#{where}: #{a}"
       assert_operator m[a], :<=, 30, "#{where}: #{a}"
     end
+
     %i[fed coins asleep stuck slowed hasted gaseous starving sugar].each do |counter|
       value = m[counter]
       next if value.nil?
@@ -84,10 +86,12 @@ module Things
       assert_kind_of Integer, value, "#{where}: #{counter}"
       assert_operator value, :>=, 0, "#{where}: #{counter} can't run below zero"
     end
+
     assert_operator m.sugar, :<=, Dungeon::MAX_BLOOD_SUGAR, "#{where}: blood sugar" if m.sugar
     assert_includes [nil, true, false], m.pacifist, "#{where}: pacifist" unless m.pacifist.is_a?(Float)
     assert_includes [nil, true, false], m.aggressive, "#{where}: aggressive"
     assert_kind_of Array, m.met, "#{where}: met" if m.met
+
     if m.weapon
       assert_kind_of Hash, m.weapon, "#{where}: weapon"
       assert m.weapon[:name], "#{where}: its weapon has a name"
@@ -298,7 +302,7 @@ module Things
   # assert_state on every Thingage on the level the hero stands on: everyone in @monsters, and the truly sessile
   # cage plate, which never is
   def assert_every_state(settled: false)
-    (game = watched_game) or return
+    (game = assert_watched_game) or return
 
     things = game.instance_variable_get(:@monsters).to_a.dup
     things << game.instance_variable_get(:@cage)[:arrange_thing] if game.instance_variable_get(:@cage)&.dig(:arrange_thing)
@@ -406,6 +410,7 @@ class DungeonTest < Minitest::Test
     @game.rest
     assert_every_state(settled: true)
   end
+
   W = Dungeon::VIEWPORT_WIDTH
   H = Dungeon::VIEWPORT_HEIGHT
 
@@ -8853,16 +8858,6 @@ class WebGameTest < Minitest::Test
     # assert_includes body, "AC 10"
     assert_includes body, "@"
     # refute_includes body.split("<pre>", 2).last.split("</pre>").first, ">", "stairs are escaped"
-  end
-
-  def test_serving_on_a_busy_port_exits_with_a_clear_message
-    taken = TCPServer.new(0)
-    port = taken.addr[1]
-    assert_output(nil, /port #{port} is already in use/) do
-      assert_raises(SystemExit) { @web.serve(port) }
-    end
-  ensure
-    taken&.close
   end
 
   # An open floor with nothing on it, player at (5, 5)

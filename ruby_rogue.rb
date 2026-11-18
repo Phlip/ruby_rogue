@@ -4373,14 +4373,16 @@ module Plaque
   # Hangs a plaque's XML on the wall, starting the wall if there's none yet
   def self.record(xml)
     doc = File.exist?(wall) ? REXML::Document.new(File.read(wall)) : REXML::Document.new.tap { |d| d << REXML::XMLDecl.new("1.0", "UTF-8") }
-    (doc.root || doc.add_element("wall")).add_element(REXML::Document.new(xml).root)
+    root_or_wall = doc.root || doc.add_element("wall")
+    (root_or_wall).add_element(REXML::Document.new(xml).root)
     File.write(wall, doc.to_s)
   end
 
   # The name on the wall's newest plaque, or nil
   def self.last_name
     File.exist?(wall) or return nil
-    name = REXML::XPath.match(REXML::Document.new(File.read(wall)), "/wall/plaque/name").last&.text
+    contents = REXML::Document.new(File.read(wall))
+    name = REXML::XPath.match(contents, "/wall/plaque/name").last&.text
     name unless name.to_s.empty?
   rescue REXML::ParseException
     nil

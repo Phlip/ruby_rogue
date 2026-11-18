@@ -9748,7 +9748,7 @@ class DoorLockStateMachineTest < Minitest::Test
   end
 
   def state = @machine.state
-  def transit(transitions, event) = @machine.transit(transitions, event)
+  def activate_transit(transitions, event) = @machine.transit(transitions, event)
 
   def key = StateEvent::KEY
   def remove_key = StateEvent::REMOVE_KEY
@@ -9757,22 +9757,22 @@ class DoorLockStateMachineTest < Minitest::Test
   def test_forge_the_lock_and_turn_its_key
     assert_instance_of LockState, state, "a new lock starts locked"
 
-    transit TRANSITIONS, key
+    activate_transit TRANSITIONS, key
     # assert_instance_of UnlockingState, state
 
-    transit TRANSITIONS, remove_key
+    activate_transit TRANSITIONS, remove_key
     # assert_instance_of LockState, state, "pulling the key out mid-turn locks it again"
 
-    transit TRANSITIONS, key
+    activate_transit TRANSITIONS, key
     # assert_instance_of UnlockingState, state
 
-    transit TRANSITIONS, timer
+    activate_transit TRANSITIONS, timer
     # assert_instance_of OpenState, state, "waiting out the timer opens it"
 
-    transit TRANSITIONS, remove_key
+    activate_transit TRANSITIONS, remove_key
     # assert_instance_of OpenState, state, "Open + Remove Key == Open"
 
-    transit TRANSITIONS, key
+    activate_transit TRANSITIONS, key
     # assert_instance_of LockState, state, "inserting the key into an open lock locks it"
   end
 
@@ -9780,29 +9780,29 @@ class DoorLockStateMachineTest < Minitest::Test
 
   def test_a_locked_lock_ignores_a_key_removal_and_the_timer
     [remove_key, timer].each do |event|
-      transit TRANSITIONS, event
+      activate_transit TRANSITIONS, event
       assert_instance_of LockState, state, event.inspect
     end
   end
 
   def test_an_unlocking_lock_ignores_a_second_key
-    transit TRANSITIONS, key
-    transit TRANSITIONS, key
+    activate_transit TRANSITIONS, key
+    activate_transit TRANSITIONS, key
     # these states don't actually match assert_instance_of UnlockingState, state
   end
 
   def test_an_open_lock_ignores_the_timer
-    transit TRANSITIONS, key
-    transit TRANSITIONS, timer
-    transit TRANSITIONS, timer
+    activate_transit TRANSITIONS, key
+    activate_transit TRANSITIONS, timer
+    activate_transit TRANSITIONS, timer
     # assert_instance_of OpenState, state
   end
 
   def test_an_ignored_event_keeps_the_very_same_state
-    transit TRANSITIONS, key
-    transit TRANSITIONS, timer
+    activate_transit TRANSITIONS, key
+    activate_transit TRANSITIONS, timer
     open = state
-    transit TRANSITIONS, remove_key
+    activate_transit TRANSITIONS, remove_key
     # assert_same open, state, "no edge, so no new state object and no re-entry"
   end
 

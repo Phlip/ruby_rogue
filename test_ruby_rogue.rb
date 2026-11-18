@@ -9313,7 +9313,7 @@ class DosBoxTest < Minitest::Test
   def panel = @dos.send(:panel_lines)
   def panel_line(i) = @dos.lines[1 + i]
   def map_row(y) = @dos.lines[1 + panel.size + y]
-  def prompt_line = @dos.lines.last
+  def assert_prompt_line = @dos.lines.last
 
   def test_a_squirrel_is_an_s_in_the_console
     assert_equal "s", @dos.oem("🐿️")
@@ -9425,7 +9425,7 @@ class DosBoxTest < Minitest::Test
   def test_a_uses_an_item_by_its_letter
     backpack[:speed_potions] = 1
     activate_console_keys "a"
-    assert_equal "Use which item? (a, Esc cancels)", prompt_line
+    assert_equal "Use which item? (a, Esc cancels)", assert_prompt_line
     activate_console_keys "a"
     assert game.hasted?
     assert_equal 0, backpack[:speed_potions]
@@ -9435,7 +9435,7 @@ class DosBoxTest < Minitest::Test
     backpack[:speed_potions] = 1
     activate_console_keys "T", "a"
     assert_equal "Throw the potion of speed which way?", game.log.last
-    assert_equal "Then an arrow sends it that way, or R keeps it", prompt_line
+    assert_equal "Then an arrow sends it that way, or R keeps it", assert_prompt_line
   end
 
   def test_p_pours_a_potion_into_a_candle
@@ -9454,32 +9454,32 @@ class DosBoxTest < Minitest::Test
   def test_k_wont_kick_a_potion
     backpack[:speed_potions] = 1
     activate_console_keys "K", "a"
-    assert_equal "Only a laced candle can be kicked.", prompt_line
+    assert_equal "Only a laced candle can be kicked.", assert_prompt_line
     assert_equal 1, backpack[:speed_potions]
   end
 
   def test_escape_cancels_a_prompt
     backpack[:speed_potions] = 1
     activate_console_keys "a", "Escape"
-    assert_equal "? for the keys", prompt_line
+    assert_equal "? for the keys", assert_prompt_line
     assert_equal 1, backpack[:speed_potions]
   end
 
   def test_a_letter_with_no_item
     backpack[:speed_potions] = 1
     activate_console_keys "a", "z"
-    assert_equal "No item z.", prompt_line
+    assert_equal "No item z.", assert_prompt_line
   end
 
   def test_an_empty_backpack_has_nothing_to_use
     activate_console_keys "a"
-    assert_equal "Your backpack is empty.", prompt_line
+    assert_equal "Your backpack is empty.", assert_prompt_line
   end
 
   def test_three_of_a_sideways_arrow_offer_a_zip
     activate_console_keys "l", "l", "l"
 
-    assert_equal "zip right? (Y/n): ", prompt_line
+    assert_equal "zip right? (Y/n): ", assert_prompt_line
   end
 
   def test_bumping_a_wall_sideways_offers_no_zip
@@ -9487,7 +9487,7 @@ class DosBoxTest < Minitest::Test
 
     activate_console_keys "l", "l", "l"
 
-    assert_equal "zip right? (Y/n): ", prompt_line, "nobody's trotting"
+    assert_equal "zip right? (Y/n): ", assert_prompt_line, "nobody's trotting"
   end
 
   def test_swinging_at_a_neighbor_sideways_offers_no_zip
@@ -9495,33 +9495,33 @@ class DosBoxTest < Minitest::Test
 
     activate_console_keys "l", "l", "l"
 
-    assert_equal "zip right? (Y/n): ", prompt_line
+    assert_equal "zip right? (Y/n): ", assert_prompt_line
   end
 
   def test_a_trot_broken_by_another_action_offers_no_zip
     activate_console_keys "l", "l", "R", "l"
 
-    assert_equal "? for the keys", prompt_line, "the rest started the trot over"
+    assert_equal "? for the keys", assert_prompt_line, "the rest started the trot over"
   end
 
   def test_up_and_down_arrows_offer_no_zip
     activate_console_keys "j", "j", "j"
 
-    assert_equal "? for the keys", prompt_line
+    assert_equal "? for the keys", assert_prompt_line
   end
 
   def test_enter_zips_to_just_before_the_edge
     activate_console_keys "l", "l", "l", "\r"
 
     assert_equal [W - 1, 5], [assert_get(:px), assert_get(:py)]
-    assert_equal "? for the keys", prompt_line, "the offer is spent"
+    assert_equal "? for the keys", assert_prompt_line, "the offer is spent"
   end
 
   def test_n_declines_the_zip
     activate_console_keys "h", "h", "h", "n"
 
     assert_equal [2, 5], [assert_get(:px), assert_get(:py)]
-    assert_equal "? for the keys", prompt_line
+    assert_equal "? for the keys", assert_prompt_line
   end
 
   def test_a_zip_stops_before_a_sleeper_comes_into_sight
@@ -9582,7 +9582,7 @@ class DosBoxTest < Minitest::Test
   def test_y_and_n_answer_the_stairs
     arrange_set :map, assert_get(:map).tap { |m| m[5][6] = ">" }
     activate_console_keys "l"
-    assert_equal "You want to go down? (y/n)", prompt_line
+    assert_equal "You want to go down? (y/n)", assert_prompt_line
     activate_console_keys "n"
     assert_nil game.stairs_question
     assert_equal [6, 5], [assert_get(:px), assert_get(:py)], "n answered rather than moved"
@@ -9602,7 +9602,7 @@ class DosBoxTest < Minitest::Test
   def test_a_packed_shield_waits_for_its_rules
     backpack[:shields] << { name: "shield", glyph: "༻" }
     activate_console_keys "a", "a"
-    assert_equal "There's nothing to do with a shield yet.", prompt_line
+    assert_equal "There's nothing to do with a shield yet.", assert_prompt_line
     assert_equal 1, backpack[:shields].size
   end
 
@@ -9629,7 +9629,7 @@ class DosBoxTest < Minitest::Test
 
   def test_dying_offers_to_play_again_or_exit
     arrange_set :hp, 0
-    assert_equal "You died. Play again? (y/n)", prompt_line
+    assert_equal "You died. Play again? (y/n)", assert_prompt_line
   end
 
   def test_a_deeper_start_carries_into_new_games
@@ -9646,7 +9646,7 @@ class DosBoxTest < Minitest::Test
     refute_same old, game
     refute game.over?
     refute @dos.quit?
-    assert_equal "? for the keys", prompt_line
+    assert_equal "? for the keys", assert_prompt_line
   end
 
   def test_n_or_escape_exits
@@ -9663,34 +9663,34 @@ class DosBoxTest < Minitest::Test
     arrange_set :hp, 0
     activate_console_keys "l", "a", "j", "."
     refute @dos.quit?
-    assert_equal "You died. Play again? (y/n)", prompt_line
+    assert_equal "You died. Play again? (y/n)", assert_prompt_line
   end
 
   def test_winning_and_a_haul_with_nothing_hatching_offer_the_same
     arrange_set :trapped, true
-    assert_equal "The adventure is over. Play again? (y/n)", prompt_line
+    assert_equal "The adventure is over. Play again? (y/n)", assert_prompt_line
     arrange_set :won, true
-    assert_equal "You won! Play again? (y/n)", prompt_line
+    assert_equal "You won! Play again? (y/n)", assert_prompt_line
   end
 
   def test_play_again_leaves_out_an_ending_the_log_just_said
     arrange_set :trapped, true
     game.send(:say, "No egg in your haul hatches. The adventure is over.")
-    assert_equal "Play again? (y/n)", prompt_line
+    assert_equal "Play again? (y/n)", assert_prompt_line
     arrange_set :won, true
     game.send(:say, "An egg hatches, and Quail chicks peep in the Safe Room. You won!")
-    assert_equal "Play again? (y/n)", prompt_line
+    assert_equal "Play again? (y/n)", assert_prompt_line
   end
 
   def test_a_key_that_breaks_the_game_offers_another_or_a_graceful_exit
     game.define_singleton_method(:move) { |*| raise "boom" }
     @dos.press("l")
     refute @dos.quit?
-    assert_equal "The game broke (RuntimeError: boom). Play again? (y/n)", prompt_line
+    assert_equal "The game broke (RuntimeError: boom). Play again? (y/n)", assert_prompt_line
     @dos.press("y")
-    assert_equal "? for the keys", prompt_line
+    assert_equal "? for the keys", assert_prompt_line
     @dos.press("l")
-    refute_match(/broke/, prompt_line, "the new game takes keys again")
+    refute_match(/broke/, assert_prompt_line, "the new game takes keys again")
   end
 
   def test_a_graceful_exit_leaves_the_last_screen_up

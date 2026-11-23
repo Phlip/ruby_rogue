@@ -5440,7 +5440,7 @@ class DungeonTest < Minitest::Test
   CAGE_SEEDS = 3
 
   # Each open tile inside the cage: floor, not the player's, not the plate, no one standing on it, no egg on it yet
-  def open_cage_tiles
+  def activate_open_cage_tiles
     c = assert_get(:cage) or return []
     c[:xs].to_a.product(c[:ys].to_a).reject do |x, y|
       assert_get(:map)[y][x] == "#" || [x, y] == player || [x, y] == c[:plate] ||
@@ -5475,7 +5475,7 @@ class DungeonTest < Minitest::Test
   def test_monte_carlo_dodo_lay_fills_every_cage_tile
     CAGE_DEPTHS.each do |depth|
       activate_building_levels_at(depth, seeds: CAGE_SEEDS) do |seed|
-        tiles = open_cage_tiles
+        tiles = activate_open_cage_tiles
         refute_empty tiles, "depth #{depth} seed #{seed}: a cage to lay in"
 
         tiles.each do |x, y|
@@ -5492,7 +5492,7 @@ class DungeonTest < Minitest::Test
   def test_monte_carlo_a_dodo_s_whole_turn_lays_in_the_cage
     CAGE_DEPTHS.each do |depth|
       activate_building_levels_at(depth, seeds: CAGE_SEEDS) do |seed|
-        tiles = open_cage_tiles.sample(8)
+        tiles = activate_open_cage_tiles.sample(8)
 
         tiles.each do |x, y|
           dodo = arrange_dodo_glued_at(x, y)
@@ -5510,7 +5510,7 @@ class DungeonTest < Minitest::Test
       activate_building_levels_at(depth, seeds: CAGE_SEEDS) do |seed|
         arrange_set :godMode, true # the level's own monsters can't end the run early
         arrange_set :blood_sugar, Dungeon::MAX_BLOOD_SUGAR
-        tiles = open_cage_tiles.sample(3)
+        tiles = activate_open_cage_tiles.sample(3)
 
         tiles.each do |x, y|
           dodo = arrange_dodo_glued_at(x, y)

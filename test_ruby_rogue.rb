@@ -5915,7 +5915,7 @@ class DungeonTest < Minitest::Test
     assert_equal "You defeat the swords and seize them! You now wield ⚔️ swords.", assert_last_log
   end
 
-  def chirps_when_hitting(goblin)
+  def activate_chirps_when_hitting(goblin)
     played = []
     Dungeon.sound_player = ->(name) { played << name }
     @game.move(1, 0)
@@ -5928,7 +5928,7 @@ class DungeonTest < Minitest::Test
     arrange_arena
     goblin = arrange_monster(6, 5, hp: 100, hit: 0..0, aggressive: false).last
 
-    played = chirps_when_hitting(goblin)
+    played = activate_chirps_when_hitting(goblin)
 
     assert_equal %w[alert bat_hit], played, "the alarm first, then the blow"
   end
@@ -5937,7 +5937,7 @@ class DungeonTest < Minitest::Test
     arrange_arena
     goblin = arrange_remorseless(arrange_monster(6, 5, hp: 100, hit: 0..0, aggressive: false).last)
 
-    played = chirps_when_hitting(goblin)
+    played = activate_chirps_when_hitting(goblin)
 
     assert_equal %w[bat_hit], played
   end

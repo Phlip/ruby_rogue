@@ -1558,11 +1558,11 @@ class DungeonTest < Minitest::Test
     wall
   end
 
-  def wall_state(wall) = @game.send(:state_machine, wall).state
+  def assert_wall_state(wall) = @game.send(:state_machine, wall).state
 
   def test_hitting_a_wall_twice_enrages_it
     wall = arrange_enraged_wall
-    assert_instance_of Dungeon::EnragedState, wall_state(wall)
+    assert_instance_of Dungeon::EnragedState, assert_wall_state(wall)
     assert wall.aggressive
     assert_equal :ego, wall.pursuit_target
     assert(@game.log.any? { |line| line == "You hit the wall for #{line[/\d+/]}. It turns on you!" })
@@ -1573,7 +1573,7 @@ class DungeonTest < Minitest::Test
     wall = arrange_enraged_wall
     assert_get(:backpack)[:gold] = 1
     @game.send(:give, :gold, 1, 0)
-    assert_instance_of Dungeon::QuietState, wall_state(wall)
+    assert_instance_of Dungeon::QuietState, assert_wall_state(wall)
     assert wall.pacifist
     assert wall.spurned
     refute wall.aggressive
@@ -1588,7 +1588,7 @@ class DungeonTest < Minitest::Test
     @game.send(:give, :sandwiches, 1, 0)
     assert_equal 0, assert_get(:backpack)[:sandwiches]
     assert_equal 1, assert_get(:sandwiches)[[5, 5]], "it lands at the player's feet"
-    assert_instance_of Dungeon::EnragedState, wall_state(wall), "still angry"
+    assert_instance_of Dungeon::EnragedState, assert_wall_state(wall), "still angry"
   end
 
   def test_an_enraged_wall_sometimes_ruins_the_sandwich_it_throws_back
@@ -1609,7 +1609,7 @@ class DungeonTest < Minitest::Test
     assert_get(:backpack)[:gold] = 1
     @game.send(:give, :gold, 1, 0)
     assert_includes assert_get(:monsters), door, "still in the hallway"
-    assert_instance_of Dungeon::QuietState, wall_state(door)
+    assert_instance_of Dungeon::QuietState, assert_wall_state(door)
   end
 
   # The player at 5, 3 with a wall down column 7 from the top to row 5, so anything at 8, 3 must go

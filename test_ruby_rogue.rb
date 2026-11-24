@@ -6229,14 +6229,14 @@ class DungeonTest < Minitest::Test
     assert_equal [8, 5], [troll.x, troll.y]
   end
 
-  def state_of(hunter) = @game.send(:state_machine, hunter).state
+  def assert_state_of(hunter) = @game.send(:state_machine, hunter).state
 
   def test_a_quiet_troll_that_sees_a_quail_is_enraged_and_after_it
     arrange_arena
     troll = arrange_troll(8, 5).last
     quail = arrange_quail(10, 5).last
     @game.rest
-    assert_instance_of Dungeon::EnragedState, state_of(troll)
+    assert_instance_of Dungeon::EnragedState, assert_state_of(troll)
     assert_same quail, troll.pursuit_target
   end
 
@@ -6245,7 +6245,7 @@ class DungeonTest < Minitest::Test
     troll = arrange_troll(3, 3).last
     arrange_quail(3 + Dungeon::SIGHT + 1, 3)
     @game.rest
-    assert_instance_of Dungeon::QuietState, state_of(troll)
+    assert_instance_of Dungeon::QuietState, assert_state_of(troll)
     assert_equal [3, 3], [troll.x, troll.y]
   end
 
@@ -6254,7 +6254,7 @@ class DungeonTest < Minitest::Test
     arrange_set :facing, [1, 0]
     troll = arrange_troll(6, 5).last
     @game.tap
-    assert_instance_of Dungeon::QuietState, state_of(troll)
+    assert_instance_of Dungeon::QuietState, assert_state_of(troll)
     assert_equal :ego, troll.pursuit_target
     @game.rest
     assert_equal [6, 5], [troll.x, troll.y]
@@ -6266,13 +6266,13 @@ class DungeonTest < Minitest::Test
     troll = arrange_troll(6, 5, hit: 0..0).last
     @game.tap
     assert_includes @game.log, "You push the Troll. Also, the Troll is too big for your backpack."
-    assert_instance_of Dungeon::FleeingState, state_of(troll)
+    assert_instance_of Dungeon::FleeingState, assert_state_of(troll)
     assert_equal [8, 5], [troll.x, troll.y], "pushed to 7, 5, it flees a step further"
 
     3.times { @game.rest } # to 9, 5, then 10, 5 out of the hall, then safe
 
     assert_equal [10, 5], [troll.x, troll.y]
-    assert_instance_of Dungeon::EnragedState, state_of(troll)
+    assert_instance_of Dungeon::EnragedState, assert_state_of(troll)
     assert_equal :ego, troll.pursuit_target
   end
 
@@ -6290,7 +6290,7 @@ class DungeonTest < Minitest::Test
     quail = arrange_quail(11, 5).last.tap { |q| q.spurned = true }
     @game.send(:state_machine, troll).transit(StateEvent::SEE_PREY, @game, troll, quail)
     @game.move(1, 0)
-    assert_instance_of Dungeon::EnragedState, state_of(troll)
+    assert_instance_of Dungeon::EnragedState, assert_state_of(troll)
     assert_equal :ego, troll.pursuit_target, "it swaps the Quail for the player"
     assert_equal [8, 5], [troll.x, troll.y], "it stays to fight"
     assert_operator assert_get(:hp), :<, 20
@@ -6302,7 +6302,7 @@ class DungeonTest < Minitest::Test
     troll = arrange_troll(8, 5).last
     arrange_quail(9, 5).last.spurned = true
     3.times { @game.rest } # it taps the Quail, eats it, then calms
-    assert_instance_of Dungeon::QuietState, state_of(troll)
+    assert_instance_of Dungeon::QuietState, assert_state_of(troll)
     assert_nil troll.pursuit_target
   end
 
@@ -6314,7 +6314,7 @@ class DungeonTest < Minitest::Test
 
     @game.rest
 
-    assert_instance_of Dungeon::EnragedState, state_of(coyote)
+    assert_instance_of Dungeon::EnragedState, assert_state_of(coyote)
     assert_same beak, coyote.pursuit_target
   end
 
@@ -6325,7 +6325,7 @@ class DungeonTest < Minitest::Test
 
     @game.rest
 
-    assert_instance_of Dungeon::QuietState, state_of(coyote)
+    assert_instance_of Dungeon::QuietState, assert_state_of(coyote)
     assert_equal [3, 3], [coyote.x, coyote.y]
   end
 
@@ -6338,7 +6338,7 @@ class DungeonTest < Minitest::Test
     @game.send(:state_machine, coyote).transit(StateEvent::SEE_PREY, @game, coyote, beak)
     @game.move(1, 0)
 
-    assert_instance_of Dungeon::EnragedState, state_of(coyote)
+    assert_instance_of Dungeon::EnragedState, assert_state_of(coyote)
     assert_equal :ego, coyote.pursuit_target, "it swaps the Axebeak for the player"
     assert_operator assert_get(:hp), :<, 20
   end
@@ -6349,7 +6349,7 @@ class DungeonTest < Minitest::Test
     coyote = arrange_thing(6, 5, "C", "Coyote", 100, 1..1, aggressive: false)
     assert_get(:monsters) << coyote
     @game.tap
-    assert_instance_of Dungeon::QuietState, state_of(coyote)
+    assert_instance_of Dungeon::QuietState, assert_state_of(coyote)
     assert_equal :ego, coyote.pursuit_target
     assert_equal 20, assert_get(:hp)
   end

@@ -780,8 +780,8 @@ class Dungeon
   def self.packable(name) = THINGAGES.find { |k| k[:name] == name }&.dig(:packable)
 
   # Pounds one thing from a backpack slot weighs; a laced candle is its candle and its potion together
-  def pounds(slot)
-    return pounds(:candles) + pounds(LACED[slot]) if LACED.key?(slot)
+  def assert_pounds(slot)
+    return assert_pounds(:candles) + assert_pounds(LACED[slot]) if LACED.key?(slot)
 
     Dungeon.pounds(case slot
                    when :gold then GOLD_POUNDS
@@ -795,8 +795,8 @@ class Dungeon
 
   # Pounds in the backpack now
   def load
-    counted = @backpack.sum { |slot, n| n.is_a?(Integer) ? n * pounds(slot) : 0 }
-    counted + @backpack[:eggs].size * Dungeon.pounds(EGG_POUNDS) + @backpack[:tough_sandwiches].size * pounds(:sandwiches) +
+    counted = @backpack.sum { |slot, n| n.is_a?(Integer) ? n * assert_pounds(slot) : 0 }
+    counted + @backpack[:eggs].size * Dungeon.pounds(EGG_POUNDS) + @backpack[:tough_sandwiches].size * assert_pounds(:sandwiches) +
       @backpack[:weapons].sum { |w| weapon_pounds(w) } +
       @backpack[:shields].sum { |s| Dungeon.pounds(Dungeon.packable(s[:name])) }
   end
@@ -1429,7 +1429,7 @@ class Dungeon
 
   # What a thing lying about would weigh, packed
   def packed_pounds(m)
-    return pounds(PACKABLE[m.name]) if PACKABLE.key?(m.name)
+    return assert_pounds(PACKABLE[m.name]) if PACKABLE.key?(m.name)
     return Dungeon.pounds(Dungeon.packable(m.name)) if SHIELDS.include?(m.name)
 
     weapon_pounds(m.weapon || { name: m.name })
@@ -1437,7 +1437,7 @@ class Dungeon
 
   # The name of the single heaviest thing in the backpack
   def heaviest_packed
-    things = @backpack.filter_map { |slot, n| [item_noun(slot), pounds(slot)] if n.is_a?(Integer) && n.positive? }
+    things = @backpack.filter_map { |slot, n| [item_noun(slot), assert_pounds(slot)] if n.is_a?(Integer) && n.positive? }
     things += @backpack[:weapons].map { |w| [w[:name], weapon_pounds(w)] }
     things += @backpack[:shields].map { |sh| [sh[:name], Dungeon.pounds(Dungeon.packable(sh[:name]))] }
     things << ["egg", Dungeon.pounds(EGG_POUNDS)] if @backpack[:eggs].any?
@@ -2463,7 +2463,7 @@ class Dungeon
     end
     body = option[:spot] && @bodies[option[:spot]]
     if (slot = body&.dig(:loot, :potion))
-      room_for?(pounds(slot)) or return say("Your backpack is too full for the #{potion_name(slot)}.")
+      room_for?(assert_pounds(slot)) or return say("Your backpack is too full for the #{potion_name(slot)}.")
 
       @backpack[slot] += 1
       @bodies.delete(option[:spot])
@@ -3024,7 +3024,7 @@ class Dungeon
     machine.transit(StateEvent::KEY, self, food) if first
     food.hp -= damage
     if food.hp.positive?
-      @stow_question = food if first && room_for?(pounds(:sandwiches)) # a full backpack isn't asked
+      @stow_question = food if first && room_for?(assert_pounds(:sandwiches)) # a full backpack isn't asked
       return say("You work at the sandwich's wrapping.")
     end
 
@@ -3036,7 +3036,7 @@ class Dungeon
   # room, it's left behind
   def stow(foe, how = "defeat")
     shield = SHIELDS.include?(foe.name)
-    weight = shield ? Dungeon.pounds(Dungeon.packable(foe.name)) : pounds(PACKABLE[foe.name])
+    weight = shield ? Dungeon.pounds(Dungeon.packable(foe.name)) : assert_pounds(PACKABLE[foe.name])
     room_for?(weight) or
       return say("You #{how} the #{foe.name}, but your backpack is too full to carry it, so you leave it behind.")
 
@@ -3120,7 +3120,7 @@ class Dungeon
   # Walking into a potion, a scroll, or a ring packs it into the backpack instead of attacking it; quaff, read, or wear uses it later
   # Packs it, room allowing; true when it did, so a refusal can cost no turn
   def pack(thing, slot)
-    unless room_for?(pounds(slot))
+    unless room_for?(assert_pounds(slot))
       say "Your backpack is too full for the #{item_name(slot)}."
       return false
     end
@@ -3270,7 +3270,7 @@ class Dungeon
   def take_gold(spot, pieces: false)
     (coins = @treasure.delete(spot)) or return
 
-    taken = fitting(coins, pounds(:gold))
+    taken = fitting(coins, assert_pounds(:gold))
     @backpack[:gold] += taken
     @treasure[spot] = coins - taken if taken < coins
     found = pieces ? "#{coins} gold #{coins == 1 ? "piece" : "pieces"}" : "#{coins} gold"
@@ -3290,7 +3290,7 @@ class Dungeon
   def take_sandwiches(spot)
     (count = @sandwiches.delete(spot)) or return false
 
-    taken = fitting(count, pounds(:sandwiches))
+    taken = fitting(count, assert_pounds(:sandwiches))
     @backpack[:sandwiches] += taken
     @sandwiches[spot] = count - taken if taken < count
     say taken == count ? "You pack #{count == 1 ? "a sandwich" : "#{count} sandwiches"} into your backpack." :
@@ -3301,7 +3301,7 @@ class Dungeon
   # Takes a sandwich lying about into the backpack, room allowing: a wrapped one stowed wrapping and all, as stow_it
   # keeps it, and an open one packed to eat. Whether it took it
   def take_food(food)
-    room_for?(pounds(:sandwiches)) or return say("Your backpack is too full for the sandwich.") || false
+    room_for?(assert_pounds(:sandwiches)) or return say("Your backpack is too full for the sandwich.") || false
 
     @monsters.delete(food)
     if food_machine(food).state.is_a?(OpenState)

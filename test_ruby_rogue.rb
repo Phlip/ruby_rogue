@@ -297,7 +297,7 @@ module Things
 
   end  #  def assert_state() is watching you
 
-  def a_kind(name) = "#{"aeiou".include?(name[0].downcase) ? "an" : "a"} #{name}"
+  def assert_a_kind(name) = "#{"aeiou".include?(name[0].downcase) ? "an" : "a"} #{name}"
 
   # assert_state on every Thingage on the level the hero stands on: everyone in @monsters, and the truly sessile
   # cage plate, which never is
@@ -3328,7 +3328,7 @@ class DungeonTest < Minitest::Test
 
   # --- the scrolls of potion finding and of mapping ---
 
-  def add_scroll(x, y, name = "scroll of 3 potions")
+  def arrange_scroll(x, y, name = "scroll of 3 potions")
     assert_get(:monsters) << arrange_thing(x, y, "?", name, 3, 0..0, pacifist: true)
   end
 
@@ -3345,7 +3345,7 @@ class DungeonTest < Minitest::Test
 
   def test_walking_into_an_item_asks_to_grab_it_and_takes_no_turn
     arrange_arena
-    add_scroll(6, 5)
+    arrange_scroll(6, 5)
     goblin = arrange_monster(9, 5, hp: 100, hit: 0..0).last
     @game.move(1, 0)
     assert_equal 1, @game.grab_question.size
@@ -3355,7 +3355,7 @@ class DungeonTest < Minitest::Test
 
   def test_g_lists_items_lying_close_by
     arrange_arena
-    add_scroll(6, 6)
+    arrange_scroll(6, 6)
     @game.grab
     assert_equal "Grab a. the scroll of potion finding?", assert_last_log
   end
@@ -3567,7 +3567,7 @@ class DungeonTest < Minitest::Test
 
   def test_walking_into_a_scroll_packs_it
     arrange_arena
-    add_scroll(6, 5)
+    arrange_scroll(6, 5)
     @game.move(1, 0)
     assert_equal "Grab a. the scroll of potion finding?", assert_last_log, "walking into it from the next square asks"
     @game.grab_pick("a")
@@ -3615,7 +3615,7 @@ class DungeonTest < Minitest::Test
     arrange_level_unseen
     assert_get(:backpack)[:scrolls] = 1
     arrange_monster(15, 5, aggressive: false)
-    add_scroll(16, 5)
+    arrange_scroll(16, 5)
     @game.read
     assert_equal "  ", @game.rows[5][15, 2]
   end
@@ -3665,7 +3665,7 @@ class DungeonTest < Minitest::Test
 
   def test_walking_into_a_scroll_of_mapping_packs_it
     arrange_arena
-    add_scroll(6, 5, "scroll of mapping")
+    arrange_scroll(6, 5, "scroll of mapping")
     @game.move(1, 0)
     @game.grab_pick("a")
     assert_empty assert_get(:monsters)
@@ -4153,7 +4153,7 @@ class DungeonTest < Minitest::Test
 
   # --- teleport plates ---
 
-  def in_rect?(r, (x, y)) = x.between?(r[:x], r[:x] + r[:w] - 1) && y.between?(r[:y], r[:y] + r[:h] - 1)
+  def assert_in_rect?(r, (x, y)) = x.between?(r[:x], r[:x] + r[:w] - 1) && y.between?(r[:y], r[:y] + r[:h] - 1)
 
   # One far room for a random plate to land in, and no cage room
   def arrange_one_far_room_for_a_plate_to_land_in
@@ -4179,7 +4179,7 @@ class DungeonTest < Minitest::Test
     arrange_one_far_room_for_a_plate_to_land_in
     arrange_set :plates, { [6, 5] => Dungeon::RANDOM_PLATE }
     @game.move(1, 0)
-    assert in_rect?(assert_get(:rooms).first, assert_player), "landed at #{assert_player}"
+    assert assert_in_rect?(assert_get(:rooms).first, assert_player), "landed at #{assert_player}"
     assert_includes @game.log, "The plate flashes, and you land somewhere else in the dungeon."
     assert_equal({ [6, 5] => "ṯ" }, assert_get(:plates))
   end
@@ -4206,7 +4206,7 @@ class DungeonTest < Minitest::Test
     arrange_set :plates, { [6, 5] => Dungeon::RANDOM_PLATE }
     @game.rest
     goblin = assert_get(:monsters).first
-    assert in_rect?(assert_get(:rooms).first, [goblin.x, goblin.y]), "landed at #{goblin.x}, #{goblin.y}"
+    assert assert_in_rect?(assert_get(:rooms).first, [goblin.x, goblin.y]), "landed at #{goblin.x}, #{goblin.y}"
     assert_includes @game.log, "The goblin steps on a plate and vanishes!"
   end
 
@@ -4230,7 +4230,7 @@ class DungeonTest < Minitest::Test
     @game.rest
     assert_equal [6, 5], [quail.x, quail.y], "steps onto the plate, and waits there for its next action"
     @game.rest
-    assert in_rect?(assert_get(:rooms).first, [quail.x, quail.y]), "landed at #{quail.x}, #{quail.y}"
+    assert assert_in_rect?(assert_get(:rooms).first, [quail.x, quail.y]), "landed at #{quail.x}, #{quail.y}"
     assert_nil quail.plate_bound
   end
 
@@ -4258,7 +4258,7 @@ class DungeonTest < Minitest::Test
     cage_room = { x: 10, y: 10, w: 5, h: 5 }
     arrange_set :rooms, [{ x: 30, y: 10, w: 5, h: 5 }, cage_room]
     arrange_set :cage_room, cage_room
-    caged = 3000.times.count { in_rect?(cage_room, @game.send(:landing, Dungeon::RANDOM_PLATE)) }
+    caged = 3000.times.count { assert_in_rect?(cage_room, @game.send(:landing, Dungeon::RANDOM_PLATE)) }
     assert_in_delta 5.0 / 8, caged / 3000.0, 0.03, "5/3 against 1 is 5/8 of landings"
   end
 
@@ -4266,7 +4266,7 @@ class DungeonTest < Minitest::Test
     activate_building_levels_at(1) do |seed|
       plates = assert_get(:plates)
       refute_includes plates.values, "_", "seed #{seed}"
-      plates.each_key { |spot| refute in_rect?(assert_get(:rooms).first, spot), "seed #{seed}: none in the first room" }
+      plates.each_key { |spot| refute assert_in_rect?(assert_get(:rooms).first, spot), "seed #{seed}: none in the first room" }
     end
   end
 
@@ -4277,8 +4277,8 @@ class DungeonTest < Minitest::Test
       assert_operator spots.size, :<=, 1, "seed #{seed}"
       spots.each do |spot|
         plated += 1
-        refute in_rect?(assert_get(:rooms).first, spot), "seed #{seed}"
-        refute in_rect?(assert_get(:cage_room), spot), "seed #{seed}"
+        refute assert_in_rect?(assert_get(:rooms).first, spot), "seed #{seed}"
+        refute assert_in_rect?(assert_get(:cage_room), spot), "seed #{seed}"
       end
     end
     assert_operator plated, :>=, 10, "most caged levels have one"
@@ -7425,7 +7425,7 @@ class DungeonTest < Minitest::Test
 
   # --- weight ---
 
-  def pounds(slot) = @game.pounds(slot)
+  def pounds(slot) = @game.assert_pounds(slot)
   def assert_axe = Dungeon::WEAPONS.find { |w| w[:name] == "axe" }
 
   def test_everything_the_backpack_holds_has_a_weight

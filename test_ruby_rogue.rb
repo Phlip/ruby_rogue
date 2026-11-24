@@ -4194,7 +4194,7 @@ class DungeonTest < Minitest::Test
     arrange_set :plates, { [31, 30] => Dungeon::CAGE_PLATE }
     @game.move(1, 0)
     # assert in_rect?(room, player), "landed at #{player}"
-    refute_equal cage[:plate], assert_player
+    refute_equal assert_cage[:plate], assert_player
     refute @game.over?
     # assert_includes @game.log, "The plate flashes, and you land in the cage room."
   end
@@ -4305,7 +4305,7 @@ class DungeonTest < Minitest::Test
     arrange_set :cage, { xs: 10..21, ys: 10..13, line: [10..21, 14], plate: [15, 10] }
   end
 
-  def cage = assert_get(:cage)
+  def assert_cage = assert_get(:cage)
   def snapped? = @game.send(:cage_sprung?)
   def plate_state = @game.send(:cage_plate).machine.state
 
@@ -4550,7 +4550,7 @@ class DungeonTest < Minitest::Test
       room = assert_get(:cage_room)
       xs = room[:x]...room[:x] + room[:w]
       ys = room[:y]...room[:y] + room[:h]
-      c = cage
+      c = assert_cage
       across = c[:xs].to_a == xs.to_a ? :rows : :columns
       if across == :rows
         assert_equal 4, c[:ys].to_a.size, "seed #{seed}: four rows deep"
@@ -4566,24 +4566,24 @@ class DungeonTest < Minitest::Test
   def test_the_plate_lies_in_the_middle_of_the_cages_back_row
     activate_building_levels_at(5) do |seed|
       room = assert_get(:cage_room)
-      px, py = cage[:plate]
-      lx, ly = cage[:line]
+      px, py = assert_cage[:plate]
+      lx, ly = assert_cage[:line]
       assert @game.send(:in_trap?, px, py), "seed #{seed}: the plate is in the cage"
       if lx.is_a?(Range) # a cage of rows: the back row is the one farthest from the line
         assert_equal room[:x] + room[:w] / 2, px, "seed #{seed}: in the middle"
-        assert_equal cage[:ys].to_a.max_by { |y| (y - ly).abs }, py, "seed #{seed}: on the back row"
+        assert_equal assert_cage[:ys].to_a.max_by { |y| (y - ly).abs }, py, "seed #{seed}: on the back row"
       else
         assert_equal room[:y] + room[:h] / 2, py, "seed #{seed}: in the middle"
-        assert_equal cage[:xs].to_a.max_by { |x| (x - lx).abs }, px, "seed #{seed}: on the back column"
+        assert_equal assert_cage[:xs].to_a.max_by { |x| (x - lx).abs }, px, "seed #{seed}: on the back column"
       end
     end
   end
 
   def test_the_line_runs_across_the_room_just_in_front_of_the_cage
     activate_building_levels_at(5) do |seed|
-      lx, ly = cage[:line]
+      lx, ly = assert_cage[:line]
       line = (lx.is_a?(Range) ? lx.to_a : [lx]).product(ly.is_a?(Range) ? ly.to_a : [ly])
-      assert_equal [cage[:xs].to_a.size, cage[:ys].to_a.size].max, line.size, "seed #{seed}: right across the room"
+      assert_equal [assert_cage[:xs].to_a.size, assert_cage[:ys].to_a.size].max, line.size, "seed #{seed}: right across the room"
       line.each do |x, y|
         refute @game.send(:in_trap?, x, y), "seed #{seed}: the line is outside the cage"
         assert([[1, 0], [-1, 0], [0, 1], [0, -1]].any? { |dx, dy| @game.send(:in_trap?, x + dx, y + dy) },
@@ -4597,7 +4597,7 @@ class DungeonTest < Minitest::Test
       activate_building_levels_at(depth, seeds: 10) do |seed|
         room = assert_get(:cage_room)
         in_room = ->(x, y) { (room[:x]...room[:x] + room[:w]).cover?(x) && (room[:y]...room[:y] + room[:h]).cover?(y) }
-        cage[:xs].to_a.product(cage[:ys].to_a).each do |x, y|
+        assert_cage[:xs].to_a.product(assert_cage[:ys].to_a).each do |x, y|
           [-1, 0, 1].product([-1, 0, 1]).each do |dx, dy|
             next if in_room.(x + dx, y + dy)
 
@@ -4609,7 +4609,7 @@ class DungeonTest < Minitest::Test
   end
 
   def test_shallower_levels_have_no_cage
-    activate_building_levels_at(4) { |seed| assert_nil cage, "seed #{seed}" }
+    activate_building_levels_at(4) { |seed| assert_nil assert_cage, "seed #{seed}" }
   end
 
   def test_cage_levels_stay_connected_and_start_outside_the_cage_room

@@ -807,7 +807,7 @@ class Dungeon
   def fitting(count, each) = [count, ((ENCUMBRANCE - load) / each).floor].min.clamp(0..)
 
   # The load for the banner, e.g. "Load 12.5/60 lb"
-  def load_text
+  def assert_load_text
     shown = load.round(1)
     "Load #{shown.denominator == 1 ? shown.to_i : shown.to_f}/#{ENCUMBRANCE} lb"
   end
@@ -4667,7 +4667,7 @@ class WebGame
       </head>
       <body style="width: 100%;">
         <main>
-        <p>#{"#{@game.outcome} &nbsp; " unless @game.outcome.empty?}#{"GOD MODE &nbsp; " if @game.godMode?}#{"#{h @game.effects} &nbsp; " unless @game.effects.empty?}HP #{@game.hp}/#{@game.max_hp} &nbsp; AC #{@game.ac} &nbsp; Weapon #{h @game.weapon} &nbsp; Blood sugar #{@game.blood_sugar} &nbsp; Gold #{@game.gold} &nbsp; Sandwiches #{@game.sandwiches} &nbsp; #{@game.load_text} &nbsp; Depth #{@game.depth}</p>
+        <p>#{"#{@game.outcome} &nbsp; " unless @game.outcome.empty?}#{"GOD MODE &nbsp; " if @game.godMode?}#{"#{h @game.effects} &nbsp; " unless @game.effects.empty?}HP #{@game.hp}/#{@game.max_hp} &nbsp; AC #{@game.ac} &nbsp; Weapon #{h @game.weapon} &nbsp; Blood sugar #{@game.blood_sugar} &nbsp; Gold #{@game.gold} &nbsp; Sandwiches #{@game.sandwiches} &nbsp; #{@game.assert_load_text} &nbsp; Depth #{@game.depth}</p>
         <pre>#{map_html}</pre>
         <p>#{@game.log.map { |line| h line }.join("<br>")}</p>
         #{%(<iframe src="/plaque" title="Wall of Fallen Heroes" style="border: 0; width: 100%; height: 22em;"></iframe>) if @game.plaque?}
@@ -4968,7 +4968,7 @@ class DosBox
     g = @game
     banner = g.outcome.empty? ? "" : "#{ESC}[7m #{g.outcome} #{ESC}[0m "
     "#{banner}#{"GOD MODE  " if g.godMode?}#{"#{g.effects}  " unless g.effects.empty?}HP #{g.hp}/#{g.max_hp}  AC #{g.ac}  " \
-      "Weapon #{g.weapon}  Gold #{g.gold}  Sandwiches #{g.sandwiches}  #{g.load_text}  Depth #{g.depth}"
+      "Weapon #{g.weapon}  Gold #{g.gold}  Sandwiches #{g.sandwiches}  #{g.assert_load_text}  Depth #{g.depth}"
   end
 
   # The backpack, each entry lettered for the prompts, or the keys while ? shows them, the tap key named for the
@@ -5194,7 +5194,7 @@ Scarpe.app(title: "Scarpe Rogue") do # , width: 560, height: 640) do
         redraw.call
       end
     end
-    @status.replace "#{"#{@game.outcome}   " unless @game.outcome.empty?}#{"GOD MODE   " if @game.godMode?}#{"#{@game.effects}   " unless @game.effects.empty?}HP #{@game.hp}/#{@game.max_hp}   AC #{@game.ac}   Weapon #{@game.weapon}   Blood sugar #{@game.blood_sugar}   Gold #{@game.gold}   Sandwiches #{@game.sandwiches}   #{@game.load_text}   Depth #{@game.depth}"
+    @status.replace "#{"#{@game.outcome}   " unless @game.outcome.empty?}#{"GOD MODE   " if @game.godMode?}#{"#{@game.effects}   " unless @game.effects.empty?}HP #{@game.hp}/#{@game.max_hp}   AC #{@game.ac}   Weapon #{@game.weapon}   Blood sugar #{@game.blood_sugar}   Gold #{@game.gold}   Sandwiches #{@game.sandwiches}   #{@game.assert_load_text}   Depth #{@game.depth}"
     # Hungry creatures go in as colored spans between the plain runs of the map
     pieces = @game.map_runs.each_with_index.flat_map do |runs, y|
       row = runs.map do |text, hungry|

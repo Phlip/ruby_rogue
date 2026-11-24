@@ -7443,14 +7443,14 @@ class DungeonTest < Minitest::Test
 
   def test_an_empty_backpack_weighs_nothing
     assert_equal 0, @game.load
-    assert_equal "Load 0/60 lb", @game.load_text
+    assert_equal "Load 0/60 lb", @game.assert_load_text
   end
 
   def test_the_load_is_everything_in_the_backpack_but_not_in_hand
     assert_get(:backpack).merge!(gold: 50, sandwiches: 2, potions: 1, candles: 1, eggs: [arrange_egg, arrange_egg], weapons: [dagger, assert_axe])
     arrange_set :wielded, assert_axe
     assert_equal Rational(21, 2), @game.load, "1 + 2 + 0.5 + 1 + 1 + 1 + 4; the axe in hand weighs nothing"
-    assert_equal "Load 10.5/60 lb", @game.load_text
+    assert_equal "Load 10.5/60 lb", @game.assert_load_text
   end
 
   def test_a_full_backpack_refuses_an_item

@@ -8874,20 +8874,20 @@ class WebGameTest < Minitest::Test
     game.instance_variable_set(:@py, 5)
   end
 
-  def player = [@web.game.instance_variable_get(:@px), @web.game.instance_variable_get(:@py)]
+  def assert_player = [@web.game.instance_variable_get(:@px), @web.game.instance_variable_get(:@py)]
 
   def test_posting_a_move_moves_and_redirects_home
     arrange_open_floor_around_the_player
     status, headers, = @web.respond("POST", "/move?dx=1&dy=0")
     assert_equal 303, status
     assert_equal "/", headers["Location"]
-    assert_equal [6, 5], player
+    assert_equal [6, 5], assert_player
   end
 
   def test_moves_are_clamped_to_one_step
     arrange_open_floor_around_the_player
     @web.respond("POST", "/move?dx=9&dy=-9")
-    assert_equal [6, 4], player
+    assert_equal [6, 4], assert_player
   end
 
   def test_god_mode_shows_in_the_banner_and_survives_a_new_game
@@ -9307,10 +9307,10 @@ class DosBoxTest < Minitest::Test
       sandwiches: {}, plates: {}, traps: {}, eggs: {}, detected: [], cage: nil, nest: nil, px: 5, py: 5 }.each { |name, value| arrange_set(name, value) }
   end
 
-  def game = @dos.game
-  def arrange_set(name, value) = game.instance_variable_set("@#{name}", value)
-  def assert_get(name) = game.instance_variable_get("@#{name}")
-  def assert_backpack = game.backpack
+  def assert_game = @dos.game
+  def arrange_set(name, value) = assert_game.instance_variable_set("@#{name}", value)
+  def assert_get(name) = assert_game.instance_variable_get("@#{name}")
+  def assert_backpack = assert_game.backpack
   def activate_console_keys(*pressed) = pressed.each { |k| @dos.handle(k) }
   # The backpack panel stacks under the status line, and the map under the panel, as the README shows
   def assert_panel = @dos.send(:panel_lines)
@@ -9357,7 +9357,7 @@ class DosBoxTest < Minitest::Test
     assert screen.start_with?("\e[1;1H"), "each line starts by placing the cursor"
     assert_includes screen, "\e[#{2 + assert_panel.size};1H#{assert_map_row(0)}", "the map below the panel"
     assert_includes screen, "\e[K", "and ends by erasing the rest of the line"
-    assert_includes @dos.lines.first, "HP #{game.hp}/#{game.max_hp}"
+    assert_includes @dos.lines.first, "HP #{assert_game.hp}/#{assert_game.max_hp}"
     assert_equal DosBox::SCREEN_ROWS + assert_panel.size, @dos.lines.size, "status, panel, map, four log lines, prompt"
   end
 
@@ -9406,7 +9406,7 @@ class DosBoxTest < Minitest::Test
 
   def test_dot_rests
     activate_console_keys "."
-    assert_equal "Catching your breath, you notice nothing new.", game.log.last
+    assert_equal "Catching your breath, you notice nothing new.", assert_game.log.last
   end
 
   def test_the_console_names_arrow_and_keypad_keys
@@ -9421,7 +9421,9 @@ class DosBoxTest < Minitest::Test
 
   def test_a_closed_console_quits
     reader, writer = IO.pipe
+
     writer.close
+
     assert_equal "Q", @dos.read_key(reader)
   end
 
@@ -9430,14 +9432,14 @@ class DosBoxTest < Minitest::Test
     activate_console_keys "a"
     assert_equal "Use which item? (a, Esc cancels)", assert_prompt_line
     activate_console_keys "a"
-    assert game.hasted?
+    assert assert_game.hasted?
     assert_equal 0, assert_backpack[:speed_potions]
   end
 
   def test_t_throws_an_item_then_an_arrow_sends_it
     assert_backpack[:speed_potions] = 1
     activate_console_keys "T", "a"
-    assert_equal "Throw the potion of speed which way?", game.log.last
+    assert_equal "Throw the potion of speed which way?", assert_game.log.last
     assert_equal "Then an arrow sends it that way, or R keeps it", assert_prompt_line
   end
 
@@ -9451,7 +9453,7 @@ class DosBoxTest < Minitest::Test
   def test_k_kicks_a_laced_candle
     assert_backpack[:laced_gas_potions] = 1
     activate_console_keys "K", "a"
-    assert_equal "Kick the candle laced with potion of gaseous form which way?", game.log.last
+    assert_equal "Kick the candle laced with potion of gaseous form which way?", assert_game.log.last
   end
 
   def test_k_wont_kick_a_potion
@@ -9553,7 +9555,7 @@ class DosBoxTest < Minitest::Test
   def test_f_taps_the_way_you_face
     assert_get(:monsters) << arrange_thing(6, 5, "g", "goblin", 100, 0..0, aggressive: false)
     activate_console_keys "f"
-    assert_equal "You tap the goblin. Also, the goblin is too big for your backpack.", game.log.last
+    assert_equal "You tap the goblin. Also, the goblin is too big for your backpack.", assert_game.log.last
     activate_console_keys "?"
     assert(@dos.lines.any? { |l| l == "f: tap right" }, "the keys list names the tap")
     activate_console_keys "h"
@@ -9567,17 +9569,17 @@ class DosBoxTest < Minitest::Test
     assert(@dos.lines.any? { |l| l == "x: Throw candle right?" })
     assert(@dos.lines.any? { |l| l == "g: Give candle right?" })
     activate_console_keys "g"
-    assert_equal "There's no one there to take it.", game.log.last
+    assert_equal "There's no one there to take it.", assert_game.log.last
     activate_console_keys "x"
     assert_equal 1, assert_backpack[:candles]
   end
 
   def test_with_nothing_chosen_lower_case_g_grabs_like_g
-    game.instance_variable_set(:@monsters, [])
-    game.instance_variable_set(:@bodies, { [game.instance_variable_get(:@px) + 1, game.instance_variable_get(:@py)] =>
+    assert_game.instance_variable_set(:@monsters, [])
+    assert_game.instance_variable_set(:@bodies, { [assert_game.instance_variable_get(:@px) + 1, assert_game.instance_variable_get(:@py)] =>
                                              { name: "rat", loot: { potion: :sleep_potions }, noticed: true } })
     activate_console_keys "g"
-    assert_equal "Grab a. the defeated rat's potion of sleep?", game.log.last
+    assert_equal "Grab a. the defeated rat's potion of sleep?", assert_game.log.last
     assert_includes DosBox::HELP, "G: grab loot"
   end
 
@@ -9586,17 +9588,17 @@ class DosBoxTest < Minitest::Test
     activate_console_keys "l"
     assert_equal "You want to go down? (y/n)", assert_prompt_line
     activate_console_keys "n"
-    assert_nil game.stairs_question
+    assert_nil assert_game.stairs_question
     assert_equal [6, 5], [assert_get(:px), assert_get(:py)], "n answered rather than moved"
     activate_console_keys "h", "l", "y"
-    assert_equal 2, game.depth
+    assert_equal 2, assert_game.depth
   end
 
   def test_dollar_gives_a_coin_the_way_you_face
     assert_backpack[:gold] = 2
     activate_console_keys "$"
-    assert_equal 1, game.gold
-    assert_equal "No one is there, so the coin lands on the floor.", game.log.last
+    assert_equal 1, assert_game.gold
+    assert_equal "No one is there, so the coin lands on the floor.", assert_game.log.last
     activate_console_keys "?"
     assert(@dos.lines.any? { |l| l == "$: coin right" }, "the keys list names its way")
   end
@@ -9618,9 +9620,9 @@ class DosBoxTest < Minitest::Test
   end
 
   def test_n_starts_a_new_game
-    old = game
+    old = assert_game
     activate_console_keys "N"
-    refute_same old, game
+    refute_same old, assert_game
   end
 
   def test_nothing_moves_once_the_game_is_over
@@ -9642,11 +9644,11 @@ class DosBoxTest < Minitest::Test
   end
 
   def test_y_plays_again
-    old = game
+    old = assert_game
     arrange_set :hp, 0
     activate_console_keys "y"
-    refute_same old, game
-    refute game.over?
+    refute_same old, assert_game
+    refute assert_game.over?
     refute @dos.quit?
     assert_equal "? for the keys", assert_prompt_line
   end
@@ -9677,15 +9679,15 @@ class DosBoxTest < Minitest::Test
 
   def test_play_again_leaves_out_an_ending_the_log_just_said
     arrange_set :trapped, true
-    game.send(:say, "No egg in your haul hatches. The adventure is over.")
+    assert_game.send(:say, "No egg in your haul hatches. The adventure is over.")
     assert_equal "Play again? (y/n)", assert_prompt_line
     arrange_set :won, true
-    game.send(:say, "An egg hatches, and Quail chicks peep in the Safe Room. You won!")
+    assert_game.send(:say, "An egg hatches, and Quail chicks peep in the Safe Room. You won!")
     assert_equal "Play again? (y/n)", assert_prompt_line
   end
 
   def test_a_key_that_breaks_the_game_offers_another_or_a_graceful_exit
-    game.define_singleton_method(:move) { |*| raise "boom" }
+    assert_game.define_singleton_method(:move) { |*| raise "boom" }
     @dos.press("l")
     refute @dos.quit?
     assert_equal "The game broke (RuntimeError: boom). Play again? (y/n)", assert_prompt_line
@@ -9703,7 +9705,7 @@ class DosBoxTest < Minitest::Test
   end
 
   def test_a_broken_game_says_how_on_its_way_out
-    game.define_singleton_method(:move) { |*| raise "boom" }
+    assert_game.define_singleton_method(:move) { |*| raise "boom" }
     @dos.press("l")
     @dos.press("n")
     assert @dos.quit?
@@ -9723,22 +9725,22 @@ class DosBoxTest < Minitest::Test
   end
 
   def test_r_is_the_console_s_rest_key
-    game.instance_variable_set(:@hp, 10)
+    assert_game.instance_variable_set(:@hp, 10)
 
     @dos.press("R")
 
-    assert_equal 11, game.hp, "a rest heals a point"
-    assert_match(/\A(You catch your breath|Catching your breath)/, game.log.last)
+    assert_equal 11, assert_game.hp, "a rest heals a point"
+    assert_match(/\A(You catch your breath|Catching your breath)/, assert_game.log.last)
     assert_includes DosBox::HELP, "R or r: rest"
   end
 
   def test_lower_case_r_catches_your_breath_too
-    game.instance_variable_set(:@hp, 10)
+    assert_game.instance_variable_set(:@hp, 10)
 
     @dos.press("r")
 
-    assert_equal 11, game.hp
-    assert_match(/\A(You catch your breath|Catching your breath)/, game.log.last)
+    assert_equal 11, assert_game.hp
+    assert_match(/\A(You catch your breath|Catching your breath)/, assert_game.log.last)
   end
 end
 

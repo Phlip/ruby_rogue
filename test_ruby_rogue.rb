@@ -1108,7 +1108,7 @@ class DungeonTest < Minitest::Test
   def arrange_room = { x: 2, y: 2, w: W - 4, h: H - 4 }
 
   # Lays one thingage of this kind (a THINGAGES row, or a tweaked copy of one) at the given depth
-  def spawn_one(row, depth: 1)
+  def arrange_spawn_one(row, depth: 1)
     arrange_arena(px: 1, py: 1)
     arrange_set :depth, depth
     @game.send(:spawn_monster, arrange_room, row)
@@ -1116,7 +1116,7 @@ class DungeonTest < Minitest::Test
   end
 
   # The player's hit points lost when this thingage strikes once from beside them
-  def one_blow_from(t)
+  def activate_one_blow_from(t)
     arrange_arena
     arrange_set :hp, @game.max_hp
     t.aggressive = true # provoked, so it swings even if its kind starts neutral
@@ -1240,40 +1240,40 @@ class DungeonTest < Minitest::Test
   end
 
   def test_spawning_still_fills_the_flags_after_the_scores
-    goblin = spawn_one(assert_kind("goblin").merge(greedy: 1.0), depth: 2)
+    goblin = arrange_spawn_one(assert_kind("goblin").merge(greedy: 1.0), depth: 2)
     refute goblin.pacifist
     assert goblin.greedy, "greedy lands in greedy, not in a score"
     assert_nil goblin.spurned
 
-    wall = spawn_one(assert_kind("wall"))
+    wall = arrange_spawn_one(assert_kind("wall"))
     assert_equal true, wall.pacifist
   end
 
   def test_constitution_adds_to_spawned_hit_points
-    assert_equal 10 + 4 + 3, spawn_one(assert_kind("orc"), depth: 4).hp, "orc: con 17 is +3"
-    assert_equal 18 + 5 + 4, spawn_one(assert_kind("Troll"), depth: 5).hp, "troll: con 18 is +4"
-    assert_equal 6 + 2, spawn_one(assert_kind("goblin"), depth: 2).hp, "goblin: con 10 is +0"
+    assert_equal 10 + 4 + 3, arrange_spawn_one(assert_kind("orc"), depth: 4).hp, "orc: con 17 is +3"
+    assert_equal 18 + 5 + 4, arrange_spawn_one(assert_kind("Troll"), depth: 5).hp, "troll: con 18 is +4"
+    assert_equal 6 + 2, arrange_spawn_one(assert_kind("goblin"), depth: 2).hp, "goblin: con 10 is +0"
   end
 
   def test_a_frail_thingage_still_spawns_with_at_least_one_hit_point
-    assert_equal 1, spawn_one(assert_kind("sandwich")).hp, "sandwich: 3 + depth 1 - 4 for con 2"
+    assert_equal 1, arrange_spawn_one(assert_kind("sandwich")).hp, "sandwich: 3 + depth 1 - 4 for con 2"
   end
 
   def test_raising_con_in_the_row_raises_spawned_hit_points
-    plain = spawn_one(assert_kind("goblin"), depth: 2).hp
-    hardy = spawn_one(assert_kind("goblin").merge(con: 18), depth: 2).hp
+    plain = arrange_spawn_one(assert_kind("goblin"), depth: 2).hp
+    hardy = arrange_spawn_one(assert_kind("goblin").merge(con: 18), depth: 2).hp
     assert_equal plain + 4, hardy
   end
 
   def test_an_average_goblin_hits_for_its_roll
-    assert_equal 3, one_blow_from(arrange_thing(0, 0, "g", "goblin", 100, 3..3, str: 10))
+    assert_equal 3, activate_one_blow_from(arrange_thing(0, 0, "g", "goblin", 100, 3..3, str: 10))
   end
 
   def test_a_stronger_goblin_is_ornerier
-    assert_equal 3, one_blow_from(arrange_thing(0, 0, "g", "goblin", 100, 3..3, str: 10))
-    assert_equal 4, one_blow_from(arrange_thing(0, 0, "g", "goblin", 100, 3..3, str: 12)), "str 12 is +1"
-    assert_equal 6, one_blow_from(arrange_thing(0, 0, "g", "goblin", 100, 3..3, str: 16)), "str 16 is +3"
-    assert_equal 8, one_blow_from(arrange_thing(0, 0, "g", "goblin", 100, 3..3, str: 20)), "str 20 is +5"
+    assert_equal 3, activate_one_blow_from(arrange_thing(0, 0, "g", "goblin", 100, 3..3, str: 10))
+    assert_equal 4, activate_one_blow_from(arrange_thing(0, 0, "g", "goblin", 100, 3..3, str: 12)), "str 12 is +1"
+    assert_equal 6, activate_one_blow_from(arrange_thing(0, 0, "g", "goblin", 100, 3..3, str: 16)), "str 16 is +3"
+    assert_equal 8, activate_one_blow_from(arrange_thing(0, 0, "g", "goblin", 100, 3..3, str: 20)), "str 20 is +5"
   end
 
   def test_changing_a_live_goblins_strength_changes_its_next_blow
@@ -1290,23 +1290,23 @@ class DungeonTest < Minitest::Test
   end
 
   def test_an_ornery_row_spawns_an_ornery_goblin
-    ornery = spawn_one(assert_kind("goblin").merge(str: 18, hit: 2..2), depth: 2)
+    ornery = arrange_spawn_one(assert_kind("goblin").merge(str: 18, hit: 2..2), depth: 2)
     assert_equal 18, ornery.str
-    assert_equal 6, one_blow_from(ornery), "2 +4"
+    assert_equal 6, activate_one_blow_from(ornery), "2 +4"
   end
 
   def test_a_weak_goblin_still_hits_for_one
-    assert_equal 1, one_blow_from(arrange_thing(0, 0, "g", "goblin", 100, 3..3, str: 3)), "3 -4, floored at 1"
+    assert_equal 1, activate_one_blow_from(arrange_thing(0, 0, "g", "goblin", 100, 3..3, str: 3)), "3 -4, floored at 1"
   end
 
   def test_the_real_goblin_hits_one_less_than_its_roll
-    goblin = spawn_one(assert_kind("goblin"), depth: 2)
+    goblin = arrange_spawn_one(assert_kind("goblin"), depth: 2)
     blows = Array.new(200) { @game.send(:blow, goblin) }
     assert_equal [1, 2, 3], blows.uniq.sort, "hit 1..4 with str 8 (-1), floored at 1"
   end
 
   def test_the_real_troll_hits_harder_than_its_roll
-    troll = spawn_one(assert_kind("Troll"), depth: 5)
+    troll = arrange_spawn_one(assert_kind("Troll"), depth: 5)
     blows = Array.new(200) { @game.send(:blow, troll) }
     # assert_equal (6..11).to_a, blows.uniq.sort, "hit 3..8 with str 16 (+3)"
   end
@@ -1333,7 +1333,7 @@ class DungeonTest < Minitest::Test
   def test_the_other_four_scores_change_nothing_yet
     meek = arrange_thing(0, 0, "g", "goblin", 100, 3..3, dex: 3, int: 3, wis: 3, cha: 3)
     keen = arrange_thing(0, 0, "g", "goblin", 100, 3..3, dex: 18, int: 18, wis: 18, cha: 18)
-    assert_equal one_blow_from(meek), one_blow_from(keen)
+    assert_equal activate_one_blow_from(meek), activate_one_blow_from(keen)
   end
 
   # --- no ability score is ever nil ---
@@ -1402,7 +1402,7 @@ class DungeonTest < Minitest::Test
 
   def test_spawning_any_kind_by_name_carries_its_rows_scores
     Dungeon::THINGAGES.reject { |row| row[:name] == Dungeon::PLAYER_KIND }.each do |row|
-      t = spawn_one(row, depth: row[:cr])
+      t = arrange_spawn_one(row, depth: row[:cr])
       scored = row[:name] == "weapon" ? @game.send(:cloak_for, row[:cr]) : row # a weapon wears its cloak's scores
       # assert_equal Dungeon::ABILITIES.map { |a| scored[a] }, scores(t), row[:name]
     end
@@ -1452,10 +1452,10 @@ class DungeonTest < Minitest::Test
   end
 
   def test_spawned_rats_are_aggressive_and_everything_else_neutral
-    rat = spawn_one(assert_kind("rat"))
+    rat = arrange_spawn_one(assert_kind("rat"))
     assert rat.aggressive
     %w[squirrel goblin wall orc troll weapon sandwich potion Quail].each do |name|
-      assert_equal false, spawn_one(assert_kind(name), depth: 5).aggressive, name
+      assert_equal false, arrange_spawn_one(assert_kind(name), depth: 5).aggressive, name
     end
   end
 
@@ -2535,7 +2535,7 @@ class DungeonTest < Minitest::Test
   # end
 
   def test_a_cloaked_weapon_is_its_cloak_wielding_the_weapon
-    t = spawn_one(assert_kind("weapon"), depth: 5)
+    t = arrange_spawn_one(assert_kind("weapon"), depth: 5)
     troll = assert_kind("Troll")
     assert_equal ["T", "Troll"], [t.glyph, t.name]
     assert_equal troll.values_at(*Dungeon::ABILITIES), assert_scores(t)
@@ -5418,7 +5418,7 @@ class DungeonTest < Minitest::Test
 
   def test_about_half_of_dodos_are_born_devoted
     arrange_arena
-    dodos = Array.new(400) { spawn_one(assert_kind("Dodo"), depth: 4) }
+    dodos = Array.new(400) { arrange_spawn_one(assert_kind("Dodo"), depth: 4) }
     assert_in_delta 200, dodos.count(&:devoted), 50
   end
 
@@ -5781,7 +5781,7 @@ class DungeonTest < Minitest::Test
   end
 
   def test_a_spawned_monster_knows_its_full_hit_points
-    goblin = spawn_one(assert_kind("goblin"), depth: 3)
+    goblin = arrange_spawn_one(assert_kind("goblin"), depth: 3)
     assert_equal goblin.hp, goblin.max_hp
   end
 

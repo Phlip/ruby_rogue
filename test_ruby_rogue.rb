@@ -6634,13 +6634,13 @@ class DungeonTest < Minitest::Test
 
   # --- slowness, healing, and empty potions ---
 
-  def add_new_potion(x, y, name) = assert_get(:monsters) << arrange_thing(x, y, "!", name, 3, 0..0, pacifist: true)
+  def arrange_new_potion(x, y, name) = assert_get(:monsters) << arrange_thing(x, y, "!", name, 3, 0..0, pacifist: true)
 
   def test_walking_into_a_new_potion_packs_it
     { "slow potion" => [:slow_potions, "a potion of slowness"], "healing potion" => [:healing_potions, "a potion of healing"],
       "empty potion" => [:empty_potions, "an empty potion"] }.each do |name, (slot, packed)|
       arrange_arena
-      add_new_potion(6, 5, name)
+      arrange_new_potion(6, 5, name)
       @game.move(1, 0)
       assert_equal 1, @game.backpack[slot], name
       assert_equal "You pack #{packed} into your backpack.", assert_last_log
@@ -6949,7 +6949,7 @@ class DungeonTest < Minitest::Test
 
   def test_walking_into_a_glue_potion_packs_it
     arrange_arena
-    add_new_potion(6, 5, "glue potion")
+    arrange_new_potion(6, 5, "glue potion")
     @game.move(1, 0)
     assert_equal 1, @game.backpack[:glue_potions]
     assert_equal "You pack a potion of glue into your backpack.", assert_last_log
@@ -7077,7 +7077,7 @@ class DungeonTest < Minitest::Test
 
   def test_walking_into_a_slip_potion_packs_it
     arrange_arena
-    add_new_potion(6, 5, "slip potion")
+    arrange_new_potion(6, 5, "slip potion")
     @game.move(1, 0)
     assert_equal 1, @game.backpack[:slip_potions]
     assert_equal "You pack a potion of slipperiness into your backpack.", assert_last_log

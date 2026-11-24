@@ -9308,6 +9308,7 @@ class DosBoxTest < Minitest::Test
   def arrange_set(name, value) = game.instance_variable_set("@#{name}", value)
   def assert_get(name) = game.instance_variable_get("@#{name}")
   def backpack = game.backpack
+  def assert_backpack = game.backpack
   def activate_console_keys(*pressed) = pressed.each { |k| @dos.handle(k) }
   # The backpack panel stacks under the status line, and the map under the panel, as the README shows
   def panel = @dos.send(:panel_lines)
@@ -9432,34 +9433,34 @@ class DosBoxTest < Minitest::Test
   end
 
   def test_t_throws_an_item_then_an_arrow_sends_it
-    backpack[:speed_potions] = 1
+    assert_backpack[:speed_potions] = 1
     activate_console_keys "T", "a"
     assert_equal "Throw the potion of speed which way?", game.log.last
     assert_equal "Then an arrow sends it that way, or R keeps it", assert_prompt_line
   end
 
   def test_p_pours_a_potion_into_a_candle
-    backpack[:speed_potions] = 1
-    backpack[:candles] = 1
+    assert_backpack[:speed_potions] = 1
+    assert_backpack[:candles] = 1
     activate_console_keys "P", "a"
-    assert_equal 1, backpack[:laced_speed_potions]
+    assert_equal 1, assert_backpack[:laced_speed_potions]
   end
 
   def test_k_kicks_a_laced_candle
-    backpack[:laced_gas_potions] = 1
+    assert_backpack[:laced_gas_potions] = 1
     activate_console_keys "K", "a"
     assert_equal "Kick the candle laced with potion of gaseous form which way?", game.log.last
   end
 
   def test_k_wont_kick_a_potion
-    backpack[:speed_potions] = 1
+    assert_backpack[:speed_potions] = 1
     activate_console_keys "K", "a"
     assert_equal "Only a laced candle can be kicked.", assert_prompt_line
-    assert_equal 1, backpack[:speed_potions]
+    assert_equal 1, assert_backpack[:speed_potions]
   end
 
   def test_escape_cancels_a_prompt
-    backpack[:speed_potions] = 1
+    assert_backpack[:speed_potions] = 1
     activate_console_keys "a", "Escape"
     assert_equal "? for the keys", assert_prompt_line
     assert_equal 1, backpack[:speed_potions]
@@ -9559,7 +9560,7 @@ class DosBoxTest < Minitest::Test
   end
 
   def test_s_chooses_then_x_throws_and_g_gives
-    backpack[:candles] = 2
+    assert_backpack[:candles] = 2
     activate_console_keys "s", "a"
     assert_equal "a) (*) 2 i candles", panel_line(1)
     assert(@dos.lines.any? { |l| l == "x: Throw candle right?" })
@@ -9567,7 +9568,7 @@ class DosBoxTest < Minitest::Test
     activate_console_keys "g"
     assert_equal "There's no one there to take it.", game.log.last
     activate_console_keys "x"
-    assert_equal 1, backpack[:candles]
+    assert_equal 1, assert_backpack[:candles]
   end
 
   def test_with_nothing_chosen_lower_case_g_grabs_like_g
@@ -9591,7 +9592,7 @@ class DosBoxTest < Minitest::Test
   end
 
   def test_dollar_gives_a_coin_the_way_you_face
-    backpack[:gold] = 2
+    assert_backpack[:gold] = 2
     activate_console_keys "$"
     assert_equal 1, game.gold
     assert_equal "No one is there, so the coin lands on the floor.", game.log.last
@@ -9600,7 +9601,7 @@ class DosBoxTest < Minitest::Test
   end
 
   def test_a_packed_shield_waits_for_its_rules
-    backpack[:shields] << { name: "shield", glyph: "༻" }
+    assert_backpack[:shields] << { name: "shield", glyph: "༻" }
     activate_console_keys "a", "a"
     assert_equal "There's nothing to do with a shield yet.", assert_prompt_line
     assert_equal 1, backpack[:shields].size

@@ -9431,7 +9431,9 @@ class DosBoxTest < Minitest::Test
     assert_backpack[:speed_potions] = 1
     activate_console_keys "a"
     assert_equal "Use which item? (a, Esc cancels)", assert_prompt_line
+
     activate_console_keys "a"
+
     assert assert_game.hasted?
     assert_equal 0, assert_backpack[:speed_potions]
   end

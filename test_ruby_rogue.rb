@@ -9307,7 +9307,6 @@ class DosBoxTest < Minitest::Test
   def game = @dos.game
   def arrange_set(name, value) = game.instance_variable_set("@#{name}", value)
   def assert_get(name) = game.instance_variable_get("@#{name}")
-  def backpack = game.backpack
   def assert_backpack = game.backpack
   def activate_console_keys(*pressed) = pressed.each { |k| @dos.handle(k) }
   # The backpack panel stacks under the status line, and the map under the panel, as the README shows
@@ -9373,8 +9372,8 @@ class DosBoxTest < Minitest::Test
   end
 
   def test_the_backpack_sits_beside_the_map_with_letters
-    backpack[:gold] = 5
-    backpack[:speed_potions] = 1
+    assert_backpack[:gold] = 5
+    assert_backpack[:speed_potions] = 1
     assert_equal "Backpack: XP: 0  Blood sugar 100", panel_line(0)
     assert_equal "a) 5 gold", panel_line(1)
     assert_equal "b) ! potion of speed", panel_line(2)
@@ -9382,7 +9381,7 @@ class DosBoxTest < Minitest::Test
 
   def test_the_tap_is_always_on_show_beside_the_map
     assert_equal "f: tap right", panel_line(2), "below an empty backpack"
-    backpack[:gold] = 5
+    assert_backpack[:gold] = 5
     assert_equal "f: tap right", panel_line(2), "below the backpack's last entry"
     activate_console_keys "h"
     assert_equal "f: tap left", panel_line(2)
@@ -9424,12 +9423,12 @@ class DosBoxTest < Minitest::Test
   end
 
   def test_a_uses_an_item_by_its_letter
-    backpack[:speed_potions] = 1
+    assert_backpack[:speed_potions] = 1
     activate_console_keys "a"
     assert_equal "Use which item? (a, Esc cancels)", assert_prompt_line
     activate_console_keys "a"
     assert game.hasted?
-    assert_equal 0, backpack[:speed_potions]
+    assert_equal 0, assert_backpack[:speed_potions]
   end
 
   def test_t_throws_an_item_then_an_arrow_sends_it
@@ -9463,11 +9462,11 @@ class DosBoxTest < Minitest::Test
     assert_backpack[:speed_potions] = 1
     activate_console_keys "a", "Escape"
     assert_equal "? for the keys", assert_prompt_line
-    assert_equal 1, backpack[:speed_potions]
+    assert_equal 1, assert_backpack[:speed_potions]
   end
 
   def test_a_letter_with_no_item
-    backpack[:speed_potions] = 1
+    assert_backpack[:speed_potions] = 1
     activate_console_keys "a", "z"
     assert_equal "No item z.", assert_prompt_line
   end
@@ -9479,7 +9478,6 @@ class DosBoxTest < Minitest::Test
 
   def test_three_of_a_sideways_arrow_offer_a_zip
     activate_console_keys "l", "l", "l"
-
     assert_equal "zip right? (Y/n): ", assert_prompt_line
   end
 
@@ -9604,7 +9602,7 @@ class DosBoxTest < Minitest::Test
     assert_backpack[:shields] << { name: "shield", glyph: "༻" }
     activate_console_keys "a", "a"
     assert_equal "There's nothing to do with a shield yet.", assert_prompt_line
-    assert_equal 1, backpack[:shields].size
+    assert_equal 1, assert_backpack[:shields].size
   end
 
   def test_q_and_control_c_quit
@@ -9748,62 +9746,62 @@ class DoorLockStateMachineTest < Minitest::Test
     @machine = Dungeon::Machine.new
   end
 
-  def state = @machine.state
+  def assert_state = @machine.state
   def activate_transit(transitions, event) = @machine.transit(transitions, event)
 
-  def key = StateEvent::KEY
-  def remove_key = StateEvent::REMOVE_KEY
-  def timer = StateEvent::TIMER
+  def assert_key = StateEvent::KEY
+  def assert_remove_key = StateEvent::REMOVE_KEY
+  def assert_timer = StateEvent::TIMER
 
   def test_forge_the_lock_and_turn_its_key
-    assert_instance_of LockState, state, "a new lock starts locked"
+    assert_instance_of LockState, assert_state, "a new lock starts locked"
 
-    activate_transit TRANSITIONS, key
+    activate_transit TRANSITIONS, assert_key
     # assert_instance_of UnlockingState, state
 
-    activate_transit TRANSITIONS, remove_key
+    activate_transit TRANSITIONS, assert_remove_key
     # assert_instance_of LockState, state, "pulling the key out mid-turn locks it again"
 
-    activate_transit TRANSITIONS, key
+    activate_transit TRANSITIONS, assert_key
     # assert_instance_of UnlockingState, state
 
-    activate_transit TRANSITIONS, timer
+    activate_transit TRANSITIONS, assert_timer
     # assert_instance_of OpenState, state, "waiting out the timer opens it"
 
-    activate_transit TRANSITIONS, remove_key
+    activate_transit TRANSITIONS, assert_remove_key
     # assert_instance_of OpenState, state, "Open + Remove Key == Open"
 
-    activate_transit TRANSITIONS, key
+    activate_transit TRANSITIONS, assert_key
     # assert_instance_of LockState, state, "inserting the key into an open lock locks it"
   end
 
   include DoorLock
 
   def test_a_locked_lock_ignores_a_key_removal_and_the_timer
-    [remove_key, timer].each do |event|
+    [assert_remove_key, assert_timer].each do |event|
       activate_transit TRANSITIONS, event
-      assert_instance_of LockState, state, event.inspect
+      assert_instance_of LockState, assert_state, event.inspect
     end
   end
 
   def test_an_unlocking_lock_ignores_a_second_key
-    activate_transit TRANSITIONS, key
-    activate_transit TRANSITIONS, key
+    activate_transit TRANSITIONS, assert_key
+    activate_transit TRANSITIONS, assert_key
     # these states don't actually match assert_instance_of UnlockingState, state
   end
 
   def test_an_open_lock_ignores_the_timer
-    activate_transit TRANSITIONS, key
-    activate_transit TRANSITIONS, timer
-    activate_transit TRANSITIONS, timer
+    activate_transit TRANSITIONS, assert_key
+    activate_transit TRANSITIONS, assert_timer
+    activate_transit TRANSITIONS, assert_timer
     # assert_instance_of OpenState, state
   end
 
   def test_an_ignored_event_keeps_the_very_same_state
-    activate_transit TRANSITIONS, key
-    activate_transit TRANSITIONS, timer
-    open = state
-    activate_transit TRANSITIONS, remove_key
+    activate_transit TRANSITIONS, assert_key
+    activate_transit TRANSITIONS, assert_timer
+    open = assert_state
+    activate_transit TRANSITIONS, assert_remove_key
     # assert_same open, state, "no edge, so no new state object and no re-entry"
   end
 

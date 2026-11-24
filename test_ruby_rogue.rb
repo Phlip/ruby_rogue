@@ -3097,7 +3097,7 @@ class DungeonTest < Minitest::Test
   end
 
   # Stray eggs, off any nest, on each of 50 freshly built levels at this depth
-  def stray_eggs(depth)
+  def arrange_stray_eggs(depth)
     50.times.map do |seed|
       srand(seed)
       @game = Dungeon.new
@@ -3110,16 +3110,16 @@ class DungeonTest < Minitest::Test
   def test_levels_7_thru_11_sometimes_hold_one_stray_real_quail_egg
     assert_equal 7..11, Dungeon::STRAY_EGG_DEPTHS
     (7..11).each do |depth|
-      counts = stray_eggs(depth).map(&:size)
+      counts = arrange_stray_eggs(depth).map(&:size)
       assert_includes counts, 0, "depth #{depth}: not every level"
       assert_includes counts, 1, "depth #{depth}: some level"
       assert(counts.all? { |n| n <= 1 }, "depth #{depth}: one at most")
-      assert(stray_eggs(depth).flatten.none?(&:dodo), "depth #{depth}: a real Quail egg")
+      assert(arrange_stray_eggs(depth).flatten.none?(&:dodo), "depth #{depth}: a real Quail egg")
     end
   end
 
   def test_no_stray_eggs_outside_levels_7_thru_11
-    [6, 12].each { |depth| assert(stray_eggs(depth).all?(&:empty?), "depth #{depth}") }
+    [6, 12].each { |depth| assert(arrange_stray_eggs(depth).all?(&:empty?), "depth #{depth}") }
   end
 
   # --- the Quail's placement ---

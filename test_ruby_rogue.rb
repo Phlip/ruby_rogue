@@ -310,7 +310,7 @@ module Things
   end
 
   # An egg, just yolk unless developed, not yet held up to the light unless candled
-  def egg(developed = false, candled: false) = Dungeon::Egg.new(developed, candled)
+  def arrange_egg(developed = false, candled: false) = Dungeon::Egg.new(developed, candled)
 
   # Fails naming every thingage on the level that is missing an ability score
   def assert_no_missing_scores(monsters)
@@ -3196,7 +3196,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_developed_axebeak_egg_carried_too_far_hatches_a_full_grown_axebeak
     arrange_arena
-    quail_egg = egg(true)
+    quail_egg = arrange_egg(true)
     assert_get(:backpack)[:eggs] = [quail_egg, arrange_axebeak_egg(true, fuse: 2)]
 
     @game.move(1, 0)
@@ -3257,7 +3257,7 @@ class DungeonTest < Minitest::Test
 
   def test_every_egg_of_any_kind_earns_xp_on_the_elevator_ride
     arrange_player_one_step_from_the_cage_plate
-    assert_get(:backpack)[:eggs] = [egg(true), egg(false), arrange_dodo_egg(true), arrange_axebeak_egg(true)]
+    assert_get(:backpack)[:eggs] = [arrange_egg(true), arrange_egg(false), arrange_dodo_egg(true), arrange_axebeak_egg(true)]
     arrange_quail(12, 12)
     xp = @game.experience_points
 
@@ -3431,7 +3431,7 @@ class DungeonTest < Minitest::Test
 
   def test_g_gathers_eggs_close_by
     arrange_arena
-    arrange_set :eggs, { [4, 4] => [egg, egg] }
+    arrange_set :eggs, { [4, 4] => [arrange_egg, arrange_egg] }
 
     @game.grab
     assert_equal "Grab a. the 2 eggs?", assert_last_log
@@ -3444,7 +3444,7 @@ class DungeonTest < Minitest::Test
 
   def test_g_takes_no_turn_when_the_backpack_is_too_full_for_an_egg
     arrange_arena
-    arrange_set :eggs, { [4, 4] => [egg] }
+    arrange_set :eggs, { [4, 4] => [arrange_egg] }
     assert_get(:backpack)[:gold] = 3_000 # 60 pounds
 
     @game.grab
@@ -4323,7 +4323,7 @@ class DungeonTest < Minitest::Test
   # A sprung cage holding a developed egg, a Quail, two Dodos, and a wall, so the game is won and over
   def activate_springing_a_cage_full_of_haul
     arrange_player_one_step_from_the_cage_plate
-    assert_get(:backpack)[:eggs] = [egg(true)]
+    assert_get(:backpack)[:eggs] = [arrange_egg(true)]
     assert_get(:monsters).push(arrange_thing(12, 12, "Q", "Quail", 28, 0..0, pacifist: true, spurned: true),
                                arrange_thing(18, 12, "D", "Dodo", 6, 1..2, pacifist: true, spurned: true),
                                arrange_thing(19, 12, "D", "Dodo", 6, 1..2, pacifist: true, spurned: true),
@@ -4680,7 +4680,7 @@ class DungeonTest < Minitest::Test
 
   def test_springing_the_trap_without_a_quail_goes_on_behind_the_bars
     arrange_player_one_step_from_the_cage_plate
-    assert_get(:backpack)[:eggs] = [egg(true)]
+    assert_get(:backpack)[:eggs] = [arrange_egg(true)]
     activate_stepping_onto_the_cage_plate
     refute @game.over?
     refute @game.won?
@@ -4695,7 +4695,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_troll_in_the_cage_keeps_the_plate_from_springing
     arrange_player_one_step_from_the_cage_plate
-    assert_get(:backpack)[:eggs] = [egg(true)]
+    assert_get(:backpack)[:eggs] = [arrange_egg(true)]
     arrange_quail(12, 12)
     arrange_troll(20, 12, hit: 0..0)
     activate_stepping_onto_the_cage_plate
@@ -4706,7 +4706,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_troll_outside_the_cage_is_no_threat
     arrange_player_one_step_from_the_cage_plate
-    assert_get(:backpack)[:eggs] = [egg(true)]
+    assert_get(:backpack)[:eggs] = [arrange_egg(true)]
     arrange_quail(12, 12)
     arrange_troll(15, 20, hit: 0..0)
     activate_stepping_onto_the_cage_plate
@@ -4716,7 +4716,7 @@ class DungeonTest < Minitest::Test
   def test_any_predator_in_the_cage_keeps_the_plate_from_springing_even_a_quiet_one
     %w[rat Coyote Troll].each do |name|
       arrange_player_one_step_from_the_cage_plate
-      assert_get(:backpack)[:eggs] = [egg(true)]
+      assert_get(:backpack)[:eggs] = [arrange_egg(true)]
       arrange_quail(12, 12)
       predator = arrange_thing(20, 12, name[0], name, 100, 0..0, aggressive: false)
       assert_get(:monsters) << predator
@@ -4732,7 +4732,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_dodo_in_the_cage_is_no_threat
     arrange_player_one_step_from_the_cage_plate
-    assert_get(:backpack)[:eggs] = [egg(true)]
+    assert_get(:backpack)[:eggs] = [arrange_egg(true)]
     arrange_quail(12, 12)
     assert_get(:monsters) << arrange_thing(20, 12, "D", "Dodo", 6, 0..0)
     assert_nil @game.send(:cage_threat)
@@ -4742,7 +4742,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_neutralized_troll_lets_the_plate_spring
     arrange_player_one_step_from_the_cage_plate
-    assert_get(:backpack)[:eggs] = [egg(true)]
+    assert_get(:backpack)[:eggs] = [arrange_egg(true)]
     arrange_quail(12, 12)
     arrange_troll(20, 12, hit: 0..0).last.asleep = 10
     activate_stepping_onto_the_cage_plate
@@ -4751,7 +4751,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_dead_quail_is_no_quail
     arrange_player_one_step_from_the_cage_plate
-    assert_get(:backpack)[:eggs] = [egg(true)]
+    assert_get(:backpack)[:eggs] = [arrange_egg(true)]
     arrange_quail(12, 12).last.hp = 0
     activate_stepping_onto_the_cage_plate
     refute @game.over?
@@ -4806,7 +4806,7 @@ class DungeonTest < Minitest::Test
 
   def test_nothing_moves_once_the_trap_is_sprung
     arrange_player_one_step_from_the_cage_plate
-    assert_get(:backpack)[:eggs] = [egg(false)]
+    assert_get(:backpack)[:eggs] = [arrange_egg(false)]
     arrange_monster(15, 20, hp: 100)
     arrange_quail(12, 12) # after the goblin, which the assertions read as the first monster
     activate_stepping_onto_the_cage_plate
@@ -4830,7 +4830,7 @@ class DungeonTest < Minitest::Test
 
   def test_the_haul_counts_creatures_of_a_kind_together
     arrange_player_one_step_from_the_cage_plate
-    assert_get(:backpack)[:eggs] = [egg(true)]
+    assert_get(:backpack)[:eggs] = [arrange_egg(true)]
     arrange_quail(12, 12)
     arrange_quail(13, 12)
     activate_stepping_onto_the_cage_plate
@@ -4839,7 +4839,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_developed_egg_in_your_backpack_hatches_and_wins
     arrange_player_one_step_from_the_cage_plate
-    assert_get(:backpack)[:eggs] = [egg(true), egg(false)]
+    assert_get(:backpack)[:eggs] = [arrange_egg(true), arrange_egg(false)]
     arrange_quail(12, 12)
     activate_stepping_onto_the_cage_plate
     assert @game.won?
@@ -4850,7 +4850,7 @@ class DungeonTest < Minitest::Test
 
   def test_eggs_lying_in_the_cage_hatch_too_but_not_those_outside
     arrange_player_one_step_from_the_cage_plate
-    arrange_set :eggs, { [12, 11] => [egg(true), egg(true)], [15, 20] => [egg(true)] }
+    arrange_set :eggs, { [12, 11] => [arrange_egg(true), arrange_egg(true)], [15, 20] => [arrange_egg(true)] }
     arrange_quail(12, 12)
     activate_stepping_onto_the_cage_plate
     assert @game.won?
@@ -4860,7 +4860,7 @@ class DungeonTest < Minitest::Test
 
   def test_yolk_eggs_never_hatch
     arrange_player_one_step_from_the_cage_plate
-    assert_get(:backpack)[:eggs] = [egg(false), egg(false, candled: true)]
+    assert_get(:backpack)[:eggs] = [arrange_egg(false), arrange_egg(false, candled: true)]
     arrange_quail(12, 12)
     activate_stepping_onto_the_cage_plate
     refute @game.won?
@@ -5529,15 +5529,15 @@ class DungeonTest < Minitest::Test
   def test_a_dodo_does_not_lay_on_another_egg
     arrange_arena
     arrange_dodo(6, 5) # beside the player, so it stays put
-    arrange_set :eggs, { [6, 5] => [egg] }
+    arrange_set :eggs, { [6, 5] => [arrange_egg] }
     def @game.rand(*args) = args.empty? ? 0.0 : Kernel.rand(*args)
     @game.rest
-    assert_equal({ [6, 5] => [egg] }, assert_get(:eggs))
+    assert_equal({ [6, 5] => [arrange_egg] }, assert_get(:eggs))
   end
 
   def test_candling_shows_a_dodo_s_egg
     arrange_arena
-    assert_get(:backpack)[:eggs] = [egg(true), arrange_dodo_egg(true)]
+    assert_get(:backpack)[:eggs] = [arrange_egg(true), arrange_dodo_egg(true)]
     @game.candle
     assert_includes @game.log, "One is a Dodo's."
     assert_equal "2 eggs (2 developed, 1 Dodo)", @game.send(:egg_count, @game.backpack[:eggs])
@@ -5552,7 +5552,7 @@ class DungeonTest < Minitest::Test
 
   def test_gathering_names_whose_eggs_they_are
     arrange_arena
-    arrange_set :eggs, { [6, 5] => [egg, egg(true), arrange_dodo_egg] }
+    arrange_set :eggs, { [6, 5] => [arrange_egg, arrange_egg(true), arrange_dodo_egg] }
     @game.move(1, 0)
     assert_includes @game.log, "You gather 2 Quail eggs and a Dodo egg from the nest."
   end
@@ -5565,7 +5565,7 @@ class DungeonTest < Minitest::Test
 
   def test_the_haul_counts_quail_eggs_apart_from_the_other_eggs
     arrange_player_one_step_from_the_cage_plate
-    assert_get(:backpack)[:eggs] = [egg(true), arrange_dodo_egg, arrange_dodo_egg(true)]
+    assert_get(:backpack)[:eggs] = [arrange_egg(true), arrange_dodo_egg, arrange_dodo_egg(true)]
     arrange_quail(12, 12)
 
     activate_stepping_onto_the_cage_plate
@@ -5586,7 +5586,7 @@ class DungeonTest < Minitest::Test
 
   def test_quail_chicks_win_with_dodo_chicks_among_them
     arrange_player_one_step_from_the_cage_plate
-    assert_get(:backpack)[:eggs] = [egg(true), arrange_dodo_egg(true)]
+    assert_get(:backpack)[:eggs] = [arrange_egg(true), arrange_dodo_egg(true)]
     arrange_quail(12, 12)
     activate_stepping_onto_the_cage_plate
     assert_includes @game.log, "An egg hatches, and Quail chicks peep in the Safe Room, with Dodo chicks among them. You won!"
@@ -6427,7 +6427,7 @@ class DungeonTest < Minitest::Test
 
   def test_candling_a_yolk_egg
     arrange_arena
-    assert_get(:backpack)[:eggs] = [egg(false)]
+    assert_get(:backpack)[:eggs] = [arrange_egg(false)]
     @game.candle
     assert_equal "You hold the egg up to the light. It's just yolk.", assert_last_log
     assert @game.backpack[:eggs].first.candled
@@ -6435,14 +6435,14 @@ class DungeonTest < Minitest::Test
 
   def test_candling_a_developed_egg
     arrange_arena
-    assert_get(:backpack)[:eggs] = [egg(true)]
+    assert_get(:backpack)[:eggs] = [arrange_egg(true)]
     @game.candle
     assert_equal "You hold the egg up to the light. You can see legs, wings, and a beak.", assert_last_log
   end
 
   def test_candling_several_eggs
     arrange_arena
-    assert_get(:backpack)[:eggs] = [egg(false), egg(true), egg(false)]
+    assert_get(:backpack)[:eggs] = [arrange_egg(false), arrange_egg(true), arrange_egg(false)]
     @game.candle
     assert_equal "You hold 3 eggs up to the light: 2 are just yolk; in one you can see legs, wings, and a beak.", assert_last_log
     assert(@game.backpack[:eggs].all?(&:candled))
@@ -6450,7 +6450,7 @@ class DungeonTest < Minitest::Test
 
   def test_candling_eggs_that_are_all_developed
     arrange_arena
-    assert_get(:backpack)[:eggs] = [egg(true), egg(true)]
+    assert_get(:backpack)[:eggs] = [arrange_egg(true), arrange_egg(true)]
     @game.candle
     assert_equal "You hold 2 eggs up to the light: in 2 you can see legs, wings, and a beak.", assert_last_log
   end
@@ -6458,7 +6458,7 @@ class DungeonTest < Minitest::Test
   def test_candling_takes_a_turn
     arrange_arena
     arrange_monster(9, 5, hp: 100, hit: 0..0)
-    assert_get(:backpack)[:eggs] = [egg(false)]
+    assert_get(:backpack)[:eggs] = [arrange_egg(false)]
     @game.candle
     assert_equal [8, 5], [assert_get(:monsters).first.x, assert_get(:monsters).first.y]
   end
@@ -6472,24 +6472,24 @@ class DungeonTest < Minitest::Test
   end
 
   def test_the_backpack_shows_what_candling_found
-    assert_get(:backpack)[:eggs] = [egg(true), egg(false), egg(false)]
+    assert_get(:backpack)[:eggs] = [arrange_egg(true), arrange_egg(false), arrange_egg(false)]
     assert_includes @game.contents, ["3 eggs", :eggs]
     @game.candle
     assert_includes @game.contents, ["3 eggs (1 developed, 2 yolk)", :eggs]
-    assert_get(:backpack)[:eggs] << egg(true)
+    assert_get(:backpack)[:eggs] << arrange_egg(true)
     assert_includes @game.contents, ["4 eggs (1 developed, 2 yolk, 1 unknown)", :eggs]
   end
 
   def test_a_nesting_quail_waits_by_its_eggs_then_follows_them
     arrange_arena
     assert_get(:monsters) << arrange_thing(9, 5, "Q", "Quail", 100, 0..0, pacifist: true, nesting: true)
-    arrange_set :eggs, { [6, 5] => [egg, egg(true)] }
+    arrange_set :eggs, { [6, 5] => [arrange_egg, arrange_egg(true)] }
     @game.rest
     q = assert_get(:monsters).first
     assert_equal [9, 5], [q.x, q.y], "nesting"
 
     @game.move(1, 0)
-    assert_equal [egg, egg(true)], @game.backpack[:eggs]
+    assert_equal [arrange_egg, arrange_egg(true)], @game.backpack[:eggs]
     refute q.nesting
     assert_includes @game.log, "You gather 2 Quail eggs from the nest."
     assert_equal "The nesting Quail stirs and follows its eggs!", assert_last_log
@@ -6498,14 +6498,14 @@ class DungeonTest < Minitest::Test
 
   def test_eggs_and_the_nest_are_drawn
     arrange_arena
-    arrange_set :eggs, { [6, 5] => [egg] }
+    arrange_set :eggs, { [6, 5] => [arrange_egg] }
     arrange_set :nest, [7, 5]
     assert_equal "0", @game.rows[5][6]
     assert_equal "&", @game.rows[5][7]
   end
 
   def test_inventory_lists_eggs
-    assert_get(:backpack)[:eggs] = [egg, egg]
+    assert_get(:backpack)[:eggs] = [arrange_egg, arrange_egg]
     @game.inventory
     assert_equal "Your backpack holds a. 2 eggs.", assert_last_log
   end
@@ -7447,7 +7447,7 @@ class DungeonTest < Minitest::Test
   end
 
   def test_the_load_is_everything_in_the_backpack_but_not_in_hand
-    assert_get(:backpack).merge!(gold: 50, sandwiches: 2, potions: 1, candles: 1, eggs: [egg, egg], weapons: [dagger, assert_axe])
+    assert_get(:backpack).merge!(gold: 50, sandwiches: 2, potions: 1, candles: 1, eggs: [arrange_egg, arrange_egg], weapons: [dagger, assert_axe])
     arrange_set :wielded, assert_axe
     assert_equal Rational(21, 2), @game.load, "1 + 2 + 0.5 + 1 + 1 + 1 + 4; the axe in hand weighs nothing"
     assert_equal "Load 10.5/60 lb", @game.load_text
@@ -7488,17 +7488,17 @@ class DungeonTest < Minitest::Test
   def test_eggs_go_in_only_as_far_as_there_is_room
     arrange_arena
     assert_get(:backpack)[:sandwiches] = 59
-    arrange_set :eggs, { [6, 5] => [egg, egg(true), egg] }
+    arrange_set :eggs, { [6, 5] => [arrange_egg, arrange_egg(true), arrange_egg] }
     @game.move(1, 0)
-    assert_equal [egg, egg(true)], @game.backpack[:eggs]
-    assert_equal({ [6, 5] => [egg] }, assert_get(:eggs))
+    assert_equal [arrange_egg, arrange_egg(true)], @game.backpack[:eggs]
+    assert_equal({ [6, 5] => [arrange_egg] }, assert_get(:eggs))
     assert_includes @game.log, "You gather 2 Quail eggs from the nest, leaving 1 for want of room."
   end
 
   def test_a_full_backpack_leaves_the_eggs_in_the_nest
     arrange_arena
     assert_get(:backpack)[:sandwiches] = 60
-    arrange_set :eggs, { [6, 5] => [egg, egg] }
+    arrange_set :eggs, { [6, 5] => [arrange_egg, arrange_egg] }
     @game.move(1, 0)
     assert_empty @game.backpack[:eggs]
     assert_equal 2, assert_get(:eggs)[[6, 5]].size
@@ -7726,7 +7726,7 @@ class DungeonTest < Minitest::Test
 
   def test_choosing_names_the_thing_on_the_buttons_without_using_it
     arrange_arena
-    assert_get(:backpack)[:eggs] = [egg]
+    assert_get(:backpack)[:eggs] = [arrange_egg]
     @game.choose(:eggs)
     assert_equal :eggs, @game.chosen
     assert_equal "Throw egg right?", @game.throw_label
@@ -7766,7 +7766,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_thrown_egg_breaks
     arrange_arena
-    assert_get(:backpack)[:eggs] = [egg(true)]
+    assert_get(:backpack)[:eggs] = [arrange_egg(true)]
     @game.choose(:eggs)
     @game.throw_chosen
     assert_empty @game.backpack[:eggs]
@@ -8544,7 +8544,7 @@ class DungeonTest < Minitest::Test
   def test_a_bribed_nesting_quail_leaves_its_eggs_to_follow_you
     arrange_arena
     assert_get(:monsters) << arrange_thing(6, 5, "Q", "Quail", 100, 0..0, pacifist: true, nesting: true)
-    arrange_set :eggs, { [7, 6] => [egg, egg] }
+    arrange_set :eggs, { [7, 6] => [arrange_egg, arrange_egg] }
     activate_give(:gold, 1, 0)
     q = assert_get(:monsters).first
     assert q.ally
@@ -9207,7 +9207,7 @@ class WebGameTest < Minitest::Test
 
   def test_the_backpack_eggs_button_holds_them_up_to_the_light
     arrange_open_floor_around_the_player
-    @web.game.backpack[:eggs] = [egg(true), egg, egg]
+    @web.game.backpack[:eggs] = [arrange_egg(true), arrange_egg, arrange_egg]
     body = @web.respond("GET", "/").last
     assert_includes body, %(<form method="post" action="/candle"><button style="width: auto">3 eggs</button></form>)
     assert_equal 303, @web.respond("POST", "/candle").first

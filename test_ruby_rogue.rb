@@ -8994,14 +8994,14 @@ class WebGameTest < Minitest::Test
     refute_includes @web.respond("GET", "/").last, %(action="/throw")
   end
 
-  def rest_button(body) = body[%r{<form method="post" action="/rest">.*?</form>}]
+  def arrange_rest_button(body) = body[%r{<form method="post" action="/rest">.*?</form>}]
 
   def test_rest_button_is_underlined_only_with_something_beside_you
     arrange_open_floor_around_the_player
-    refute_includes rest_button(@web.respond("GET", "/").last), "underline"
+    refute_includes arrange_rest_button(@web.respond("GET", "/").last), "underline"
 
     @web.game.instance_variable_get(:@monsters) << arrange_thing(6, 6, "¡", "potion", 3, 0..0, pacifist: true)
-    assert_includes rest_button(@web.respond("GET", "/").last), "text-decoration: underline"
+    assert_includes arrange_rest_button(@web.respond("GET", "/").last), "text-decoration: underline"
   end
 
   def test_the_backpack_potion_button_quaffs

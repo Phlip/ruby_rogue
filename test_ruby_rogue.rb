@@ -1339,7 +1339,7 @@ class DungeonTest < Minitest::Test
   # --- no ability score is ever nil ---
 
   # All six scores at an average 10, for building a Thingage straight from the Struct
-  def average_scores = [10] * Dungeon::ABILITIES.size
+  def assert_average_scores = [10] * Dungeon::ABILITIES.size
 
   def test_every_row_has_all_six_scores_as_whole_numbers
     Dungeon::THINGAGES.each do |row|

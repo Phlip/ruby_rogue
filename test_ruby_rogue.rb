@@ -7426,7 +7426,7 @@ class DungeonTest < Minitest::Test
   # --- weight ---
 
   def pounds(slot) = @game.pounds(slot)
-  def axe = Dungeon::WEAPONS.find { |w| w[:name] == "axe" }
+  def assert_axe = Dungeon::WEAPONS.find { |w| w[:name] == "axe" }
 
   def test_everything_the_backpack_holds_has_a_weight
     slots = @game.backpack.select { |_, n| n.is_a?(Integer) }.keys
@@ -7447,8 +7447,8 @@ class DungeonTest < Minitest::Test
   end
 
   def test_the_load_is_everything_in_the_backpack_but_not_in_hand
-    assert_get(:backpack).merge!(gold: 50, sandwiches: 2, potions: 1, candles: 1, eggs: [egg, egg], weapons: [dagger, axe])
-    arrange_set :wielded, axe
+    assert_get(:backpack).merge!(gold: 50, sandwiches: 2, potions: 1, candles: 1, eggs: [egg, egg], weapons: [dagger, assert_axe])
+    arrange_set :wielded, assert_axe
     assert_equal Rational(21, 2), @game.load, "1 + 2 + 0.5 + 1 + 1 + 1 + 4; the axe in hand weighs nothing"
     assert_equal "Load 10.5/60 lb", @game.load_text
   end
@@ -7526,11 +7526,11 @@ class DungeonTest < Minitest::Test
 
   def test_no_room_for_the_weapon_in_hand_means_no_swap
     arrange_arena
-    arrange_set :wielded, axe
+    arrange_set :wielded, assert_axe
     assert_get(:backpack).merge!(weapons: [dagger], sandwiches: 58)
     @game.wield
     assert_equal "Your backpack is too full to hold your axe in place of the dagger.", assert_last_log
-    assert_equal axe, @game.wielded
+    assert_equal assert_axe, @game.wielded
     assert_equal [dagger], @game.backpack[:weapons]
   end
 

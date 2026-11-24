@@ -499,28 +499,28 @@ class DungeonTest < Minitest::Test
 
   # --- the player's stats come from the Ego row ---
 
-  def ego = Dungeon::THINGAGES.find { |k| k[:name] == "Ego" }
+  def assert_ego = Dungeon::THINGAGES.find { |k| k[:name] == "Ego" }
 
   def test_the_player_is_the_ego_row
-    assert_same ego, Dungeon::PLAYER
+    assert_same assert_ego, Dungeon::PLAYER
   end
 
   def test_the_players_hit_points_are_the_ego_rows_plus_its_con_modifier
-    assert_equal ego[:hp] + Dungeon.modifier(ego[:con]), @game.max_hp
+    assert_equal assert_ego[:hp] + Dungeon.modifier(assert_ego[:con]), @game.max_hp
     assert_equal @game.max_hp, @game.hp, "starting at full"
   end
 
   def test_the_players_armor_class_is_the_ego_rows
-    assert_equal ego[:ac], @game.ac
+    assert_equal assert_ego[:ac], @game.ac
   end
 
   def test_bare_hands_hit_for_the_ego_rows_hit
-    assert_equal ego[:hit], Dungeon::BARE_HANDS_HIT
-    assert_equal ego[:hit], @game.weapon_hit
+    assert_equal assert_ego[:hit], Dungeon::BARE_HANDS_HIT
+    assert_equal assert_ego[:hit], @game.weapon_hit
   end
 
   def test_the_players_ability_scores_are_the_ego_rows
-    assert_equal ego.slice(*Dungeon::ABILITIES), @game.abilities
+    assert_equal assert_ego.slice(*Dungeon::ABILITIES), @game.abilities
     assert @game.abilities.frozen?, "read from the row, not changed in play"
   end
 

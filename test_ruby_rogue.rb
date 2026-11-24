@@ -1016,7 +1016,7 @@ class DungeonTest < Minitest::Test
 
   # --- monster spawning by depth ---
 
-  def arrangeManyLevels(depth)
+  def arrange_many_levels(depth)
     arrange_arena(px: 1, py: 1)
     arrange_set :depth, depth
     room = { x: 2, y: 2, w: W - 4, h: H - 4 }
@@ -1032,48 +1032,48 @@ class DungeonTest < Minitest::Test
     # assert_equal %w[@ g r 🗡], spawn_many(3).map(&:glyph).uniq.sort
   end
 
-  def kind_names(cr:) = Dungeon::THINGAGES.select { |k| k[:cr] <= cr }.map { |k| k[:name] }
-  def weapon_names = Dungeon::WEAPONS.map { |w| w[:name] }
+  def assert_kind_names(cr:) = Dungeon::THINGAGES.select { |k| k[:cr] <= cr }.map { |k| k[:name] }
+  def assert_weapon_names = Dungeon::WEAPONS.map { |w| w[:name] }
 
   def test_depth_one_only_spawns_challenge_rating_one_kinds
-    names = arrangeManyLevels(1).map(&:name).uniq
-    assert_empty names - kind_names(cr: 1) - weapon_names
+    names = arrange_many_levels(1).map(&:name).uniq
+    assert_empty names - assert_kind_names(cr: 1) - assert_weapon_names
     refute_includes names, "goblin"
   end
 
   def test_goblins_first_appear_on_depth_two
-    refute_includes arrangeManyLevels(1).map(&:name), "goblin"
-    assert_includes arrangeManyLevels(2).map(&:name), "goblin"
+    refute_includes arrange_many_levels(1).map(&:name), "goblin"
+    assert_includes arrange_many_levels(2).map(&:name), "goblin"
   end
 
   # TODO  revitalize this one
   def test_no_level_holds_more_of_a_kind_than_its_number_appearing
-    arrangeManyLevels(10)
+    arrange_many_levels(10)
   #   population = assert_get(:population)
   #   Dungeon::THINGAGES.each { |k| assert_operator population[k[:name]], :<=, k[:na], k[:name] }
   end
 
   def test_axebeaks_spawn_at_random_from_depth_five
     assert_equal [2, 5], Dungeon::THINGAGES.find { |k| k[:name] == "Axebeak" }.values_at(:na, :cr)
-    assert_includes arrangeManyLevels(5).map(&:name), "Axebeak"
-    refute_includes arrangeManyLevels(4).map(&:name), "Axebeak"
-    assert_operator arrangeManyLevels(9).count { |m| m.name == "Axebeak" }, :<=, 2, "two a level at most"
+    assert_includes arrange_many_levels(5).map(&:name), "Axebeak"
+    refute_includes arrange_many_levels(4).map(&:name), "Axebeak"
+    assert_operator arrange_many_levels(9).count { |m| m.name == "Axebeak" }, :<=, 2, "two a level at most"
   end
 
   def test_dodos_spawn_from_depth_seven
     assert_equal 7, Dungeon::THINGAGES.find { |k| k[:name] == "Dodo" }[:cr]
-    refute_includes arrangeManyLevels(6).map(&:name), "Dodo"
-    assert_includes arrangeManyLevels(7).map(&:name), "Dodo"
+    refute_includes arrange_many_levels(6).map(&:name), "Dodo"
+    assert_includes arrange_many_levels(7).map(&:name), "Dodo"
   end
 
   def test_random_spawning_skips_unique_kinds
     uniques = Dungeon::THINGAGES.select { |k| k[:na] == 1 }.map { |k| k[:name] }
     assert_includes uniques, "Quail"
-    assert_empty arrangeManyLevels(10).map(&:name) & uniques
+    assert_empty arrange_many_levels(10).map(&:name) & uniques
   end
 
   def test_a_unique_kind_spawns_when_named
-    arrangeManyLevels(10)
+    arrange_many_levels(10)
     quail = Dungeon::THINGAGES.find { |k| k[:name] == "Quail" }
     room = { x: 2, y: 2, w: W - 4, h: H - 4 }
     @game.send(:spawn_monster, room, quail)
@@ -1082,7 +1082,7 @@ class DungeonTest < Minitest::Test
   end
 
   def test_the_player_is_the_only_ego
-    arrangeManyLevels(10)
+    arrange_many_levels(10)
     assert_equal 0, assert_get(:monsters).count { |m| m.name == "Ego" || m.glyph == "@" }
 
     ego = Dungeon::THINGAGES.find { |k| k[:name] == "Ego" }
@@ -1090,7 +1090,7 @@ class DungeonTest < Minitest::Test
   end
 
   def test_spawning_stops_once_every_kind_is_full
-    arrangeManyLevels(10)
+    arrange_many_levels(10)
     full = Dungeon::THINGAGES.reject { |k| k[:na] == 1 || k[:out_of_band] }.sum { |k| k[:na] }
     # assert_equal full, assert_get(:monsters).size
     # assert_nil @game.send(:spawn_monster, { x: 2, y: 2, w: W - 4, h: H - 4 })
@@ -1098,7 +1098,7 @@ class DungeonTest < Minitest::Test
 
   def test_monsters_get_tougher_with_depth
     rat = Dungeon::THINGAGES.find { |k| k[:glyph] == "r" }
-    arrangeManyLevels(4).select { |m| m.glyph == "r" }.each { |m| assert_equal rat[:hp] + 4, m.hp }
+    arrange_many_levels(4).select { |m| m.glyph == "r" }.each { |m| assert_equal rat[:hp] + 4, m.hp }
   end
 
   # --- ability scores ---
@@ -1218,7 +1218,7 @@ class DungeonTest < Minitest::Test
 
   def test_gold_lies_about_only_as_treasure
     refute(Dungeon::THINGAGES.any? { |k| k[:name] == "gold" }, "no gold row")
-    refute_includes arrangeManyLevels(10).map(&:name), "gold"
+    refute_includes arrange_many_levels(10).map(&:name), "gold"
     assert_equal 0.02, Dungeon::GOLD_POUNDS
   end
 
@@ -1233,7 +1233,7 @@ class DungeonTest < Minitest::Test
   # end
 
   def test_randomly_spawned_thingages_carry_their_scores
-    arrangeManyLevels(10).each do |m|
+    arrange_many_levels(10).each do |m|
       row = kind(m.name) || kind("weapon")
       assert_equal row.values_at(*Dungeon::ABILITIES), scores(m), m.name
     end
@@ -1409,7 +1409,7 @@ class DungeonTest < Minitest::Test
   end
 
   def test_random_spawns_never_miss_a_score
-    (1..12).each { |depth| assert_no_missing_scores(arrangeManyLevels(depth)) }
+    (1..12).each { |depth| assert_no_missing_scores(arrange_many_levels(depth)) }
   end
 
   def test_freshly_built_levels_never_miss_a_score
@@ -2254,7 +2254,7 @@ class DungeonTest < Minitest::Test
   # --- the pacifist Quails are nummy ---
 
   def test_quail_first_spawns_at_depth_four
-    refute_includes arrangeManyLevels(3).map(&:glyph), "Q"
+    refute_includes arrange_many_levels(3).map(&:glyph), "Q"
     # TODO  the Quail went deeper
     # quails = spawn_many(4).select { |m| m.glyph == "Q" }
     # refute_empty quails
@@ -2524,7 +2524,7 @@ class DungeonTest < Minitest::Test
   # --- dormant weapons cloak themselves ---
 
   # A weapon cloaked as a goblin of average strength, lying dormant, so its blows are its weapon's range exactly
-  def arrangeCloaked(x, y, weapon: dagger, hp: 100)
+  def arrange_cloaked(x, y, weapon: dagger, hp: 100)
     assert_get(:monsters) << arrange_thing(x, y, "G", "goblin", hp, weapon[:hit], str: 10, pacifist: false, weapon: weapon)
   end
 
@@ -2548,7 +2548,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_cloaked_weapon_lies_dormant
     arrange_arena
-    arrangeCloaked(7, 5)
+    arrange_cloaked(7, 5)
     2.times { @game.rest }
     assert_equal [7, 5], [assert_get(:monsters).first.x, assert_get(:monsters).first.y]
     assert_equal 20, @game.hp
@@ -2556,7 +2556,7 @@ class DungeonTest < Minitest::Test
 
   def test_waking_a_cloaked_weapon_brings_its_weapon_to_bear
     arrange_arena
-    arrangeCloaked(6, 5, weapon: { name: "dagger", glyph: "🗡️", hit: 3..3 })
+    arrange_cloaked(6, 5, weapon: { name: "dagger", glyph: "🗡️", hit: 3..3 })
     @game.move(1, 0)
     assert_includes @game.log, "The goblin hits you with its dagger for 3."
     assert_equal 17, @game.hp
@@ -2566,14 +2566,14 @@ class DungeonTest < Minitest::Test
 
   # Defeats an armed goblin beside the player, then looks the body over until its loot is noticed
   def activate_defeat_and_notice(weapon: dagger)
-    arrangeCloaked(6, 5, weapon: weapon, hp: 1)
+    arrange_cloaked(6, 5, weapon: weapon, hp: 1)
     @game.move(1, 0)
     @game.send(:notice_loot)
   end
 
   def test_defeating_an_armed_creature_leaves_its_weapon_on_the_body
     arrange_arena
-    arrangeCloaked(6, 5, hp: 1)
+    arrange_cloaked(6, 5, hp: 1)
     @game.move(1, 0)
     assert_empty assert_get(:monsters)
     assert_equal Dungeon::FISTS, @game.wielded, "nothing seized"
@@ -2583,7 +2583,7 @@ class DungeonTest < Minitest::Test
 
   def test_every_1_plus_d4_rests_or_moves_a_passed_perception_check_pops_up_the_grab_prompt
     arrange_arena
-    arrangeCloaked(6, 5, hp: 1)
+    arrange_cloaked(6, 5, hp: 1)
     def @game.perceives? = true
     def @game.perception_wait = 4
     @game.move(1, 0) # the first of four
@@ -2599,7 +2599,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_failed_perception_check_notices_nothing
     arrange_arena
-    arrangeCloaked(6, 5, hp: 1)
+    arrange_cloaked(6, 5, hp: 1)
     def @game.perceives? = false
     def @game.perception_wait = 4
     @game.move(1, 0)
@@ -2624,8 +2624,8 @@ class DungeonTest < Minitest::Test
 
   def test_perception_spots_an_unconscious_creatures_weapon_but_not_an_opponents
     arrange_arena
-    arrangeCloaked(6, 5, hp: 100).last.asleep = 50
-    arrangeCloaked(4, 5, hp: 100, weapon: bow)
+    arrange_cloaked(6, 5, hp: 100).last.asleep = 50
+    arrange_cloaked(4, 5, hp: 100, weapon: bow)
     def @game.perceives? = true
     def @game.perception_wait = 4
     4.times { @game.rest }
@@ -2694,7 +2694,7 @@ class DungeonTest < Minitest::Test
 
   def test_with_nothing_noticed_there_is_nothing_to_grab
     arrange_arena
-    arrangeCloaked(6, 5, hp: 1)
+    arrange_cloaked(6, 5, hp: 1)
     @game.move(1, 0) # a body, but its loot not yet noticed
     @game.grab
     assert_equal "There's nothing close by to grab.", assert_last_log
@@ -2706,7 +2706,7 @@ class DungeonTest < Minitest::Test
     assert_get(:monsters) << arrange_thing(6, 6, "R", "rat", 1, 1..2, aggressive: true, disguised_potion: :sleep_potions)
     @game.move(1, 1)
     @game.send(:notice_loot)
-    arrangeCloaked(4, 5, hp: 100)
+    arrange_cloaked(4, 5, hp: 100)
     arrange_set :facing, [0, -1] # facing neither
 
     @game.grab
@@ -2717,7 +2717,7 @@ class DungeonTest < Minitest::Test
 
   def test_asking_takes_no_turn_and_escape_lets_it_go
     arrange_arena
-    goblin = arrangeCloaked(6, 5, hp: 100).last
+    goblin = arrange_cloaked(6, 5, hp: 100).last
     goblin.aggressive = true
     hp = @game.hp
 
@@ -2731,7 +2731,7 @@ class DungeonTest < Minitest::Test
 
   def test_wrenching_a_weapon_from_an_opponent_takes_it_and_wakes_it
     arrange_arena
-    goblin = arrangeCloaked(6, 5, hp: 100).last
+    goblin = arrange_cloaked(6, 5, hp: 100).last
     def @game.wrest?(_m) = true
 
     @game.grab
@@ -2746,7 +2746,7 @@ class DungeonTest < Minitest::Test
 
   def test_an_opponent_who_wins_the_contest_keeps_its_weapon_and_the_try_costs_a_turn
     arrange_arena
-    goblin = arrangeCloaked(6, 5, hp: 100).last
+    goblin = arrange_cloaked(6, 5, hp: 100).last
     def @game.wrest?(_m) = false
 
     @game.grab
@@ -2760,14 +2760,14 @@ class DungeonTest < Minitest::Test
 
   def test_the_contest_is_strength_against_strength
     arrange_arena
-    goblin = arrangeCloaked(6, 5, hp: 100).last
+    goblin = arrange_cloaked(6, 5, hp: 100).last
     wins = ->(str) { goblin.str = str; srand(5); 1000.times.count { @game.send(:wrest?, goblin) } }
     assert_operator wins.(30), :<, wins.(1) - 500, "a strong grip (+10) holds where a weak one (-5) lets go"
   end
 
   def test_an_unconscious_creature_gives_up_its_weapon_without_a_contest
     arrange_arena
-    goblin = arrangeCloaked(6, 5, hp: 100).last
+    goblin = arrange_cloaked(6, 5, hp: 100).last
     goblin.asleep = 5
     def @game.wrest?(_m) = raise("no contest for the unconscious")
 
@@ -4073,7 +4073,7 @@ class DungeonTest < Minitest::Test
   end
 
   def test_random_spawning_never_makes_a_door
-    refute_includes arrangeManyLevels(10).map(&:name), "door"
+    refute_includes arrange_many_levels(10).map(&:name), "door"
   end
 
   def test_a_coin_opens_a_door
@@ -4780,7 +4780,7 @@ class DungeonTest < Minitest::Test
   end
 
   def test_the_cage_plate_never_spawns_at_random
-    refute_includes arrangeManyLevels(10).map(&:name), "cage plate"
+    refute_includes arrange_many_levels(10).map(&:name), "cage plate"
   end
 
   def test_the_bars_block_the_way_until_lifted
@@ -8793,7 +8793,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_rest_whose_perception_check_fails_notices_nothing_new
     arrange_arena
-    arrangeCloaked(6, 5, hp: 1)
+    arrange_cloaked(6, 5, hp: 1)
     def @game.perception_wait = 1
     def @game.perceives? = false
     @game.move(1, 0)
@@ -8803,7 +8803,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_rest_whose_perception_check_passes_asks_instead
     arrange_arena
-    arrangeCloaked(6, 5, hp: 1)
+    arrange_cloaked(6, 5, hp: 1)
     def @game.perception_wait = 1
     def @game.perceives? = true
     @game.move(1, 0)

@@ -1436,7 +1436,7 @@ class DungeonTest < Minitest::Test
     arrange_rat_at(8, 5)
     arrange_new_door(9, 5)
     arrange_wall_ally_at(10, 5)
-    arrangeWeapon(11, 5)
+    arrange_weapon(11, 5)
     assert_no_missing_scores(assert_get(:monsters))
   end
 
@@ -2496,19 +2496,19 @@ class DungeonTest < Minitest::Test
 
   # --- weapons ---
 
-  def assertWeapons = Dungeon::THINGAGES.find { |k| k[:name] == "weapon" }
+  def assert_weapons = Dungeon::THINGAGES.find { |k| k[:name] == "weapon" }
 
   def dagger = Dungeon::WEAPONS.find { |w| w[:name] == "dagger" }
   def sword = { name: "sword", glyph: "⚔", hit: 4..4 }
 
-  def arrangeWeapon(x, y, hp: 1, pacifist: false, kind: dagger)
+  def arrange_weapon(x, y, hp: 1, pacifist: false, kind: dagger)
     assert_get(:monsters) << arrange_thing(x, y, kind[:glyph], kind[:name], hp, kind[:hit], pacifist: pacifist)
   end
 
   def test_weapons_spawn_as_every_kind_of_weapon
     arrange_arena(px: 1, py: 1)
     room = { x: 2, y: 2, w: W - 4, h: H - 4 }
-    200.times { @game.send(:spawn_monster, room, assertWeapons) }
+    200.times { @game.send(:spawn_monster, room, assert_weapons) }
     wielded = assert_get(:monsters).map(&:weapon).uniq
     assert_equal Dungeon::WEAPONS.sort_by { |w| w[:name] }, wielded.sort_by { |w| w[:name] }
     assert_equal [%w[R rat]], assert_get(:monsters).map { |m| [m.glyph, m.name] }.uniq, "each cloaked as a goblin at depth 1"
@@ -2850,7 +2850,7 @@ class DungeonTest < Minitest::Test
 
   def test_defeating_a_weapon_seizes_it
     arrange_arena
-    arrangeWeapon(6, 5)
+    arrange_weapon(6, 5)
     @game.move(1, 0)
     assert_empty assert_get(:monsters)
     assert_equal "#{dagger[:glyph]} dagger", @game.weapon
@@ -2860,7 +2860,7 @@ class DungeonTest < Minitest::Test
 
   def test_wounding_a_weapon_does_not_seize_it
     arrange_arena
-    arrangeWeapon(6, 5, hp: 100)
+    arrange_weapon(6, 5, hp: 100)
     @game.move(1, 0)
     assert_equal "fists", @game.weapon
     assert_equal Dungeon::BARE_HANDS_HIT, @game.weapon_hit
@@ -2869,7 +2869,7 @@ class DungeonTest < Minitest::Test
   def test_a_second_weapon_goes_into_the_backpack
     arrange_arena
     arrange_set :wielded, sword
-    arrangeWeapon(6, 5)
+    arrange_weapon(6, 5)
     @game.move(1, 0)
     assert_empty assert_get(:monsters)
     assert_equal "⚔ sword", @game.weapon, "the wielded weapon stays in hand"
@@ -2882,7 +2882,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_bow_goes_into_the_backpack_even_with_empty_hands
     arrange_arena
-    arrangeWeapon(6, 5, kind: bow)
+    arrange_weapon(6, 5, kind: bow)
     @game.move(1, 0)
     assert_empty assert_get(:monsters)
     assert_equal "fists", @game.weapon, "not wielded automatically"
@@ -2892,7 +2892,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_packed_bow_is_wielded_when_you_choose
     arrange_arena
-    arrangeWeapon(6, 5, kind: bow)
+    arrange_weapon(6, 5, kind: bow)
     @game.move(1, 0)
     @game.wield("bow")
     assert_equal "🏹 bow", @game.weapon
@@ -2902,7 +2902,7 @@ class DungeonTest < Minitest::Test
   def test_a_bow_too_heavy_to_pack_is_left_behind_even_with_empty_hands
     arrange_arena
     assert_get(:backpack)[:gold] = 3000
-    arrangeWeapon(6, 5, kind: bow)
+    arrange_weapon(6, 5, kind: bow)
     @game.move(1, 0)
     assert_equal "fists", @game.weapon
     assert_empty @game.backpack[:weapons]
@@ -3066,7 +3066,7 @@ class DungeonTest < Minitest::Test
   def test_about_half_of_all_weapons_are_pacifists
     arrange_arena(px: 1, py: 1)
     room = { x: 2, y: 2, w: W - 4, h: H - 4 }
-    400.times { @game.send(:spawn_monster, room, assertWeapons) }
+    400.times { @game.send(:spawn_monster, room, assert_weapons) }
     share = assert_get(:monsters).count(&:pacifist) / 400.0
     # assert_in_delta 0.5, share, 0.1
   end
@@ -5833,7 +5833,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_bow_goes_into_the_backpack_pacifist
     arrange_arena
-    arrangeWeapon(6, 5, kind: bow, pacifist: true)
+    arrange_weapon(6, 5, kind: bow, pacifist: true)
 
     @game.move(1, 0)
 
@@ -5843,7 +5843,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_bow_goes_into_the_backpack_remorseless
     arrange_arena
-    arrange_remorseless(arrangeWeapon(6, 5, kind: bow).last)
+    arrange_remorseless(arrange_weapon(6, 5, kind: bow).last)
 
     @game.move(1, 0)
 
@@ -5855,7 +5855,7 @@ class DungeonTest < Minitest::Test
     arrange_arena
     arrange_set :wielded, sword
     assert_get(:backpack)[:gold] = 3000
-    arrangeWeapon(6, 5, pacifist: true)
+    arrange_weapon(6, 5, pacifist: true)
 
     @game.move(1, 0)
 
@@ -5867,7 +5867,7 @@ class DungeonTest < Minitest::Test
     arrange_arena
     arrange_set :wielded, sword
     assert_get(:backpack)[:gold] = 3000
-    arrange_remorseless(arrangeWeapon(6, 5).last)
+    arrange_remorseless(arrange_weapon(6, 5).last)
 
     @game.move(1, 0)
 
@@ -5877,7 +5877,7 @@ class DungeonTest < Minitest::Test
 
   def test_defeating_a_weapon_seizes_it_pacifist
     arrange_arena
-    arrangeWeapon(6, 5, pacifist: true)
+    arrange_weapon(6, 5, pacifist: true)
 
     @game.move(1, 0)
 
@@ -5887,7 +5887,7 @@ class DungeonTest < Minitest::Test
 
   def test_defeating_a_weapon_seizes_it_remorseless
     arrange_arena
-    arrange_remorseless(arrangeWeapon(6, 5).last)
+    arrange_remorseless(arrange_weapon(6, 5).last)
 
     @game.move(1, 0)
 
@@ -7417,7 +7417,7 @@ class DungeonTest < Minitest::Test
 
   def test_defeating_a_weapon_still_wields_it_with_empty_hands
     arrange_arena
-    arrangeWeapon(6, 5)
+    arrange_weapon(6, 5)
     @game.move(1, 0)
     assert_equal "dagger", @game.wielded[:name]
     assert_empty @game.backpack[:weapons]
@@ -7509,7 +7509,7 @@ class DungeonTest < Minitest::Test
     arrange_arena
     arrange_set :wielded, sword
     assert_get(:backpack)[:gold] = 3000
-    arrangeWeapon(6, 5)
+    arrange_weapon(6, 5)
     @game.move(1, 0)
     assert_empty @game.backpack[:weapons]
     assert_equal "You defeat the dagger, but your backpack is too full to carry it, so you leave it behind.", assert_last_log
@@ -7518,7 +7518,7 @@ class DungeonTest < Minitest::Test
   def test_a_seized_weapon_keeps_its_weight
     arrange_arena
     arrange_set :wielded, sword
-    arrangeWeapon(6, 5)
+    arrange_weapon(6, 5)
     @game.move(1, 0)
     assert_equal 1, @game.backpack[:weapons].first[:packable]
     assert_equal 1, @game.load

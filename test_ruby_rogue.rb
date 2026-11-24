@@ -2983,22 +2983,22 @@ class DungeonTest < Minitest::Test
     assert_equal "Your backpack holds a. 3 ⚔ swords, b. 🪓 axe, and c. 2 #{assert_dagger[:glyph]} daggers.", assert_last_log
   end
 
-  def swords = Dungeon::WEAPONS.find { |w| w[:name] == "swords" }
+  def assert_swords = Dungeon::WEAPONS.find { |w| w[:name] == "swords" }
 
   def test_the_crossed_swords_are_a_pair
     arrange_arena
-    assert_get(:backpack)[:weapons] << swords
+    assert_get(:backpack)[:weapons] << assert_swords
     @game.wield
     assert_equal "You now wield ⚔️ swords.", assert_last_log
 
-    assert_get(:backpack)[:weapons].push(swords, swords, swords)
+    assert_get(:backpack)[:weapons].push(assert_swords, assert_swords, assert_swords)
     @game.inventory
     assert_equal "Your backpack holds a. 3 pairs of ⚔️ swords.", assert_last_log
   end
 
   def test_seizing_a_pair_says_them
     arrange_arena
-    assert_get(:monsters) << arrange_thing(6, 5, swords[:glyph], "swords", 1, swords[:hit], pacifist: true)
+    assert_get(:monsters) << arrange_thing(6, 5, assert_swords[:glyph], "swords", 1, assert_swords[:hit], pacifist: true)
     @game.move(1, 0)
     assert_equal "You defeat the swords and seize them! You now wield ⚔️ swords.", assert_last_log
   end
@@ -5899,7 +5899,7 @@ class DungeonTest < Minitest::Test
 
   def test_seizing_a_pair_says_them_pacifist
     arrange_arena
-    assert_get(:monsters) << arrange_thing(6, 5, swords[:glyph], "swords", 1, swords[:hit], pacifist: true)
+    assert_get(:monsters) << arrange_thing(6, 5, assert_swords[:glyph], "swords", 1, assert_swords[:hit], pacifist: true)
 
     @game.move(1, 0)
 
@@ -5909,7 +5909,7 @@ class DungeonTest < Minitest::Test
 
   def test_seizing_a_pair_says_them_remorseless
     arrange_arena
-    assert_get(:monsters) << arrange_remorseless(arrange_thing(6, 5, swords[:glyph], "swords", 1, swords[:hit], pacifist: true))
+    assert_get(:monsters) << arrange_remorseless(arrange_thing(6, 5, assert_swords[:glyph], "swords", 1, assert_swords[:hit], pacifist: true))
 
     @game.move(1, 0)
 

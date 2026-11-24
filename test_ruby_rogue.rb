@@ -2498,10 +2498,10 @@ class DungeonTest < Minitest::Test
 
   def assert_weapons = Dungeon::THINGAGES.find { |k| k[:name] == "weapon" }
 
-  def dagger = Dungeon::WEAPONS.find { |w| w[:name] == "dagger" }
-  def sword = { name: "sword", glyph: "⚔", hit: 4..4 }
+  def assert_dagger = Dungeon::WEAPONS.find { |w| w[:name] == "dagger" }
+  def assert_sword = { name: "sword", glyph: "⚔", hit: 4..4 }
 
-  def arrange_weapon(x, y, hp: 1, pacifist: false, kind: dagger)
+  def arrange_weapon(x, y, hp: 1, pacifist: false, kind: assert_dagger)
     assert_get(:monsters) << arrange_thing(x, y, kind[:glyph], kind[:name], hp, kind[:hit], pacifist: pacifist)
   end
 
@@ -2524,7 +2524,7 @@ class DungeonTest < Minitest::Test
   # --- dormant weapons cloak themselves ---
 
   # A weapon cloaked as a goblin of average strength, lying dormant, so its blows are its weapon's range exactly
-  def arrange_cloaked(x, y, weapon: dagger, hp: 100)
+  def arrange_cloaked(x, y, weapon: assert_dagger, hp: 100)
     assert_get(:monsters) << arrange_thing(x, y, "G", "goblin", hp, weapon[:hit], str: 10, pacifist: false, weapon: weapon)
   end
 
@@ -2565,7 +2565,7 @@ class DungeonTest < Minitest::Test
   # --- loot on the body ---
 
   # Defeats an armed goblin beside the player, then looks the body over until its loot is noticed
-  def activate_defeat_and_notice(weapon: dagger)
+  def activate_defeat_and_notice(weapon: assert_dagger)
     arrange_cloaked(6, 5, weapon: weapon, hp: 1)
     @game.move(1, 0)
     @game.send(:notice_loot)
@@ -2578,7 +2578,7 @@ class DungeonTest < Minitest::Test
     assert_empty assert_get(:monsters)
     assert_equal Dungeon::FISTS, @game.wielded, "nothing seized"
     assert_equal "You defeat the goblin!", assert_last_log
-    assert_equal({ name: "goblin", loot: { weapon: dagger }, noticed: false }, assert_get(:bodies)[[6, 5]])
+    assert_equal({ name: "goblin", loot: { weapon: assert_dagger }, noticed: false }, assert_get(:bodies)[[6, 5]])
   end
 
   def test_every_1_plus_d4_rests_or_moves_a_passed_perception_check_pops_up_the_grab_prompt
@@ -2625,7 +2625,7 @@ class DungeonTest < Minitest::Test
   def test_perception_spots_an_unconscious_creatures_weapon_but_not_an_opponents
     arrange_arena
     arrange_cloaked(6, 5, hp: 100).last.asleep = 50
-    arrange_cloaked(4, 5, hp: 100, weapon: bow)
+    arrange_cloaked(4, 5, hp: 100, weapon: assert_bow)
     def @game.perceives? = true
     def @game.perception_wait = 4
     4.times { @game.rest }
@@ -2654,23 +2654,23 @@ class DungeonTest < Minitest::Test
     activate_defeat_and_notice
     @game.grab
     @game.grab_pick("a")
-    assert_equal dagger, @game.wielded
-    assert_equal "You grab the dagger off the body! You now wield #{dagger[:glyph]} dagger.", assert_last_log
+    assert_equal assert_dagger, @game.wielded
+    assert_equal "You grab the dagger off the body! You now wield #{assert_dagger[:glyph]} dagger.", assert_last_log
     assert_empty assert_get(:bodies)
   end
 
   def test_a_grabbed_bow_goes_in_the_backpack
     arrange_arena
-    activate_defeat_and_notice(weapon: bow)
+    activate_defeat_and_notice(weapon: assert_bow)
     @game.grab
     @game.grab_pick("a")
-    assert_equal [bow], @game.backpack[:weapons]
+    assert_equal [assert_bow], @game.backpack[:weapons]
     assert_equal "You grab the bow off the body and pack it into your backpack.", assert_last_log
   end
 
   def test_a_weapon_too_heavy_to_grab_stays_on_the_body
     arrange_arena
-    arrange_set :wielded, sword
+    arrange_set :wielded, assert_sword
     assert_get(:backpack)[:gold] = 3000
     activate_defeat_and_notice(weapon: Dungeon::WEAPONS.find { |w| w[:name] == "swords" })
     @game.grab
@@ -2726,7 +2726,7 @@ class DungeonTest < Minitest::Test
 
     assert_nil @game.grab_question
     assert_equal hp, @game.hp, "no turn, so no blow"
-    assert_equal dagger, goblin.weapon
+    assert_equal assert_dagger, goblin.weapon
   end
 
   def test_wrenching_a_weapon_from_an_opponent_takes_it_and_wakes_it
@@ -2737,11 +2737,11 @@ class DungeonTest < Minitest::Test
     @game.grab
     @game.grab_pick("a")
 
-    assert_equal dagger, @game.wielded
+    assert_equal assert_dagger, @game.wielded
     assert_nil goblin.weapon
     assert_equal assert_kind("goblin")[:hit], goblin.hit, "back to its own blows"
     assert goblin.aggressive
-    assert_includes @game.log, "You wrench the dagger from the goblin! You now wield #{dagger[:glyph]} dagger."
+    assert_includes @game.log, "You wrench the dagger from the goblin! You now wield #{assert_dagger[:glyph]} dagger."
   end
 
   def test_an_opponent_who_wins_the_contest_keeps_its_weapon_and_the_try_costs_a_turn
@@ -2752,7 +2752,7 @@ class DungeonTest < Minitest::Test
     @game.grab
     @game.grab_pick("a")
 
-    assert_equal dagger, goblin.weapon
+    assert_equal assert_dagger, goblin.weapon
     assert_equal Dungeon::FISTS, @game.wielded
     assert_includes @game.log, "You grab at the goblin's dagger, but it holds on."
     assert(@game.log.any? { |l| l.start_with?("The goblin hits you with its dagger") }, "it took its turn")
@@ -2775,8 +2775,8 @@ class DungeonTest < Minitest::Test
     assert_equal "Grab a. the unconscious goblin's dagger?", assert_last_log
     @game.grab_pick("a")
 
-    assert_equal dagger, @game.wielded
-    assert_includes @game.log, "You slip the dagger from the unconscious goblin! You now wield #{dagger[:glyph]} dagger."
+    assert_equal assert_dagger, @game.wielded
+    assert_includes @game.log, "You slip the dagger from the unconscious goblin! You now wield #{assert_dagger[:glyph]} dagger."
   end
 
   def test_the_dos_box_prompts_for_a_letter_and_takes_it
@@ -2853,9 +2853,9 @@ class DungeonTest < Minitest::Test
     arrange_weapon(6, 5)
     @game.move(1, 0)
     assert_empty assert_get(:monsters)
-    assert_equal "#{dagger[:glyph]} dagger", @game.weapon
-    assert_equal dagger[:hit], @game.weapon_hit
-    assert_equal "You defeat the dagger and seize it! You now wield #{dagger[:glyph]} dagger.", assert_last_log
+    assert_equal "#{assert_dagger[:glyph]} dagger", @game.weapon
+    assert_equal assert_dagger[:hit], @game.weapon_hit
+    assert_equal "You defeat the dagger and seize it! You now wield #{assert_dagger[:glyph]} dagger.", assert_last_log
   end
 
   def test_wounding_a_weapon_does_not_seize_it
@@ -2868,31 +2868,31 @@ class DungeonTest < Minitest::Test
 
   def test_a_second_weapon_goes_into_the_backpack
     arrange_arena
-    arrange_set :wielded, sword
+    arrange_set :wielded, assert_sword
     arrange_weapon(6, 5)
     @game.move(1, 0)
     assert_empty assert_get(:monsters)
     assert_equal "⚔ sword", @game.weapon, "the wielded weapon stays in hand"
     assert_equal 4..4, @game.weapon_hit
-    assert_equal [dagger], @game.backpack[:weapons]
+    assert_equal [assert_dagger], @game.backpack[:weapons]
     # assert_equal "You defeat the dagger and pack it into your backpack.", last_log
   end
 
-  def bow = Dungeon::WEAPONS.find { |w| w[:name] == "bow" }
+  def assert_bow = Dungeon::WEAPONS.find { |w| w[:name] == "bow" }
 
   def test_a_bow_goes_into_the_backpack_even_with_empty_hands
     arrange_arena
-    arrange_weapon(6, 5, kind: bow)
+    arrange_weapon(6, 5, kind: assert_bow)
     @game.move(1, 0)
     assert_empty assert_get(:monsters)
     assert_equal "fists", @game.weapon, "not wielded automatically"
-    assert_equal [bow], @game.backpack[:weapons]
+    assert_equal [assert_bow], @game.backpack[:weapons]
     assert_equal "You defeat the bow and pack it into your backpack.", assert_last_log
   end
 
   def test_a_packed_bow_is_wielded_when_you_choose
     arrange_arena
-    arrange_weapon(6, 5, kind: bow)
+    arrange_weapon(6, 5, kind: assert_bow)
     @game.move(1, 0)
     @game.wield("bow")
     assert_equal "🏹 bow", @game.weapon
@@ -2902,7 +2902,7 @@ class DungeonTest < Minitest::Test
   def test_a_bow_too_heavy_to_pack_is_left_behind_even_with_empty_hands
     arrange_arena
     assert_get(:backpack)[:gold] = 3000
-    arrange_weapon(6, 5, kind: bow)
+    arrange_weapon(6, 5, kind: assert_bow)
     @game.move(1, 0)
     assert_equal "fists", @game.weapon
     assert_empty @game.backpack[:weapons]
@@ -2914,21 +2914,23 @@ class DungeonTest < Minitest::Test
 
   def test_marching_a_strung_bow_is_safe_at_first
     arrange_arena
-    arrange_set :wielded, bow
+    arrange_set :wielded, assert_bow
     activate_marching_steps(Dungeon::STRUNG_STEPS)
-    assert_equal bow, @game.wielded
+    assert_equal assert_bow, @game.wielded
     assert_equal Dungeon::STRUNG_STEPS, @game.strung_steps
   end
 
   def test_marching_a_strung_bow_longer_snaps_its_string_sooner_or_later
     arrange_arena
-    arrange_set :wielded, bow
+    arrange_set :wielded, assert_bow
     arrange_set :strung_steps, Dungeon::STRUNG_STEPS
+
     500.times do |i|
       break if @game.wielded == Dungeon::FISTS
 
       @game.move(i.even? ? 1 : -1, 0) # back and forth, clear of the walls
     end
+
     assert_equal "fists", @game.weapon, "the bow is ruined"
     assert_includes @game.log, "Strung too long on the march, your bow's string snaps, and the bow breaks! You're down to your fists."
     assert_equal 0, @game.strung_steps
@@ -2937,7 +2939,7 @@ class DungeonTest < Minitest::Test
 
   def test_resting_and_fighting_are_not_marching
     arrange_arena
-    arrange_set :wielded, bow
+    arrange_set :wielded, assert_bow
     arrange_monster(6, 5, hp: 100, hit: 0..0, aggressive: false)
     3.times { @game.rest }
     @game.move(1, 0)
@@ -2946,39 +2948,39 @@ class DungeonTest < Minitest::Test
 
   def test_swapping_weapons_unstrings_the_bow
     arrange_arena
-    arrange_set :wielded, bow
+    arrange_set :wielded, assert_bow
     arrange_set :strung_steps, 40
-    assert_get(:backpack)[:weapons] << dagger
+    assert_get(:backpack)[:weapons] << assert_dagger
     @game.wield
     assert_equal 0, @game.strung_steps
     @game.wield("bow")
-    assert_equal bow, @game.wielded
+    assert_equal assert_bow, @game.wielded
     assert_equal 0, @game.strung_steps, "it strings fresh"
   end
 
   def test_a_weapon_with_no_string_never_snaps
     arrange_arena
-    arrange_set :wielded, dagger
+    arrange_set :wielded, assert_dagger
     activate_marching_steps(Dungeon::STRUNG_STEPS * 3)
-    assert_equal dagger, @game.wielded
+    assert_equal assert_dagger, @game.wielded
     assert_equal 0, @game.strung_steps
   end
 
   def test_inventory_lists_packed_weapons
-    assert_get(:backpack).merge!(gold: 5, sandwiches: 2, weapons: [sword])
+    assert_get(:backpack).merge!(gold: 5, sandwiches: 2, weapons: [assert_sword])
     @game.inventory
     assert_equal "Your backpack holds 5 gold, b. 2 sandwiches, and c. ⚔ sword.", assert_last_log
 
-    assert_get(:backpack)[:weapons] << dagger
+    assert_get(:backpack)[:weapons] << assert_dagger
     @game.inventory
     assert_match(/Your backpack holds 5 gold, b. 2 sandwiches, c. ⚔ sword, and d. 🗡️ dagger\.\z/, assert_last_log)
   end
 
   def test_inventory_counts_weapons_of_a_kind_together
     axe = { name: "axe", glyph: "🪓", hit: 5..5 }
-    assert_get(:backpack)[:weapons].push(sword, axe, sword, dagger, sword, dagger)
+    assert_get(:backpack)[:weapons].push(assert_sword, axe, assert_sword, assert_dagger, assert_sword, assert_dagger)
     @game.inventory
-    assert_equal "Your backpack holds a. 3 ⚔ swords, b. 🪓 axe, and c. 2 #{dagger[:glyph]} daggers.", assert_last_log
+    assert_equal "Your backpack holds a. 3 ⚔ swords, b. 🪓 axe, and c. 2 #{assert_dagger[:glyph]} daggers.", assert_last_log
   end
 
   def swords = Dungeon::WEAPONS.find { |w| w[:name] == "swords" }
@@ -3004,7 +3006,7 @@ class DungeonTest < Minitest::Test
   def test_wield_by_name_takes_that_kind
     arrange_arena
     axe = { name: "axe", glyph: "🪓", hit: 5..5 }
-    assert_get(:backpack)[:weapons].push(sword, axe, sword)
+    assert_get(:backpack)[:weapons].push(assert_sword, axe, assert_sword)
     @game.wield("axe")
     assert_equal "🪓 axe", @game.weapon
     assert_equal %w[sword sword], @game.backpack[:weapons].map { |w| w[:name] }
@@ -3016,7 +3018,7 @@ class DungeonTest < Minitest::Test
 
   def test_wield_from_bare_hands_takes_the_packed_weapon
     arrange_arena
-    assert_get(:backpack)[:weapons] << sword
+    assert_get(:backpack)[:weapons] << assert_sword
     @game.wield
     assert_equal "⚔ sword", @game.weapon
     assert_equal 4..4, @game.weapon_hit
@@ -3027,7 +3029,7 @@ class DungeonTest < Minitest::Test
   def test_wield_swaps_and_cycles_through_packed_weapons
     arrange_arena
     arrange_set :wielded, { name: "club", glyph: "🏏", hit: 1..1 }
-    assert_get(:backpack)[:weapons].push(sword, { name: "bow", glyph: "🏹", hit: 3..3 })
+    assert_get(:backpack)[:weapons].push(assert_sword, { name: "bow", glyph: "🏹", hit: 3..3 })
 
     @game.wield
     assert_equal "⚔ sword", @game.weapon
@@ -3049,7 +3051,7 @@ class DungeonTest < Minitest::Test
 
   def test_wielding_takes_a_turn
     arrange_arena
-    assert_get(:backpack)[:weapons] << sword
+    assert_get(:backpack)[:weapons] << assert_sword
     arrange_monster(9, 5)
     @game.wield
     assert_equal 8, assert_get(:monsters).first.x
@@ -3550,7 +3552,7 @@ class DungeonTest < Minitest::Test
 
   def test_g_lists_and_takes_a_weapon_lying_close_by
     arrange_arena
-    assert_get(:monsters) << arrange_thing(4, 4, dagger[:glyph], "dagger", 3, dagger[:hit], pacifist: true)
+    assert_get(:monsters) << arrange_thing(4, 4, assert_dagger[:glyph], "dagger", 3, assert_dagger[:hit], pacifist: true)
     @game.grab
     assert_equal "Grab a. the dagger?", assert_last_log
     @game.grab_pick("a")
@@ -5833,7 +5835,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_bow_goes_into_the_backpack_pacifist
     arrange_arena
-    arrange_weapon(6, 5, kind: bow, pacifist: true)
+    arrange_weapon(6, 5, kind: assert_bow, pacifist: true)
 
     @game.move(1, 0)
 
@@ -5843,7 +5845,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_bow_goes_into_the_backpack_remorseless
     arrange_arena
-    arrange_remorseless(arrange_weapon(6, 5, kind: bow).last)
+    arrange_remorseless(arrange_weapon(6, 5, kind: assert_bow).last)
 
     @game.move(1, 0)
 
@@ -5853,7 +5855,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_weapon_too_heavy_to_pack_pacifist
     arrange_arena
-    arrange_set :wielded, sword
+    arrange_set :wielded, assert_sword
     assert_get(:backpack)[:gold] = 3000
     arrange_weapon(6, 5, pacifist: true)
 
@@ -5865,7 +5867,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_weapon_too_heavy_to_pack_remorseless
     arrange_arena
-    arrange_set :wielded, sword
+    arrange_set :wielded, assert_sword
     assert_get(:backpack)[:gold] = 3000
     arrange_remorseless(arrange_weapon(6, 5).last)
 
@@ -5882,7 +5884,7 @@ class DungeonTest < Minitest::Test
     @game.move(1, 0)
 
     refute assert_warned_log?
-    assert_equal "You defeat the dagger and seize it! You now wield #{dagger[:glyph]} dagger.", assert_last_log
+    assert_equal "You defeat the dagger and seize it! You now wield #{assert_dagger[:glyph]} dagger.", assert_last_log
   end
 
   def test_defeating_a_weapon_seizes_it_remorseless
@@ -5892,7 +5894,7 @@ class DungeonTest < Minitest::Test
     @game.move(1, 0)
 
     refute assert_warned_log?
-    assert_equal "You defeat the dagger and seize it! You now wield #{dagger[:glyph]} dagger.", assert_last_log
+    assert_equal "You defeat the dagger and seize it! You now wield #{assert_dagger[:glyph]} dagger.", assert_last_log
   end
 
   def test_seizing_a_pair_says_them_pacifist
@@ -7447,7 +7449,7 @@ class DungeonTest < Minitest::Test
   end
 
   def test_the_load_is_everything_in_the_backpack_but_not_in_hand
-    assert_get(:backpack).merge!(gold: 50, sandwiches: 2, potions: 1, candles: 1, eggs: [arrange_egg, arrange_egg], weapons: [dagger, assert_axe])
+    assert_get(:backpack).merge!(gold: 50, sandwiches: 2, potions: 1, candles: 1, eggs: [arrange_egg, arrange_egg], weapons: [assert_dagger, assert_axe])
     arrange_set :wielded, assert_axe
     assert_equal Rational(21, 2), @game.load, "1 + 2 + 0.5 + 1 + 1 + 1 + 4; the axe in hand weighs nothing"
     assert_equal "Load 10.5/60 lb", @game.assert_load_text
@@ -7507,7 +7509,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_weapon_too_heavy_to_pack_is_left_behind
     arrange_arena
-    arrange_set :wielded, sword
+    arrange_set :wielded, assert_sword
     assert_get(:backpack)[:gold] = 3000
     arrange_weapon(6, 5)
     @game.move(1, 0)
@@ -7517,7 +7519,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_seized_weapon_keeps_its_weight
     arrange_arena
-    arrange_set :wielded, sword
+    arrange_set :wielded, assert_sword
     arrange_weapon(6, 5)
     @game.move(1, 0)
     assert_equal 1, @game.backpack[:weapons].first[:packable]
@@ -7527,11 +7529,11 @@ class DungeonTest < Minitest::Test
   def test_no_room_for_the_weapon_in_hand_means_no_swap
     arrange_arena
     arrange_set :wielded, assert_axe
-    assert_get(:backpack).merge!(weapons: [dagger], sandwiches: 58)
+    assert_get(:backpack).merge!(weapons: [assert_dagger], sandwiches: 58)
     @game.wield
     assert_equal "Your backpack is too full to hold your axe in place of the dagger.", assert_last_log
     assert_equal assert_axe, @game.wielded
-    assert_equal [dagger], @game.backpack[:weapons]
+    assert_equal [assert_dagger], @game.backpack[:weapons]
   end
 
   # --- going back up ---
@@ -7737,7 +7739,8 @@ class DungeonTest < Minitest::Test
   end
 
   def test_the_buttons_name_every_kind_of_thing
-    assert_get(:backpack).merge!(gold: 1, laced_speed_potions: 1, weapons: [dagger], shields: [{ name: "shield", glyph: "༻" }])
+    assert_get(:backpack).merge!(gold: 1, laced_speed_potions: 1, weapons: [assert_dagger], shields: [{ name: "shield", glyph: "༻" }])
+
     { gold: "coin", laced_speed_potions: "candle laced with potion of speed", "dagger" => "dagger", shields: "shield" }.each do |slot, noun|
       @game.choose(slot)
       assert_equal "Throw #{noun} right?", @game.throw_label, slot
@@ -7800,11 +7803,11 @@ class DungeonTest < Minitest::Test
   def test_a_creature_that_catches_a_weapon_wields_it
     arrange_arena
     goblin = arrange_monster(7, 5, hp: 100, hit: 0..0, aggressive: false).last
-    assert_get(:backpack)[:weapons] = [dagger]
+    assert_get(:backpack)[:weapons] = [assert_dagger]
     @game.choose("dagger")
     @game.throw_chosen
-    assert_equal dagger, goblin.weapon
-    assert_equal dagger[:hit], goblin.hit
+    assert_equal assert_dagger, goblin.weapon
+    assert_equal assert_dagger[:hit], goblin.hit
     assert_equal "You throw a dagger, and the goblin catches it. It wields it.", assert_last_log
   end
 
@@ -7820,8 +7823,8 @@ class DungeonTest < Minitest::Test
 
   def test_a_thrown_weapon_lands_to_be_taken_again
     arrange_arena
-    arrange_set :wielded, sword
-    assert_get(:backpack)[:weapons] = [dagger]
+    arrange_set :wielded, assert_sword
+    assert_get(:backpack)[:weapons] = [assert_dagger]
     @game.choose("dagger")
     @game.throw_chosen
     landed = assert_get(:monsters).find { |m| m.name == "dagger" }
@@ -7845,11 +7848,11 @@ class DungeonTest < Minitest::Test
   def test_giving_the_chosen_thing_to_whoever_you_face
     arrange_arena
     goblin = arrange_monster(6, 5, hp: 100, hit: 0..0, aggressive: false).last
-    assert_get(:backpack)[:weapons] = [dagger]
+    assert_get(:backpack)[:weapons] = [assert_dagger]
     @game.choose("dagger")
     @game.give_chosen
     assert_empty @game.backpack[:weapons]
-    assert_equal dagger, goblin.weapon
+    assert_equal assert_dagger, goblin.weapon
     assert_equal "You give the goblin a dagger. It wields it.", assert_last_log
   end
 

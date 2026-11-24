@@ -642,7 +642,7 @@ class DungeonTest < Minitest::Test
   # --- a sandwich's lock is its wrapping ---
 
   def arrange_sandwich_at(x, y) = assert_get(:monsters) << arrange_thing(x, y, "%", "sandwich", 3, 0..0, pacifist: true)
-  def wrapping(food) = @game.send(:food_machine, food).state
+  def assert_wrapping(food) = @game.send(:food_machine, food).state
 
   # --- tough sandwiches, stowed wrapping and all ---
 
@@ -739,15 +739,15 @@ class DungeonTest < Minitest::Test
 
     @game.tap
 
-    assert_instance_of Dungeon::SandwichOpenState, wrapping(food)
+    assert_instance_of Dungeon::SandwichOpenState, assert_wrapping(food)
     assert_equal "The sandwich is open and edible, but your blood sugar isn't low enough to want it.", assert_last_log
   end
 
   def test_a_sandwich_starts_wrapped_and_its_machine_runs_on_its_rows_table
     arrange_arena
     food = arrange_sandwich_at(6, 5).last
-    assert_instance_of Dungeon::LockState, wrapping(food)
-    table = kind("sandwich")[:transitions]
+    assert_instance_of Dungeon::LockState, assert_wrapping(food)
+    table = assert_kind("sandwich")[:transitions]
     assert_equal Dungeon::SandwichOpenState, table[[Dungeon::UnlockingState, StateEvent::TIMER]]
     assert_every_state(settled: true)
   end
@@ -756,7 +756,7 @@ class DungeonTest < Minitest::Test
     arrange_arena
     food = arrange_sandwich_at(6, 5).last
     @game.tap
-    assert_instance_of Dungeon::UnlockingState, wrapping(food)
+    assert_instance_of Dungeon::UnlockingState, assert_wrapping(food)
     assert_includes 1..2, food.hp
     assert_equal "You work at the sandwich's wrapping.", assert_last_log
   end
@@ -765,7 +765,7 @@ class DungeonTest < Minitest::Test
     arrange_arena
     food = arrange_sandwich_at(6, 5).last
     3.times { @game.tap }
-    assert_instance_of Dungeon::SandwichOpenState, wrapping(food)
+    assert_instance_of Dungeon::SandwichOpenState, assert_wrapping(food)
     assert_includes assert_get(:monsters), food, "opened, not destroyed"
     assert_equal "The sandwich's wrapping gives way. It's open, and edible.", assert_last_log
   end
@@ -775,7 +775,7 @@ class DungeonTest < Minitest::Test
     arrange_set :wielded, { name: "club", glyph: nil, hit: 10..10 }
     food = arrange_sandwich_at(6, 5).last
     @game.move(1, 0)
-    assert_instance_of Dungeon::SandwichOpenState, wrapping(food), "one blow of 10 opens it"
+    assert_instance_of Dungeon::SandwichOpenState, assert_wrapping(food), "one blow of 10 opens it"
     assert_includes assert_get(:monsters), food
     assert_every_state(settled: true)
   end
@@ -785,7 +785,7 @@ class DungeonTest < Minitest::Test
     food = arrange_sandwich_at(6, 5).last
     3.times { @game.tap }
     @game.tap
-    assert_instance_of Dungeon::SandwichOpenState, wrapping(food)
+    assert_instance_of Dungeon::SandwichOpenState, assert_wrapping(food)
     assert_includes assert_get(:monsters), food
     assert_equal "The sandwich is open and edible, but your blood sugar isn't low enough to want it.", assert_last_log
   end
@@ -797,7 +797,7 @@ class DungeonTest < Minitest::Test
     arrange_set :blood_sugar, 10
     @game.tap
     refute_includes assert_get(:monsters), food, "that sandwich is gone"
-    assert_instance_of Dungeon::LockState, wrapping(food), "the edge back to the lock"
+    assert_instance_of Dungeon::LockState, assert_wrapping(food), "the edge back to the lock"
     assert_includes 11..22, @game.blood_sugar, "10, plus 2d6, less any drop in the round the tap took"
     assert(@game.log.any? { |l| l.match?(/\AYou eat the sandwich\. Your blood sugar rises by \d+, to \d+\.\z/) })
   end
@@ -1103,15 +1103,15 @@ class DungeonTest < Minitest::Test
 
   # --- ability scores ---
 
-  def kind(name) = Dungeon::THINGAGES.find { |k| k[:name] == name }
-  def scores(t) = Dungeon::ABILITIES.map { |a| t[a] }
-  def room = { x: 2, y: 2, w: W - 4, h: H - 4 }
+  def assert_kind(name) = Dungeon::THINGAGES.find { |k| k[:name] == name }
+  def assert_scores(t) = Dungeon::ABILITIES.map { |a| t[a] }
+  def arrange_room = { x: 2, y: 2, w: W - 4, h: H - 4 }
 
   # Lays one thingage of this kind (a THINGAGES row, or a tweaked copy of one) at the given depth
   def spawn_one(row, depth: 1)
     arrange_arena(px: 1, py: 1)
     arrange_set :depth, depth
-    @game.send(:spawn_monster, room, row)
+    @game.send(:spawn_monster, arrange_room, row)
     assert_get(:monsters).last
   end
 
@@ -1234,34 +1234,34 @@ class DungeonTest < Minitest::Test
 
   def test_randomly_spawned_thingages_carry_their_scores
     arrange_many_levels(10).each do |m|
-      row = kind(m.name) || kind("weapon")
-      assert_equal row.values_at(*Dungeon::ABILITIES), scores(m), m.name
+      row = assert_kind(m.name) || assert_kind("weapon")
+      assert_equal row.values_at(*Dungeon::ABILITIES), assert_scores(m), m.name
     end
   end
 
   def test_spawning_still_fills_the_flags_after_the_scores
-    goblin = spawn_one(kind("goblin").merge(greedy: 1.0), depth: 2)
+    goblin = spawn_one(assert_kind("goblin").merge(greedy: 1.0), depth: 2)
     refute goblin.pacifist
     assert goblin.greedy, "greedy lands in greedy, not in a score"
     assert_nil goblin.spurned
 
-    wall = spawn_one(kind("wall"))
+    wall = spawn_one(assert_kind("wall"))
     assert_equal true, wall.pacifist
   end
 
   def test_constitution_adds_to_spawned_hit_points
-    assert_equal 10 + 4 + 3, spawn_one(kind("orc"), depth: 4).hp, "orc: con 17 is +3"
-    assert_equal 18 + 5 + 4, spawn_one(kind("Troll"), depth: 5).hp, "troll: con 18 is +4"
-    assert_equal 6 + 2, spawn_one(kind("goblin"), depth: 2).hp, "goblin: con 10 is +0"
+    assert_equal 10 + 4 + 3, spawn_one(assert_kind("orc"), depth: 4).hp, "orc: con 17 is +3"
+    assert_equal 18 + 5 + 4, spawn_one(assert_kind("Troll"), depth: 5).hp, "troll: con 18 is +4"
+    assert_equal 6 + 2, spawn_one(assert_kind("goblin"), depth: 2).hp, "goblin: con 10 is +0"
   end
 
   def test_a_frail_thingage_still_spawns_with_at_least_one_hit_point
-    assert_equal 1, spawn_one(kind("sandwich")).hp, "sandwich: 3 + depth 1 - 4 for con 2"
+    assert_equal 1, spawn_one(assert_kind("sandwich")).hp, "sandwich: 3 + depth 1 - 4 for con 2"
   end
 
   def test_raising_con_in_the_row_raises_spawned_hit_points
-    plain = spawn_one(kind("goblin"), depth: 2).hp
-    hardy = spawn_one(kind("goblin").merge(con: 18), depth: 2).hp
+    plain = spawn_one(assert_kind("goblin"), depth: 2).hp
+    hardy = spawn_one(assert_kind("goblin").merge(con: 18), depth: 2).hp
     assert_equal plain + 4, hardy
   end
 
@@ -1290,7 +1290,7 @@ class DungeonTest < Minitest::Test
   end
 
   def test_an_ornery_row_spawns_an_ornery_goblin
-    ornery = spawn_one(kind("goblin").merge(str: 18, hit: 2..2), depth: 2)
+    ornery = spawn_one(assert_kind("goblin").merge(str: 18, hit: 2..2), depth: 2)
     assert_equal 18, ornery.str
     assert_equal 6, one_blow_from(ornery), "2 +4"
   end
@@ -1300,13 +1300,13 @@ class DungeonTest < Minitest::Test
   end
 
   def test_the_real_goblin_hits_one_less_than_its_roll
-    goblin = spawn_one(kind("goblin"), depth: 2)
+    goblin = spawn_one(assert_kind("goblin"), depth: 2)
     blows = Array.new(200) { @game.send(:blow, goblin) }
     assert_equal [1, 2, 3], blows.uniq.sort, "hit 1..4 with str 8 (-1), floored at 1"
   end
 
   def test_the_real_troll_hits_harder_than_its_roll
-    troll = spawn_one(kind("Troll"), depth: 5)
+    troll = spawn_one(assert_kind("Troll"), depth: 5)
     blows = Array.new(200) { @game.send(:blow, troll) }
     # assert_equal (6..11).to_a, blows.uniq.sort, "hit 3..8 with str 16 (+3)"
   end
@@ -1314,11 +1314,11 @@ class DungeonTest < Minitest::Test
   def test_strength_does_not_arm_a_harmless_thingage
     wall = arrange_thing(0, 0, "#", "wall", 30, 0..0, str: 18)
     assert_equal 0, @game.send(:blow, wall)
-    assert_equal [18, 0, 18, 0, 0, 0], scores(wall), "str dex con int wis cha, from the wall row"
+    assert_equal [18, 0, 18, 0, 0, 0], assert_scores(wall), "str dex con int wis cha, from the wall row"
 
     empty = arrange_thing(0, 0, "i", "candle", 30, 0...0, str: 18)
     assert_equal 0, @game.send(:blow, empty)
-    assert_equal [18, 0, 2, 0, 0, 0], scores(empty), "str from the field, dex con int wis cha from the candle row"
+    assert_equal [18, 0, 2, 0, 0, 0], assert_scores(empty), "str from the field, dex con int wis cha from the candle row"
   end
 
   def test_an_allys_strength_adds_to_its_strikes
@@ -1363,7 +1363,7 @@ class DungeonTest < Minitest::Test
   def test_a_thingage_can_be_built_with_all_six_scores
     t = Dungeon::Thingage.new(0, 0, "g", "goblin", 5, 1..4, 8, 17, 10, 13, 15, 10)
     assert_state(t)
-    assert_equal [8, 17, 10, 13, 15, 10], scores(t)
+    assert_equal [8, 17, 10, 13, 15, 10], assert_scores(t)
   end
 
   def test_no_score_can_be_set_to_nil_by_name
@@ -1423,7 +1423,7 @@ class DungeonTest < Minitest::Test
     goblin = arrange_monster(9, 4, hp: 100, str: 14, dex: 3, con: 12, int: 5, wis: 7, cha: 16, ally: true).last
     activate_taking_the_stairs_east
     assert_includes assert_get(:monsters), goblin
-    assert_equal [14, 3, 12, 5, 7, 16], scores(goblin)
+    assert_equal [14, 3, 12, 5, 7, 16], assert_scores(goblin)
   end
 
   def test_the_test_fixtures_never_miss_a_score
@@ -1441,7 +1441,7 @@ class DungeonTest < Minitest::Test
   end
 
   def test_a_weapons_scores_come_from_the_weapon_row
-    assert_equal Dungeon::ABILITIES.map { |a| kind("weapon")[a] }, scores(arrange_thing(0, 0, "🪓", "axe", 5, 5..12))
+    assert_equal Dungeon::ABILITIES.map { |a| assert_kind("weapon")[a] }, assert_scores(arrange_thing(0, 0, "🪓", "axe", 5, 5..12))
   end
 
   # --- temperament: rats start aggressive, squirrels curious, everything else neutral ---
@@ -1452,10 +1452,10 @@ class DungeonTest < Minitest::Test
   end
 
   def test_spawned_rats_are_aggressive_and_everything_else_neutral
-    rat = spawn_one(kind("rat"))
+    rat = spawn_one(assert_kind("rat"))
     assert rat.aggressive
     %w[squirrel goblin wall orc troll weapon sandwich potion Quail].each do |name|
-      assert_equal false, spawn_one(kind(name), depth: 5).aggressive, name
+      assert_equal false, spawn_one(assert_kind(name), depth: 5).aggressive, name
     end
   end
 
@@ -1499,7 +1499,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_real_rat_chases_and_bites_for_one
     arrange_arena
-    arrange_rat_at(7, 5, str: kind("rat")[:str])
+    arrange_rat_at(7, 5, str: assert_kind("rat")[:str])
     @game.rest
     assert_equal [6, 5], [assert_get(:monsters).first.x, assert_get(:monsters).first.y]
     @game.rest
@@ -1526,7 +1526,7 @@ class DungeonTest < Minitest::Test
   def test_a_spawned_goblin_starts_neutral_and_fights_once_hit
     arrange_arena
     arrange_set :depth, 2
-    @game.send(:spawn_monster, { x: 6, y: 5, w: 1, h: 1 }, kind("goblin").merge(hit: 2..2, str: 10, hp: 90))
+    @game.send(:spawn_monster, { x: 6, y: 5, w: 1, h: 1 }, assert_kind("goblin").merge(hit: 2..2, str: 10, hp: 90))
     @game.rest
     assert_equal 20, @game.hp, "neutral: no blow"
     @game.move(1, 0)
@@ -1823,11 +1823,11 @@ class DungeonTest < Minitest::Test
     px, py = assert_get(:px), assert_get(:py)
     spot = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]].map { |dx, dy| [px + dx, py + dy] }
                                                                                 .find { |x, y| !@game.send(:wall?, x, y) && !@game.send(:monster_at, x, y) }
-    @game.send(:spawn_monster, nil, kind("hallucination potion"), at: spot)
+    @game.send(:spawn_monster, nil, assert_kind("hallucination potion"), at: spot)
     assert_equal "hallucination potion", @game.send(:monster_at, *spot).name
     spot = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]].map { |dx, dy| [px + dx, py + dy] }
                                                                                 .find { |x, y| !@game.send(:wall?, x, y) && !@game.send(:monster_at, x, y) }
-    @game.send(:spawn_monster, nil, kind("shield"), at: spot)
+    @game.send(:spawn_monster, nil, assert_kind("shield"), at: spot)
 
     #  this is how you manually test a magic item without searching for it forever
 
@@ -1845,7 +1845,7 @@ class DungeonTest < Minitest::Test
 
   def test_one_pile_in_15_is_a_gold_mimic_with_a_challenge_rating_of_1
     assert_in_delta 1.0 / 15, Dungeon::GOLD_MIMIC_CHANCE
-    assert_equal({ glyph: "$", cr: 1, out_of_band: true }, kind("gold mimic").slice(:glyph, :cr, :out_of_band))
+    assert_equal({ glyph: "$", cr: 1, out_of_band: true }, assert_kind("gold mimic").slice(:glyph, :cr, :out_of_band))
   end
 
   def test_a_level_settles_each_piles_fate_once
@@ -2535,10 +2535,10 @@ class DungeonTest < Minitest::Test
   # end
 
   def test_a_cloaked_weapon_is_its_cloak_wielding_the_weapon
-    t = spawn_one(kind("weapon"), depth: 5)
-    troll = kind("Troll")
+    t = spawn_one(assert_kind("weapon"), depth: 5)
+    troll = assert_kind("Troll")
     assert_equal ["T", "Troll"], [t.glyph, t.name]
-    assert_equal troll.values_at(*Dungeon::ABILITIES), scores(t)
+    assert_equal troll.values_at(*Dungeon::ABILITIES), assert_scores(t)
     assert_equal troll[:hp] + 5 + Dungeon.modifier(troll[:con]), t.hp, "a troll's hit points"
     assert_includes Dungeon::WEAPONS, t.weapon
     assert_equal t.weapon[:hit], t.hit, "but it hits with the weapon"
@@ -2739,7 +2739,7 @@ class DungeonTest < Minitest::Test
 
     assert_equal dagger, @game.wielded
     assert_nil goblin.weapon
-    assert_equal kind("goblin")[:hit], goblin.hit, "back to its own blows"
+    assert_equal assert_kind("goblin")[:hit], goblin.hit, "back to its own blows"
     assert goblin.aggressive
     assert_includes @game.log, "You wrench the dagger from the goblin! You now wield #{dagger[:glyph]} dagger."
   end
@@ -3390,7 +3390,7 @@ class DungeonTest < Minitest::Test
     arrange_arena
     food = arrange_sandwich_at(6, 5).last
     3.times { @game.tap }
-    assert_instance_of Dungeon::SandwichOpenState, wrapping(food)
+    assert_instance_of Dungeon::SandwichOpenState, assert_wrapping(food)
 
     @game.grab
     @game.grab_pick("a")
@@ -4042,14 +4042,14 @@ class DungeonTest < Minitest::Test
 
   # --- doors at the ends of hallways ---
 
-  def arrange_new_door(x, y) = assert_get(:monsters) << arrange_thing(x, y, "#", "door", 30, kind("door")[:hit], pacifist: true)
+  def arrange_new_door(x, y) = assert_get(:monsters) << arrange_thing(x, y, "#", "door", 30, assert_kind("door")[:hit], pacifist: true)
 
   def assert_in_a_room(x, y)
     assert_get(:rooms).any? { |r| x.between?(r[:x], r[:x] + r[:w] - 1) && y.between?(r[:y], r[:y] + r[:h] - 1) }
   end
 
   def test_the_door_row_is_a_peaceful_out_of_band_wall
-    door = kind("door")
+    door = assert_kind("door")
     assert_equal "#", door[:glyph]
     assert door[:pacifist]
     assert door[:out_of_band]
@@ -4068,7 +4068,7 @@ class DungeonTest < Minitest::Test
                "seed #{seed}: at the end of a hallway, next to a room")
       end
     end
-    assert(counts.all? { |n| n <= kind("door")[:na] })
+    assert(counts.all? { |n| n <= assert_kind("door")[:na] })
     assert(counts.count { |n| n >= 2 } > 25, "most levels get two or more")
   end
 
@@ -5342,7 +5342,7 @@ class DungeonTest < Minitest::Test
   def arrange_dodo(x, y, devoted: false) = assert_get(:monsters) << arrange_thing(x, y, "D", "Dodo", 6, 1..2, pacifist: true, devoted: devoted)
 
   def test_a_dodo_is_a_d
-    assert_equal "D", kind("Dodo")[:glyph]
+    assert_equal "D", assert_kind("Dodo")[:glyph]
   end
 
   def test_a_dodo_pecks_a_troll_off_its_quail_and_gets_eaten
@@ -5416,7 +5416,7 @@ class DungeonTest < Minitest::Test
 
   def test_about_half_of_dodos_are_born_devoted
     arrange_arena
-    dodos = Array.new(400) { spawn_one(kind("Dodo"), depth: 4) }
+    dodos = Array.new(400) { spawn_one(assert_kind("Dodo"), depth: 4) }
     assert_in_delta 200, dodos.count(&:devoted), 50
   end
 
@@ -5779,7 +5779,7 @@ class DungeonTest < Minitest::Test
   end
 
   def test_a_spawned_monster_knows_its_full_hit_points
-    goblin = spawn_one(kind("goblin"), depth: 3)
+    goblin = spawn_one(assert_kind("goblin"), depth: 3)
     assert_equal goblin.hp, goblin.max_hp
   end
 
@@ -6669,7 +6669,7 @@ class DungeonTest < Minitest::Test
   def test_a_potion_of_water_lies_about_as_an_upside_down_potion_and_packs_as_food
     arrange_arena
     assert_get(:monsters) << arrange_thing(6, 5, "¡", "water potion", 3, 0..0, pacifist: true)
-    assert_equal "¡", kind("water potion")[:glyph]
+    assert_equal "¡", assert_kind("water potion")[:glyph]
 
     @game.move(1, 0)
 
@@ -8201,7 +8201,7 @@ class DungeonTest < Minitest::Test
     3.times { @game.rest }
     assert_equal [6, 5], [imp.x, imp.y]
     assert_equal 20, assert_get(:hp)
-    assert_equal "I", kind("Imp")[:glyph]
+    assert_equal "I", assert_kind("Imp")[:glyph]
   end
 
   # --- a door begs you to go round it ---
@@ -8527,7 +8527,7 @@ class DungeonTest < Minitest::Test
 
   def test_a_real_rat_without_a_coin_keeps_biting_for_one
     arrange_arena
-    arrange_rat_at(6, 5, str: kind("rat")[:str])
+    arrange_rat_at(6, 5, str: assert_kind("rat")[:str])
     @game.rest
     assert_equal 19, @game.hp, "a 2 with str 7 (-2) is 0, floored at 1"
   end
@@ -8603,8 +8603,8 @@ class DungeonTest < Minitest::Test
 
   def test_a_real_allied_wall_strikes_an_unpaid_rat_hard
     arrange_arena
-    arrange_wall_ally_at(7, 5, str: kind("wall")[:str])
-    arrange_rat_at(8, 5, str: kind("rat")[:str])
+    arrange_wall_ally_at(7, 5, str: assert_kind("wall")[:str])
+    arrange_rat_at(8, 5, str: assert_kind("rat")[:str])
     @game.rest
     assert_equal 94, assert_get(:monsters).last.hp, "a 3 with str 18 (+4)"
     assert_includes @game.log, "Your wall hits the rat for 7."

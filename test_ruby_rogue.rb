@@ -4331,22 +4331,22 @@ class DungeonTest < Minitest::Test
     activate_stepping_onto_the_cage_plate
   end
 
-  def plaque = REXML::Document.new(@game.plaque_xml)
-  def plaque_text(path) = REXML::XPath.first(plaque, path)&.text
+  def arrange_plaque = REXML::Document.new(@game.plaque_xml)
+  def assert_plaque_text(path) = REXML::XPath.first(arrange_plaque, path)&.text
 
   def test_the_plaque_counts_the_eggs_quails_and_other_critters_in_the_cage
     activate_springing_a_cage_full_of_haul
     assert @game.plaque?
-    assert_equal "1", plaque_text("/plaque/eggs")
-    assert_equal "1", plaque_text("/plaque/quails")
-    assert_equal({ "Dodo" => "2" }, REXML::XPath.match(plaque, "/plaque/critter").to_h { |c| [c.attributes["name"], c.text] },
+    assert_equal "1", assert_plaque_text("/plaque/eggs")
+    assert_equal "1", assert_plaque_text("/plaque/quails")
+    assert_equal({ "Dodo" => "2" }, REXML::XPath.match(arrange_plaque, "/plaque/critter").to_h { |c| [c.attributes["name"], c.text] },
                  "the wall is no critter")
   end
 
   def test_the_plaque_carries_the_hero_s_name
     activate_springing_a_cage_full_of_haul
     @game.hero_name = "Johnson"
-    assert_equal "Johnson", plaque_text("/plaque/name")
+    assert_equal "Johnson", assert_plaque_text("/plaque/name")
   end
 
   def test_a_hero_with_no_name_is_unknown_on_the_plaque
@@ -4420,15 +4420,15 @@ class DungeonTest < Minitest::Test
 
   def test_the_plaque_carries_the_final_score
     activate_springing_a_cage_full_of_haul
-    assert_equal @game.final_score.to_s, plaque_text("/plaque/score")
+    assert_equal @game.final_score.to_s, assert_plaque_text("/plaque/score")
   end
 
   def test_a_cage_never_sprung_leaves_an_empty_plaque
     arrange_arena
     arrange_set :hp, 0
     assert @game.plaque?
-    assert_equal %w[0 0], [plaque_text("/plaque/eggs"), plaque_text("/plaque/quails")]
-    assert_empty REXML::XPath.match(plaque, "/plaque/critter")
+    assert_equal %w[0 0], [assert_plaque_text("/plaque/eggs"), assert_plaque_text("/plaque/quails")]
+    assert_empty REXML::XPath.match(arrange_plaque, "/plaque/critter")
   end
 
   def test_no_plaque_until_the_game_is_over

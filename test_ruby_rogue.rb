@@ -9310,9 +9310,9 @@ class DosBoxTest < Minitest::Test
   def assert_backpack = game.backpack
   def activate_console_keys(*pressed) = pressed.each { |k| @dos.handle(k) }
   # The backpack panel stacks under the status line, and the map under the panel, as the README shows
-  def panel = @dos.send(:panel_lines)
-  def panel_line(i) = @dos.lines[1 + i]
-  def map_row(y) = @dos.lines[1 + panel.size + y]
+  def assert_panel = @dos.send(:panel_lines)
+  def assert_panel_line(i) = @dos.lines[1 + i]
+  def assert_map_row(y) = @dos.lines[1 + assert_panel.size + y]
   def assert_prompt_line = @dos.lines.last
 
   def test_a_squirrel_is_an_s_in_the_console
@@ -9343,19 +9343,19 @@ class DosBoxTest < Minitest::Test
   end
 
   def test_the_player_is_a_smiley_on_a_dotted_floor
-    row = map_row(5).gsub(/\e\[[\d;]*m/, "")[0, W] # the colors stripped off
+    row = assert_map_row(5).gsub(/\e\[[\d;]*m/, "")[0, W] # the colors stripped off
     assert_equal "@", row[5]
     assert_equal W - 1, row.count("·")
-    assert_includes map_row(5), "\e[1;34m@\e[0m", "in light blue"
+    assert_includes assert_map_row(5), "\e[1;34m@\e[0m", "in light blue"
   end
 
   def test_the_screen_is_driver_commands
     screen = @dos.screen
     assert screen.start_with?("\e[1;1H"), "each line starts by placing the cursor"
-    assert_includes screen, "\e[#{2 + panel.size};1H#{map_row(0)}", "the map below the panel"
+    assert_includes screen, "\e[#{2 + assert_panel.size};1H#{assert_map_row(0)}", "the map below the panel"
     assert_includes screen, "\e[K", "and ends by erasing the rest of the line"
     assert_includes @dos.lines.first, "HP #{game.hp}/#{game.max_hp}"
-    assert_equal DosBox::SCREEN_ROWS + panel.size, @dos.lines.size, "status, panel, map, four log lines, prompt"
+    assert_equal DosBox::SCREEN_ROWS + assert_panel.size, @dos.lines.size, "status, panel, map, four log lines, prompt"
   end
 
   def test_lines_are_cut_to_the_console_width_without_breaking_a_color
@@ -9368,30 +9368,30 @@ class DosBoxTest < Minitest::Test
   def test_hungry_creatures_are_bright_yellow
     arrange_set :blood_sugar, 0
     #  this is for if we get full-width emojis working in dos mode: assert_includes map_row(5), "\e[1;33m☺\e[0m"
-    assert_includes map_row(5), "\e[1;33m@\e[0m"
+    assert_includes assert_map_row(5), "\e[1;33m@\e[0m"
   end
 
   def test_the_backpack_sits_beside_the_map_with_letters
     assert_backpack[:gold] = 5
     assert_backpack[:speed_potions] = 1
-    assert_equal "Backpack: XP: 0  Blood sugar 100", panel_line(0)
-    assert_equal "a) 5 gold", panel_line(1)
-    assert_equal "b) ! potion of speed", panel_line(2)
+    assert_equal "Backpack: XP: 0  Blood sugar 100", assert_panel_line(0)
+    assert_equal "a) 5 gold", assert_panel_line(1)
+    assert_equal "b) ! potion of speed", assert_panel_line(2)
   end
 
   def test_the_tap_is_always_on_show_beside_the_map
-    assert_equal "f: tap right", panel_line(2), "below an empty backpack"
+    assert_equal "f: tap right", assert_panel_line(2), "below an empty backpack"
     assert_backpack[:gold] = 5
-    assert_equal "f: tap right", panel_line(2), "below the backpack's last entry"
+    assert_equal "f: tap right", assert_panel_line(2), "below the backpack's last entry"
     activate_console_keys "h"
-    assert_equal "f: tap left", panel_line(2)
+    assert_equal "f: tap left", assert_panel_line(2)
   end
 
   def test_question_mark_swaps_the_backpack_for_the_keys
     activate_console_keys "?"
-    assert_equal "Keys", panel_line(0)
+    assert_equal "Keys", assert_panel_line(0)
     activate_console_keys "?"
-    assert_equal "Empty backpack  XP: 0  Blood sugar 100", panel_line(0)
+    assert_equal "Empty backpack  XP: 0  Blood sugar 100", assert_panel_line(0)
   end
 
   def test_rogues_letters_the_arrows_and_the_keypad_all_move
@@ -9560,7 +9560,7 @@ class DosBoxTest < Minitest::Test
   def test_s_chooses_then_x_throws_and_g_gives
     assert_backpack[:candles] = 2
     activate_console_keys "s", "a"
-    assert_equal "a) (*) 2 i candles", panel_line(1)
+    assert_equal "a) (*) 2 i candles", assert_panel_line(1)
     assert(@dos.lines.any? { |l| l == "x: Throw candle right?" })
     assert(@dos.lines.any? { |l| l == "g: Give candle right?" })
     activate_console_keys "g"

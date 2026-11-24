@@ -4306,8 +4306,8 @@ class DungeonTest < Minitest::Test
   end
 
   def assert_cage = assert_get(:cage)
-  def snapped? = @game.send(:cage_sprung?)
-  def plate_state = @game.send(:cage_plate).machine.state
+  def assert_snapped? = @game.send(:cage_sprung?)
+  def assert_plate_state = @game.send(:cage_plate).machine.state
 
   # The player just below the plate, one step from springing the trap
   def arrange_player_one_step_from_the_cage_plate
@@ -4649,7 +4649,7 @@ class DungeonTest < Minitest::Test
     assert_equal [15, 14], assert_player, "standing on the line"
     @game.move(0, -1)
     assert_equal [15, 13], assert_player, "over the line and into the cage"
-    refute snapped?
+    refute assert_snapped?
     refute @game.over?
   end
 
@@ -4664,7 +4664,7 @@ class DungeonTest < Minitest::Test
     arrange_player_one_step_from_the_cage_plate
     activate_stepping_onto_the_cage_plate
     assert_equal [15, 10], assert_player
-    assert snapped?
+    assert assert_snapped?
     assert_equal "|" * 12, @game.rows[14][10, 12], "bars all along the line"
     assert_includes @game.log, "The bars slam down behind you. Your haul: nothing but yourself."
   end
@@ -4699,7 +4699,7 @@ class DungeonTest < Minitest::Test
     arrange_quail(12, 12)
     arrange_troll(20, 12, hit: 0..0)
     activate_stepping_onto_the_cage_plate
-    refute snapped?
+    refute assert_snapped?
     refute @game.over?
     assert_includes @game.log, "The plate won't budge with a Troll loose in the cage. Deal with it, then step back on."
   end
@@ -4724,7 +4724,7 @@ class DungeonTest < Minitest::Test
 
       activate_stepping_onto_the_cage_plate
 
-      refute snapped?, name
+      refute assert_snapped?, name
       refute @game.over?, name
       assert_includes @game.log, "The plate won't budge with #{@game.send(:a_name, name)} loose in the cage. Deal with it, then step back on."
     end
@@ -4762,7 +4762,7 @@ class DungeonTest < Minitest::Test
     plate = @game.send(:cage_plate)
     assert_kind_of Dungeon::Thingage, plate
     assert_equal ["o", "cage plate", [15, 10]], [plate.glyph, plate.name, [plate.x, plate.y]]
-    assert_instance_of Dungeon::UnsnappedState, plate_state
+    assert_instance_of Dungeon::UnsnappedState, assert_plate_state
     ev = StateEvent
     unsnapped, snapped = Dungeon::UnsnappedState, Dungeon::SnappedState
     assert_equal({ [unsnapped, ev::STEP_ON] => snapped, [unsnapped, ev::TAP] => snapped,
@@ -4774,7 +4774,7 @@ class DungeonTest < Minitest::Test
     arrange_player_one_step_from_the_cage_plate
     arrange_set :facing, [0, -1]
     @game.tap
-    assert snapped?
+    assert assert_snapped?
     assert_equal [15, 11], assert_player, "tapped from beside it"
     assert_includes @game.log, "The bars slam down behind you. Your haul: nothing but yourself."
   end
@@ -4786,7 +4786,7 @@ class DungeonTest < Minitest::Test
   def test_the_bars_block_the_way_until_lifted
     arrange_player_one_step_from_the_cage_plate
     arrange_set :py, 13
-    plate_state # build the plate, then snap it without springing anything
+    assert_plate_state # build the plate, then snap it without springing anything
     @game.send(:cage_plate).machine.instance_variable_set(:@state, Dungeon::SnappedState.new)
     @game.move(0, 1)
     assert_equal [15, 13], assert_player
@@ -4797,11 +4797,11 @@ class DungeonTest < Minitest::Test
     activate_stepping_onto_the_cage_plate
     @game.move(0, 1)
     @game.move(0, -1)
-    refute snapped?
+    refute assert_snapped?
     assert_equal "The bars lift, and the trap is set again.", assert_last_log
     @game.move(0, 1)
     @game.move(0, -1)
-    assert snapped?, "and springs again"
+    assert assert_snapped?, "and springs again"
   end
 
   def test_nothing_moves_once_the_trap_is_sprung

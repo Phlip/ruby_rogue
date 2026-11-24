@@ -1151,13 +1151,13 @@ class DungeonTest < Minitest::Test
   ROLLS = 20_000
 
   # Rolls a roller ROLLS times and tallies how often each total came up
-  def tally = Array.new(ROLLS) { yield }.tally
+  def assert_tally = Array.new(ROLLS) { yield }.tally
 
   # The bell of count dice of sides faces, checked from the tally alone: nothing below count (all ones) or above
   # count * sides (all highs) ever comes up, every total between does, and a total nearer the middle comes up
   # more often than one further out, the two sides mirroring each other
   def assert_bell(name, count, sides)
-    seen = tally { yield }
+    seen = assert_tally { yield }
     low, high = count, count * sides
     middle = (low + high) / 2.0
 
@@ -1177,7 +1177,7 @@ class DungeonTest < Minitest::Test
 
   # One die is flat, not a bell: every face about as likely as every other
   def assert_flat(name, sides)
-    seen = tally { yield }
+    seen = assert_tally { yield }
     assert_equal (1..sides).to_a, seen.keys.sort, "#{name}: every face, and nothing else"
     seen.each_value { |n| assert_in_delta ROLLS / sides.to_f, n, ROLLS * 0.03, "#{name}: a fair face" }
   end
